@@ -134,7 +134,7 @@ The person running it gets only the README:
 | M1 | Done | `couchbox` package, settings schema/store, `couchboxd`, CLI, `.deb`, CI (lint, 90 unit tests, package install into clean Ubuntu 26.10) |
 | M2 | Done (code), on hardware at M8 | Prototype apps and services ported: personal values removed, wired to settings. Voice has off / dictation / assistant modes. The phone page needs pairing |
 | M3 | Done | Settings app (11 sections) and the home row (live order, hold OK on a tile: move, hide). Screenshots of every page in CI |
-| M4 | Done (image built in CI), on hardware at M8 | `image/build-image.sh`, the nspawn boot test, the preseed, the Imager repository entry, the setup wizard |
+| M4 | Done (image built and boot-tested nightly in CI), on hardware at M8 | `image/build-image.sh` gives a 1.0 GB image: Ubuntu 26.10 for Pi, plus Couchbox, minus snapd, other hardware's firmware and docs. The nspawn boot test checks first boot, the preseed, Wi-Fi from the preseed, couchboxd, services, and that the Pi's Wi-Fi and Bluetooth firmware is still there. Also the Imager repository entry and the setup wizard |
 | M5 | Done (first release needs the signing key secret) | release-please, signed `release.json`, attestations, the updater with idle rules and rollback, beta channel |
 | M6a | Partly | Online re-encryption is proven on loop devices in CI (`ci/encryption-loop.sh`). The Pi 5 measurement and the LUKS image layout (`build-image.sh --luks`) wait for hardware. The image ships plain ext4 until then |
 | M6b | Code done, hardware test pending | Settings → Security flow; `couchbox.encryption` |
