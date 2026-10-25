@@ -21,7 +21,7 @@ jobs:
   debs:
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {ref: "${{ inputs.tag }}"}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
@@ -55,7 +55,7 @@ jobs:
     needs: [debs, media]
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {ref: "${{ inputs.tag }}"}
       - uses: actions/download-artifact@v4
         with: {pattern: "{debs,media}", path: dist, merge-multiple: true}
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {ref: "${{ inputs.tag }}"}
       - uses: actions/download-artifact@v4
         with: {pattern: "{debs,media,image}", path: dist, merge-multiple: true}  # not the docker build records

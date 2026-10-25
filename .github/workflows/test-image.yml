@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: get the image
         env: {GH_TOKEN: "${{ github.token }}", RUN: "${{ inputs.run_id }}"}
         run: gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n image -D out
