@@ -84,7 +84,7 @@ Order: package defaults, then Imager/cloud-init, then `couchbox.toml`, then the 
    - a Fire TV remote, once paired;
    - a USB keyboard;
    - **the phone:** every step shows the phone page's QR code (by IP address, since not every phone resolves `.local`).
-     - Offline for 25 s (no Ethernet, no Wi-Fi from Imager or the preseed)? couchboxd opens a **setup Wi-Fi**, `Couchbox-XXXX`, with a random password. It's NetworkManager's hotspot at 10.42.0.1.
+     - Offline for 25 s (no Ethernet, no Wi-Fi from Imager or the preseed), or for 2 minutes with a saved Wi-Fi that may still be joining? couchboxd opens a **setup Wi-Fi**, `Couchbox-XXXX`, with a random password. It's NetworkManager's hotspot at 10.42.0.1.
      - The TV then shows two codes: a `WIFI:` code to join, and the phone page at `http://10.42.0.1:8791`.
      - The radio can't scan while it's a hotspot, so the Wi-Fi list is the scan from just before.
      - Joining home Wi-Fi closes the hotspot, and reopens it if the join fails. Ethernet coming up, or the end of the wizard, closes it too.

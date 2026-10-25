@@ -88,7 +88,7 @@ You can use any of these, and switch between them whenever you like.
 - **The TV's remote:** the arrows, OK and Back work straight away over HDMI-CEC.
 - **A Fire TV remote:** on the **Your remote** screen, hold its **Home** button for about 10 seconds, until the light blinks. It pairs by itself. From then on it works like a normal TV remote, and its power and volume buttons can control the TV (a later step sets that up).
 - **Your phone:** point the phone's camera at the **QR code** on the left of the screen and open the link. You get a remote with arrows, OK, Back, Home and play/pause, and a keyboard that types on the TV.
-  - **When the box isn't online yet** (no Ethernet, and no Wi-Fi set in Imager), it opens its own Wi-Fi after about 30 seconds, and the TV shows two codes:
+  - **When the box isn't online yet** (no Ethernet, and no Wi-Fi set in Imager), it opens its own Wi-Fi after about 30 seconds (2 minutes if it has a Wi-Fi from Imager that it can't reach), and the TV shows two codes:
     1. **Join its Wi-Fi.** Scan the first code, and the phone joins **Couchbox-XXXX**. If the phone warns that the network has no internet, choose to stay connected.
     2. **Open the remote.** Scan the second code.
   - On the **Internet** step, pick your home Wi-Fi and type its password on the phone. The box joins your network and its own Wi-Fi closes. Your phone goes back to your home Wi-Fi, and the TV shows a new code: scan it to keep using the phone.
