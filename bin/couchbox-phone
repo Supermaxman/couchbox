@@ -54,8 +54,17 @@ KEYS = {"up": e.KEY_UP, "down": e.KEY_DOWN, "left": e.KEY_LEFT, "right": e.KEY_R
         "enter": e.KEY_KPENTER, "back": e.KEY_ESC, "home": e.KEY_HOMEPAGE, "play": e.KEY_PLAYPAUSE,
         "tab": e.KEY_TAB, "backspace": e.KEY_BACKSPACE, "menu": e.KEY_MENU}
 
-ui = UInput({e.EV_KEY: sorted({k for k, _ in CHARS.values()} | set(KEYS.values()) |
-                              {e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_A})}, name="couchbox-phone")
+_ui = None
+
+
+def ui():
+    """The virtual keyboard, made on first use (the page still serves without one: tests,
+    containers without /dev/uinput)."""
+    global _ui
+    if _ui is None:
+        _ui = UInput({e.EV_KEY: sorted({k for k, _ in CHARS.values()} | set(KEYS.values()) |
+                                       {e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_A})}, name="couchbox-phone")
+    return _ui
 
 
 def used():
@@ -68,14 +77,15 @@ def used():
 
 def tap(key, shift=False, ctrl=False):
     mods = [m for m, on in ((e.KEY_LEFTSHIFT, shift), (e.KEY_LEFTCTRL, ctrl)) if on]
+    k = ui()
     for m in mods:
-        ui.write(e.EV_KEY, m, 1)
-    ui.write(e.EV_KEY, key, 1)
-    ui.syn()
-    ui.write(e.EV_KEY, key, 0)
+        k.write(e.EV_KEY, m, 1)
+    k.write(e.EV_KEY, key, 1)
+    k.syn()
+    k.write(e.EV_KEY, key, 0)
     for m in mods:
-        ui.write(e.EV_KEY, m, 0)
-    ui.syn()
+        k.write(e.EV_KEY, m, 0)
+    k.syn()
     time.sleep(0.012)
 
 

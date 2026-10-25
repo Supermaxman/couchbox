@@ -48,7 +48,10 @@ grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/
 run /usr/bin/couchbox config set voice.mode dictation >/dev/null && run /usr/bin/couchbox config get voice.mode | grep -qx dictation && ok "settings through couchboxd"
 for u in couchboxd couchbox-phone couchbox-memory couchbox-firstboot; do
   s=$(systemctl -M cbtest is-active "$u.service" || true)
-  [[ $s == active ]] && ok "$u: active" || { echo "!! $u: $s"; systemctl -M cbtest status "$u.service" --no-pager | tail -15; FAIL=1; }
+  if [[ $s == active ]]; then ok "$u: active"
+  else echo "!! $u: $s"; systemctl -M cbtest status "$u.service" --no-pager | tail -15 || true; journalctl -M cbtest -u "$u.service" --no-pager | tail -20 || true; FAIL=1; fi
 done
-run /usr/bin/couchbox doctor --container
-[[ -z ${FAIL:-} ]] && echo "image test: passed"
+run /usr/bin/couchbox doctor --container || FAIL=1
+echo "failed units:"; systemctl -M cbtest list-units --failed --no-pager --plain | head -20 || true
+[[ -z ${FAIL:-} ]] || { echo "image test: FAILED"; exit 1; }
+echo "image test: passed"
