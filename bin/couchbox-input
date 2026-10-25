@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """couchbox-input: remap remote-control keys into keys the TV shell and apps understand.
 
-Grabs input devices that match a section of /etc/couchbox/input.toml, rewrites or drops
+Grabs input devices that match a section of the key map (/etc/couchbox/input.toml if the
+household made one, else /usr/share/couchbox/input/<Settings → Remote → Key map>.toml), rewrites or drops
 their keys, and re-emits everything through one virtual keyboard ("couchbox-input").
 A key can also run a command instead, e.g. to control the TV: "run:couchbox-tv power" runs
 once per press, "run-repeat:couchbox-tv volume-up" also keeps running while the key is held, and
@@ -36,7 +37,23 @@ import urllib.request
 
 from evdev import InputDevice, UInput, ecodes as e, list_devices
 
-CONFIG = os.environ.get("COUCHBOX_INPUT_CONFIG", "/etc/couchbox/input.toml")
+def config_path():
+    """The household's own map (/etc/couchbox/input.toml) if there is one, else the shipped
+    map that Settings → Remote → Key map names (/usr/share/couchbox/input/<name>.toml)."""
+    if os.environ.get("COUCHBOX_INPUT_CONFIG"):
+        return os.environ["COUCHBOX_INPUT_CONFIG"]
+    if os.path.exists("/etc/couchbox/input.toml"):
+        return "/etc/couchbox/input.toml"
+    try:
+        from couchbox import paths, settings
+        share, name = paths.share() / "input", settings.get("input.keymap")
+    except Exception:  # noqa: BLE001 - never leave the remote unmapped over a settings problem
+        from pathlib import Path
+        share, name = Path("/usr/share/couchbox/input"), "default"
+    return str(share / f"{name}.toml") if (share / f"{name}.toml").exists() else str(share / "default.toml")
+
+
+CONFIG = config_path()
 RESCAN_SECONDS = 3
 LAST_KEY = "/run/couchbox/last-key"   # touched on every press: couchbox-memory's "someone is using the TV"
 RUN_REPEAT_SECONDS = 0.25   # a held key re-runs its command at most this often
