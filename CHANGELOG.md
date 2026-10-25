@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/Supermaxman/couchbox/compare/v0.4.0...v0.4.1) (2026-10-25)
+
+
+### Fixed
+
+* **ci:** image test checks couchbox-input's key map loads (containers have no /dev/uinput) ([b8c74f2](https://github.com/Supermaxman/couchbox/commit/b8c74f22faf5b8fca51ed5c30bb42404d19c93b9))
+
 ## [0.4.0](https://github.com/Supermaxman/couchbox/compare/v0.3.0...v0.4.0) (2026-10-25)
 
 
