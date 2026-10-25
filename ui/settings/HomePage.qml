@@ -5,7 +5,7 @@ import QtQuick
 SettingsPage {
     id: p
     title: "Home screen"
-    subtitle: "The apps on the home row, left to right. On the home screen itself, press Menu (≡) on an app for the same options."
+    subtitle: "The apps on the home row, left to right. On the home screen itself, hold OK on an app for the same options."
     property var apps: []
     property string carrying: ""                     // app id being moved
     property int carryFrom: -1

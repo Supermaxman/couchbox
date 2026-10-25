@@ -1,6 +1,6 @@
 # Couchbox plan
 
-**Status:** draft, for review before anything is implemented. Last updated 2026-10-24.
+**Status:** M0–M5 and M7 implemented in this repo (see §9); M6 (encryption on hardware) and M8 (fresh-hardware validation) wait for the second set of hardware. Last updated 2026-10-25.
 
 Couchbox is the public, configurable version of a private prototype. That prototype is a Raspberry Pi 5 TV box running Ubuntu 26.10 and KDE Plasma Bigscreen, and it has run a real TV every day since October 2026. It works well, but only for one household: hostnames, servers, keys and the household's own preferences are written into the scripts, and installing it means following nine manual phases over SSH.
 
@@ -125,3 +125,25 @@ The person running it gets only the README:
 1. Should the box get a `couchbox.dev`-style domain and docs site (GitHub Pages)? For now, the docs live in the repo.
 2. Is the Fire TV remote the only remote for 1.0, or should another cheap BLE remote with a mic be supported too?
 3. Should the image include an admin user? The plan is no: SSH is off until you turn it on in Settings or set a user in Imager.
+
+## 9. Progress (2026-10-25)
+
+| M | State | Notes |
+|---|---|---|
+| M0 | Done | This plan |
+| M1 | Done | `couchbox` package, settings schema/store, `couchboxd`, CLI, `.deb`, CI (lint, 90 unit tests, package install into clean Ubuntu 26.10) |
+| M2 | Done (code), on hardware at M8 | Prototype apps and services ported: personal values removed, wired to settings. Voice has off / dictation / assistant modes. The phone page needs pairing |
+| M3 | Done | Settings app (11 sections) and the home row (live order, hold OK on a tile: move, hide). Screenshots of every page in CI |
+| M4 | Done (image built in CI), on hardware at M8 | `image/build-image.sh`, the nspawn boot test, the preseed, the Imager repository entry, the setup wizard |
+| M5 | Done (first release needs the signing key secret) | release-please, signed `release.json`, attestations, the updater with idle rules and rollback, beta channel |
+| M6a | Partly | Online re-encryption is proven on loop devices in CI (`ci/encryption-loop.sh`). The Pi 5 measurement and the LUKS image layout (`build-image.sh --luks`) wait for hardware. The image ships plain ext4 until then |
+| M6b | Code done, hardware test pending | Settings → Security flow; `couchbox.encryption` |
+| M7 | Done | `media.yml` builds `couchbox-media` natively on arm64 |
+| M8 | Waiting for hardware | |
+| M9 | `couchbox import-mtv` ready | |
+
+**Changes from the design while building:**
+- `debian/` sits at the repository root, and QML apps are under `ui/`.
+- Tiles open their options when you **hold OK**, as on Android TV, because Bigscreen keeps Menu for the task switcher. Menu also works where it reaches the home screen.
+- The phone page runs as root, like the prototype, because it injects key presses through uinput.
+- The Seerr app talks to Seerr through couchbox-voice's proxy with an API key. Seerr's own sign-in is a follow-up.

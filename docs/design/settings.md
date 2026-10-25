@@ -43,7 +43,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
   - Left and Right move it, and OK drops it. Back cancels.
   - "Add a website" asks for a name and URL; the icon defaults to the site's favicon.
   - "Reset to default" restores the order and shows everything.
-- **On the home screen:** press **Menu (≡)** on a tile for options: *Move*, *Hide*, *Rename*, *App settings*, *Remove* (websites only).
+- **On the home screen:** **hold OK** (or press Menu, where it reaches the home screen) on a tile for options: *Move*, *Hide*, *More in Settings*.
   - *Move* works the same as in Settings, right there on the row.
   - An "All apps" tile at the end of the row opens the grid of every app, hidden ones included.
 

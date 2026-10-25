@@ -2,7 +2,7 @@
 
 **An open-source TV box you own end to end.** Couchbox turns a Raspberry Pi 5 into a TV box you control with a remote. It replaces a Fire TV Stick or Roku. One HDMI cable to the TV carries the picture, the sound and HDMI-CEC, so the TV turns on and off with the box.
 
-> **Status: planning.** This repo holds the plan and design ([docs/PLAN.md](docs/PLAN.md)). The code is being ported from a private prototype that runs on a real TV today. Nothing here is installable yet. The first preview release will be `v0.1.0`.
+> **Status: first preview (`v0.1.0`) on its way.** The code is ported from a prototype that runs a real TV every day, and CI builds and tests it, including a bootable image. Fresh-hardware validation (milestone M8) comes before 1.0. See [docs/PLAN.md](docs/PLAN.md) and [docs/install.md](docs/install.md).
 
 ## What it does
 
@@ -24,6 +24,7 @@
   - voice (any OpenAI-compatible speech-to-text and model endpoint);
   - Tailscale, SSH, disk encryption (with Tang network unlock, over Wi-Fi too);
   - updates.
+- **Customizable home row:** reorder, hide, rename apps, add websites as apps (Settings → Home screen, or hold OK on a tile).
 - **Everything optional:** with no AI endpoint, no Jellyfin, no Tailscale and no encryption, it's still a complete TV box. Each of those turns on in Settings when you want it.
 - **Updates:** signed releases from GitHub Releases. Updates install automatically when you're not watching, which is the default, or only when you choose (Manual). You can roll back to the previous version.
 
@@ -35,7 +36,8 @@ Couchbox targets the **Raspberry Pi 5 (8 GB recommended)** with an NVMe SSD on t
 
 | Doc | What |
 |---|---|
-| [docs/PLAN.md](docs/PLAN.md) | The plan: goals, decisions, milestones with done-when criteria, risks |
+| [docs/install.md](docs/install.md) | **Install**: flash the image (or run the installer), set up on the TV |
+| [docs/PLAN.md](docs/PLAN.md) | The plan: goals, decisions, milestones with done-when criteria, risks, progress |
 | [docs/design/architecture.md](docs/design/architecture.md) | Components, processes, privilege and security model, file layout |
 | [docs/design/settings.md](docs/design/settings.md) | Every setting, the Settings app, and home screen customization |
 | [docs/design/first-boot.md](docs/design/first-boot.md) | From a fresh Pi to a working TV: image, preseed, setup wizard, remote pairing |
