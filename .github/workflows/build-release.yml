@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ inputs.tag }}"}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {pattern: "{debs,media}", path: dist, merge-multiple: true}
       - name: free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true; df -h /
@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ inputs.tag }}"}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {pattern: "{debs,media,image}", path: dist, merge-multiple: true}  # not the docker build records
       - name: installer and Raspberry Pi Imager list
         env: {TAG: "${{ inputs.tag }}"}
