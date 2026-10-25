@@ -967,8 +967,8 @@ def _schemas(st=None):
                 s(
                     action=act(
                         STREAMING_ACTIONS,
-                        "continue: Continue Watching · resume: continue the show in query, one step · latest: a show's newest episodes "
-                        "(query or id) · episodes (query or id, season) · shows: all (query filters) · play: video id · open: series id "
+                        "continue: Continue Watching · resume: continue the show in query, one step · latest: newest episodes of the show named in query, one step "
+                        "· episodes (query or id, season) · shows: all (query filters) · play: video id · open: series id "
                         "(or query: a search) · mylist",
                     ),
                     query=q,
