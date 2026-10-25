@@ -224,6 +224,59 @@ ApplicationWindow {
         Timer { id: toastTimer; interval: 3500; onTriggered: toast.opacity = 0 }
     }
 
+    // ------------------------------------------------------------------ the voice assistant
+    // couchbox-voice reaches the app through its control socket (couchbox.appctl): it opens
+    // things here, controls the player, and reads what's on screen (pushState).
+    function openTarget(o) {
+        const idOf = x => isNaN(Number(x)) ? x : Number(x);     // Nebula's and Twitch's ids are text
+        if (o.startsWith("series:")) D.open({kind: "series", id: idOf(o.slice(7))});
+        else if (o.startsWith("video:")) D.open({kind: "video", id: parseInt(o.split(":")[2] || 0), collectionId: parseInt(o.split(":")[1])});
+        else if (o.startsWith("play:")) {
+            if (win.playing) stack.popCurrentItem(StackView.Immediate);   // one player at a time
+            D.play(idOf(o.slice(5)));
+        }
+        else if (o.startsWith("search:")) { win.showSection(3); Qt.callLater(() => stack.currentItem.search(o.slice(7))); }
+        else if (o === "series") win.showSection(1);
+        else if (o === "mylist") win.showSection(2);
+        else if (o === "home") win.showSection(0);
+    }
+    function mediaCommand(a, s) {
+        if (!win.playing) return;
+        if (a === "play") video.setPaused(false);
+        else if (a === "pause") video.setPaused(true);
+        else if (a === "toggle") video.togglePause();
+        else if (a === "forward") video.seek(s || 30);
+        else if (a === "back") video.seek(-(s || 10));
+        else if (a === "seek") video.seekTo(s);
+        else if (a === "restart") video.seekTo(0);
+        Qt.callLater(win.pushState);
+    }
+    function pushState() {
+        const it = stack.currentItem;
+        let st = {page: "home", section: win.sections[win.section] || ""};
+        if (!it) st.page = "starting";
+        else if (it.videoId !== undefined) {
+            const v = it.v || {};
+            st = {page: "player", id: String(it.videoId), title: v.title || "", series: v.series || "", episode: v.title ? D.epLabel(v) : "",
+                  live: !!v.live, position: video.position, duration: video.duration, paused: video.paused};
+        }
+        else if (it.cid !== undefined) st = {page: "series", id: String(it.cid), title: it.s ? it.s.title || "" : ""};
+        else if (it.query !== undefined) st = {page: "search", query: it.query};
+        else if (it.op !== undefined) st = {page: "list", title: it.title};
+        else if (it.email !== undefined || it.info !== undefined) st = {page: "sign-in"};
+        control.setState(JSON.stringify(st));
+    }
+    Connections {
+        target: control
+        function onCommand(js) {
+            const c = JSON.parse(js);
+            if (c.op === "open") win.openTarget(c.target || "home");
+            else if (c.op === "media") win.mediaCommand(c.action, c.seconds || 0);
+        }
+    }
+    Connections { target: stack; function onCurrentItemChanged() { Qt.callLater(win.pushState); } }
+    Timer { interval: 5000; repeat: true; running: !win.shot; onTriggered: win.pushState() }
+
     // ------------------------------------------------------------------ idle, off-screen tests
     // Like couchbox-memory does for the other apps: quit after an hour without use (not while playing).
     onActiveFocusItemChanged: idle.restart()
@@ -244,14 +297,7 @@ ApplicationWindow {
         running: !!win.shot
         interval: 4000
         onTriggered: {
-            const o = win.arg("--open");
-            const idOf = x => isNaN(Number(x)) ? x : Number(x);     // Nebula's ids are text
-            if (o.startsWith("series:")) D.open({kind: "series", id: idOf(o.slice(7))});
-            else if (o.startsWith("video:")) D.open({kind: "video", id: parseInt(o.split(":")[2] || 0), collectionId: parseInt(o.split(":")[1])});
-            else if (o.startsWith("play:")) D.play(idOf(o.slice(5)));
-            else if (o.startsWith("search:")) { win.showSection(3); Qt.callLater(() => stack.currentItem.search(o.slice(7))); }
-            else if (o === "series") win.showSection(1);
-            else if (o === "mylist") win.showSection(2);
+            win.openTarget(win.arg("--open"));
             if (win.args.indexOf("--keyboard") >= 0) D.askText("Search " + D.name, "game", false, () => {});
             win.downs = parseInt(win.arg("--down") || "0");
             win.keys = win.arg("--keys") ? win.arg("--keys").split(",") : [];

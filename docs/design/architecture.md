@@ -52,6 +52,30 @@
 | Native apps | QML + PySide6 + libmpv | tv | Seerr, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
+### Voice assistant
+
+The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compatible model with tools (`src/couchbox/voice/`).
+
+- **Tools follow the home row.** Each app's tool is offered only while its tile is shown, so hiding Dropout removes the `dropout` tool. Jellyfin and Seerr also need their servers set. `open_app` lists only the visible apps.
+- **The tools:**
+  - `youtube`: VacuumTube over DevTools.
+  - `jellyfin`: the web client's API over DevTools.
+  - `seerr`: its API.
+  - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
+  - `page`: web apps.
+  - `media`, `remote`, `tv` and `say`.
+- **The native apps' control socket** (`couchbox.appctl`) is `$XDG_RUNTIME_DIR/couchbox/app-<site>.sock`, mode 0600. It runs inside `couchbox-streaming`:
+  - Back-end calls run with the app's own sign-in: search, Continue Watching, a show's seasons and episodes.
+  - The assistant can open things in the app, control its player, and read what the app shows.
+  - Starting a second copy of the app hands its `--open` to the running one.
+- **The app in front** comes from KWin (`couchbox-active-window`: a one-off KWin script reports `workspace.activeWindow` over D-Bus), so it works for every app, native or web. Each request carries one bracketed line after the user's words, e.g. `[Screen: Dropout in front: Game Changer S7E3 "…" playing at 1:15 of 40:00. Now: Sat Oct 25, 4:10 PM.]`. "Play the newest one" then means the app in front.
+- **Prompt caching:**
+  - The system prompt holds only stable text: the short rules (`prompt.md`), the household notes, and a summary after compaction.
+  - The tool list stays fixed for a whole request.
+  - The screen and the time go in the user message.
+  - Measured on llama.cpp (Qwen3.8-27B): after the first request, about 1,740 of 1,780 prompt tokens come from cache.
+  - The descriptions are short: each tool's own text says what its actions do, so the prompt doesn't repeat it.
+
 ## couchboxd API
 
 - **Transport:** JSON-RPC 2.0 over `/run/couchbox/couchboxd.sock`.

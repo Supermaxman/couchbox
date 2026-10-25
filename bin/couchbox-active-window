@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+"""couchbox-active-window: the window in front, from KWin, as one line of JSON:
+{"class": resourceClass, "app": desktopFileName, "caption": ..., "fullscreen": bool, "shell": bool}
+({} when nothing is active). "shell" is the home screen (plasmashell) or a panel.
+
+Runs in the TV session (couchbox-voice starts it as the TV user). KWin scripts can't return a
+value, so this takes a D-Bus name for a moment and a one-off script calls it back.
+"""
+import json
+import os
+import sys
+import tempfile
+
+import dbus
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+IFACE = "org.couchbox.ActiveWindow"
+SCRIPT = """
+const w = workspace.activeWindow;
+callDBus("%s", "/", "%s", "Report", JSON.stringify(w ? {
+  class: w.resourceClass, app: w.desktopFileName, caption: w.caption, fullscreen: w.fullScreen,
+  shell: !!(w.desktopWindow || w.dock || w.resourceClass === "plasmashell")} : {}));
+"""
+
+
+def main():
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SessionBus()
+    name = f"{IFACE}.p{os.getpid()}"
+    _keep = dbus.service.BusName(name, bus)  # noqa: F841 - held while we wait
+    loop = GLib.MainLoop()
+    got = {}
+
+    class Reporter(dbus.service.Object):
+        @dbus.service.method(IFACE, in_signature="s")
+        def Report(self, js):
+            got["window"] = js
+            loop.quit()
+
+    Reporter(bus, "/")
+    fd, path = tempfile.mkstemp(prefix="couchbox-active-", suffix=".js")
+    os.write(fd, (SCRIPT % (name, IFACE)).encode())
+    os.close(fd)
+    plugin = os.path.basename(path)
+    scripting = bus.get_object("org.kde.KWin", "/Scripting")
+    try:
+        sid = scripting.loadScript(path, plugin, dbus_interface="org.kde.kwin.Scripting")
+        bus.get_object("org.kde.KWin", f"/Scripting/Script{int(sid)}").run(dbus_interface="org.kde.kwin.Script")
+        GLib.timeout_add(3000, loop.quit)
+        loop.run()
+    finally:
+        try:
+            scripting.unloadScript(plugin, dbus_interface="org.kde.kwin.Scripting")
+        except dbus.DBusException:
+            pass
+        os.unlink(path)
+    print(got.get("window", "{}"))
+    return 0 if got else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except dbus.DBusException as err:
+        print(json.dumps({"error": str(err)}))
+        sys.exit(1)

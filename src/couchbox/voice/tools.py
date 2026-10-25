@@ -16,10 +16,10 @@ import time
 from evdev import UInput
 from evdev import ecodes as e
 
+from couchbox import appctl, secrets, settings
 from couchbox import apps as registry
-from couchbox import secrets, settings
 
-from . import cdp
+from . import cdp, streaming
 
 TV_USER = "tv"
 APP_DIRS = [
@@ -43,11 +43,43 @@ def tv_env():
 
 
 def home_apps():
-    """[(desktop id, name)] in home-screen order (without Settings), then the other apps."""
-    s = settings.load()
-    row = [a for a in registry.home_row(s) if a.hideable]
-    rest = [a for a in registry.all_apps(s) if a.available(s) and a.hideable and a.id not in {r.id for r in row}]
-    return [(a.desktop, a.name) for a in row + rest]
+    """[(desktop id, name)] of the apps on the home row, in order (without Settings). Hidden
+    apps are left out: the assistant doesn't offer what the household turned off."""
+    return [(a.desktop, a.name) for a in registry.home_row(settings.load()) if a.hideable]
+
+
+def visible_ids(st=None):
+    return {a.id for a in registry.home_row(st or settings.load()) if a.hideable}
+
+
+# ------------------------------------------------------------------ the app in front (KWin)
+def active_window():
+    """The window in front: {"class", "app", "caption", "shell"} (couchbox-active-window)."""
+    pw, env = tv_env()
+    try:
+        r = subprocess.run(
+            ["runuser", "-u", TV_USER, "--", "env"]
+            + [f"{k}={v}" for k, v in env.items()]
+            + ["/usr/lib/couchbox/bin/couchbox-active-window"],
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+        return json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+
+
+def app_of_window(w, st=None):
+    """The registry app a window belongs to, "home" for the home screen, or None."""
+    if not w or w.get("shell") or (w.get("class") or "").lower() in ("plasmashell", "org.kde.plasmashell"):
+        return "home"
+    have = {(w.get("class") or "").lower(), (w.get("app") or "").lower().removesuffix(".desktop")}
+    st = st or settings.load()
+    for a in registry.all_apps(st):
+        if have & {c.lower() for c in window_classes(a.desktop, a.name)}:
+            return a
+    return None
 
 
 def web_urls():
@@ -737,6 +769,10 @@ def media_line(r, app):
 
 def media(action, seconds=None):
     """The app in front first, then any app with something playing."""
+    a = app_of_window(active_window())
+    site = streaming.site_of_app(a.id) if a not in (None, "home") else None
+    if site and appctl.running(site):
+        return streaming.media(site, action, seconds)
     name, p = foreground()
     jf = [("Jellyfin", x, JF_MEDIA_JS) for x in cdp.pages(cdp.JELLYFIN_PORT)]
     candidates = (
@@ -831,145 +867,170 @@ def tv(action, times=1):
 
 
 # ------------------------------------------------------------------ schemas
+# Tools follow the home row: a hidden app's tool is left out (and Jellyfin and Seerr also need
+# their servers set). Descriptions stay short: the model reads them on every request.
+
+STREAMING_ACTIONS = ["continue", "search", "shows", "latest", "episodes", "resume", "play", "open", "mylist"]
+TOOL_APP = {"youtube": "youtube", "jellyfin": "jellyfin", "seerr": "seerr", **{t: a for t, (_, a) in streaming.SITES.items()}}
 
 
 def schemas():
-    """The tools the model gets: only for what's set up (no Jellyfin tool without a server...)."""
+    """The tools the model gets now."""
     st = settings.load()
-    out = [t for t in _schemas() if t["function"]["name"] not in disabled_tools(st)]
-    return out
+    off = disabled_tools(st)
+    return [t for t in _schemas(st) if t["function"]["name"] not in off]
 
 
 def disabled_tools(st):
-    off = set()
+    vis = visible_ids(st)
+    off = {tool for tool, app in TOOL_APP.items() if app not in vis}
     if not st["media.jellyfin.url"]:
         off.add("jellyfin")
     if not (st["media.seerr.url"] and secrets.is_set("media.seerr.api_key")):
         off.add("seerr")
+    if not any(a.kind == "web" for a in registry.home_row(st) if a.hideable):
+        off.add("page")
     return off
 
 
-def _schemas():
-    names = [n for _, n in home_apps()]
+def _schemas(st=None):
+    st = st or settings.load()
+    names = [a.name for a in registry.home_row(st) if a.hideable]
     s = lambda **kw: {"type": "object", "properties": kw, "required": [k for k, v in kw.items() if v.pop("req", False)]}
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": "open_app",
-                "description": "Open an app (or bring it to the front), or go to the home screen.",
-                "parameters": s(name={"type": "string", "enum": names + ["Home"], "req": True}),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "youtube",
-                "description": "YouTube (signed in). resume (query = channel or title words, optional): continue the latest matching video "
-                "from the history in one step. latest (query = channel name, or several comma-separated): show a subscribed "
-                "channel's new videos, newest first, on screen. Lists are 'video <id> | title | channel · info'. search (query); history; home = recommended; "
-                "subscriptions = new videos from subscribed channels; channels = subscribed channels (query filters by name); "
-                "open a channel/playlist id to list its videos; play a video id (opens and plays it); list = what's on screen.",
-                "parameters": s(
-                    action={
-                        "type": "string",
-                        "enum": ["resume", "latest", "search", "history", "home", "subscriptions", "channels", "open", "play", "list"],
-                        "req": True,
-                    },
-                    query={"type": "string"},
-                    id={"type": "string"},
+    act = lambda enum, desc: {"type": "string", "enum": enum, "description": desc, "req": True}
+    q = {"type": "string"}
+    fn = lambda name, desc, params: {"type": "function", "function": {"name": name, "description": desc, "parameters": params}}
+    out = [
+        fn("open_app", "Open an app or go Home.", s(name={"type": "string", "enum": names + ["Home"], "req": True})),
+        fn(
+            "youtube",
+            "YouTube (signed in). Lists: 'video <id> | title | channel · info'.",
+            s(
+                action=act(
+                    ["resume", "latest", "search", "history", "home", "subscriptions", "channels", "open", "play", "list"],
+                    "resume: continue the latest video matching query (channel or title), one step · latest: new videos of the "
+                    "channel(s) in query, comma-separated; shows them, doesn't play · home: recommended · channels: subscribed "
+                    "(query filters) · open: channel/playlist id · play: video id · list: what's on screen",
                 ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "jellyfin",
-                "description": "The user's own shows and movies. resume (query = show or movie name): continue it in one step, from where it was left "
-                "off (or the series' next episode). search; next_up (id = series id, or none for all); continue (in-progress list); "
-                "episodes (id = series id); play (id = movie, episode, or series = its next episode; resumes).",
-                "parameters": s(
-                    action={"type": "string", "enum": ["resume", "search", "next_up", "continue", "episodes", "play"], "req": True},
-                    query={"type": "string"},
-                    id={"type": "string"},
+                query=q,
+                id=q,
+            ),
+        ),
+        fn(
+            "jellyfin",
+            "The household's own shows and movies.",
+            s(
+                action=act(
+                    ["resume", "search", "next_up", "continue", "episodes", "play"],
+                    "resume: continue the show or movie in query, one step · next_up (id: series, optional) · continue: in progress "
+                    "· episodes (id: series) · play (id; a series plays its next episode)",
                 ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "seerr",
-                "description": "Get new movies and shows into Jellyfin. search (query) lists 'movie|tv <id> | title (year) · status'; "
-                "request (id, type) asks for it to be downloaded (whole series for tv).",
-                "parameters": s(
-                    action={"type": "string", "enum": ["search", "request"], "req": True},
-                    query={"type": "string"},
-                    id={"type": "string"},
-                    type={"type": "string", "enum": ["movie", "tv"]},
-                ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "say",
-                "description": "Show a short message on the TV right away, while you keep working.",
-                "parameters": s(text={"type": "string", "req": True}),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "page",
-                "description": "The app in front as text (not YouTube). read lists numbered buttons/links/inputs; click target (number or label text); type text into target (or the focused input), submit=true presses Enter; navigate to a url; back.",
-                "parameters": s(
-                    action={"type": "string", "enum": ["read", "click", "type", "navigate", "back"], "req": True},
-                    target={"type": "string"},
-                    text={"type": "string"},
-                    submit={"type": "boolean"},
-                ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "media",
-                "description": "Control what's playing: status, play, pause, toggle, forward/back by seconds, seek to seconds, restart.",
-                "parameters": s(
-                    action={
-                        "type": "string",
-                        "enum": ["status", "play", "pause", "toggle", "forward", "back", "seek", "restart"],
-                        "req": True,
-                    },
-                    seconds={"type": "number"},
-                ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "remote",
-                "description": "Press remote keys in the app in front (last resort). Keys: up, down, left, right, ok, back, home, menu, play_pause; 'down*3' repeats.",
-                "parameters": s(keys={"type": "array", "items": {"type": "string"}, "req": True}),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "tv",
-                "description": "The TV itself: on, off, volume_up/volume_down (times = steps), mute.",
-                "parameters": s(
-                    action={"type": "string", "enum": ["on", "off", "volume_up", "volume_down", "mute"], "req": True},
-                    times={"type": "integer"},
-                ),
-            },
-        },
+                query=q,
+                id=q,
+            ),
+        ),
+        fn(
+            "seerr",
+            "Request movies and shows: they download into Jellyfin. Results show if it's already there.",
+            s(
+                action=act(["search", "request"], "search (query) · request (id, type)"),
+                query=q,
+                id=q,
+                type={"type": "string", "enum": ["movie", "tv"]},
+            ),
+        ),
     ]
+    for tool, (site, app_id) in streaming.SITES.items():
+        a = registry.get(app_id, st)
+        name = a.name if a else tool
+        if tool == "twitch":
+            out.append(
+                fn(
+                    tool,
+                    "Twitch. Lists: 'live|series|video <id> | title | details'.",
+                    s(
+                        action=act(
+                            ["live", "search", "videos", "play"],
+                            "live: followed channels live now · videos: a channel's past broadcasts (query) "
+                            "· play: a channel name (its live stream) or an id from a list",
+                        ),
+                        query=q,
+                        id=q,
+                    ),
+                )
+            )
+            continue
+        out.append(
+            fn(
+                tool,
+                f"{name}. Lists: 'video|series <id> | title | details'.",
+                s(
+                    action=act(
+                        STREAMING_ACTIONS,
+                        "continue: Continue Watching · resume: continue the show in query, one step · latest: a show's newest episodes "
+                        "(query or id) · episodes (query or id, season) · shows: all (query filters) · play: video id · open: series id "
+                        "(or query: a search) · mylist",
+                    ),
+                    query=q,
+                    id=q,
+                    season={"type": "integer"},
+                ),
+            )
+        )
+    out += [
+        fn("say", "Show a short message now, while you keep working.", s(text={"type": "string", "req": True})),
+        fn(
+            "page",
+            "The web app in front, as text.",
+            s(
+                action=act(
+                    ["read", "click", "type", "navigate", "back"],
+                    "read: numbered controls · click target · type text (submit: Enter) · navigate url",
+                ),
+                target=q,
+                text=q,
+                submit={"type": "boolean"},
+            ),
+        ),
+        fn(
+            "media",
+            "What's playing (the app in front first).",
+            s(
+                action=act(
+                    ["status", "play", "pause", "toggle", "forward", "back", "seek", "restart"], "forward/back by seconds; seek to seconds"
+                ),
+                seconds={"type": "number"},
+            ),
+        ),
+        fn(
+            "remote",
+            "Press remote keys (last resort): up down left right ok back home menu play_pause; 'down*3' repeats.",
+            s(keys={"type": "array", "items": {"type": "string"}, "req": True}),
+        ),
+        fn(
+            "tv",
+            "The TV itself.",
+            s(action=act(["on", "off", "volume_up", "volume_down", "mute"], "volume: times = steps"), times={"type": "integer"}),
+        ),
+    ]
+    return out
 
 
 def status_text(name, args):
     """Short line for the on-screen indicator."""
     a = args
+    if name in streaming.SITES:
+        app = registry.get(streaming.SITES[name][1])
+        what = {
+            "search": f"Searching for “{a.get('query')}”",
+            "latest": f"Newest {a.get('query') or 'episodes'}",
+            "resume": f"Resuming {a.get('query') or ''}".strip(),
+            "continue": "Checking Continue Watching",
+            "live": "Who's live",
+            "play": "Starting it",
+            "episodes": "Looking at episodes",
+        }.get(a.get("action"), "Looking")
+        return f"{app.name if app else name}: {what}"
     return {
         "open_app": lambda: f"Opening {a.get('name')}",
         "youtube": lambda: {
@@ -1001,7 +1062,22 @@ def status_text(name, args):
     }.get(name, lambda: name)()
 
 
+def run_streaming(tool, args):
+    a = registry.get(streaming.SITES[tool][1])
+    return streaming.run(
+        tool,
+        args["action"],
+        args.get("query"),
+        args.get("id"),
+        args.get("season"),
+        start=lambda: open_app(a.name, wait=False),
+        raise_app=lambda: raise_window(a.desktop, a.name),
+    )
+
+
 def run_tool(name, args):
+    if name in disabled_tools(settings.load()):
+        return f"{name} isn't available on this box."
     fn = {
         "open_app": lambda: open_app(args["name"]),
         "youtube": lambda: youtube(args["action"], args.get("query"), args.get("id")),
@@ -1012,6 +1088,7 @@ def run_tool(name, args):
         "tv": lambda: tv(args["action"], args.get("times") or 1),
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
         "say": lambda: "Shown.",
+        **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)
     if not fn:
         return f"Unknown tool {name}."
@@ -1024,10 +1101,22 @@ def run_tool(name, args):
 
 
 def screen_summary():
-    """One line about what's on screen, given to the model with each request."""
-    name, p = foreground()
+    """One line about what's in front (any app, from KWin) and what it's playing, given to the
+    model with each request: "play the newest one" means the app in front."""
+    a = app_of_window(active_window())
+    if a == "home":
+        return "Screen: the home screen."
+    if a is not None:
+        site = streaming.site_of_app(a.id)
+        if site:
+            return "Screen: " + streaming.state_line(site, a.name) + "."
+        if a.kind != "web" and a.id not in ("youtube", "jellyfin"):
+            return f"Screen: {a.name} in front."
+        name, p = a.name, app_page(a.name)
+    else:
+        name, p = foreground()
     if not p:
-        return "Screen: the home screen (or an app without a page)."
+        return f"Screen: {name} in front." if name else "Screen: the home screen (or an app without a page)."
     try:
         js = JF_MEDIA_JS if name == "Jellyfin" else MEDIA_JS
         playing = media_line(cdp.call(p, js, "status", None, timeout=4), name)

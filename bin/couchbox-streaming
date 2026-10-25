@@ -118,6 +118,60 @@ class Backend(QObject):
                          daemon=True).start()
 
 
+class Control(QObject):
+    """The control socket (couchbox.appctl) for the voice assistant: back-end calls answer from
+    the socket's thread; opening things and the player go to the QML (command), which keeps
+    state up to date for "what's on screen"."""
+    command = Signal(str)
+
+    def __init__(self, backend, site):
+        super().__init__()
+        self.backend, self.site = backend, site
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(self.site, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": self.site}
+        if op == "state":
+            return dict(self.state, site=self.backend.v.cfg["name"])
+        if op == "call":
+            try:
+                return self.backend.run(req["fn"], req.get("args") or {})
+            except vhx.SignInNeeded:
+                return {"error": f"Sign in to {self.backend.v.cfg['name']} first (open it on the TV).", "signin": True}
+        if op in ("open", "media"):
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running(site):
+    """Already running: hand it this launch's --open (if any) and leave."""
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(site):
+        return False
+    if "--open" in sys.argv:
+        appctl.call(site, {"op": "open", "target": sys.argv[sys.argv.index("--open") + 1]})
+    return True
+
+
 class Shooter(QObject):
     """--shot: lets the QML save the whole window to a PNG."""
     window = None
@@ -154,6 +208,8 @@ def main():
     if "--site" in sys.argv:
         site = sys.argv[sys.argv.index("--site") + 1]
     cfg = vhx.SITES[site]
+    if forward_to_running(site):
+        sys.exit(0)
     app.setOrganizationName("couchbox")              # remembered choices: ~/.config/couchbox/couchbox-<site>.conf
     app.setApplicationName(f"couchbox-{site}")
     app.setApplicationDisplayName(cfg["name"])
@@ -169,8 +225,12 @@ def main():
         engine.addImportPath(str(paths.share() / "ui/stubs"))
     backend = Backend(site)
     shooter = Shooter()
+    control = Control(backend, site)
+    if "--shot" not in sys.argv:
+        control.start()
     ctx = engine.rootContext()
     ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
     ctx.setContextProperty("shooter", shooter)
     ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
     ctx.setContextProperty("site", dict(cfg, key=site))
@@ -189,6 +249,8 @@ def main():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
     code = app.exec()
+    if control.server:
+        control.server.close()
     backend.pool.shutdown(wait=False, cancel_futures=True)
     os._exit(code)                                   # don't wait for requests in flight
 

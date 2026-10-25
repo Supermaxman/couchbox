@@ -34,12 +34,13 @@ class Agent:
         self.summary = ""
         self.last = 0.0
         self.asked = False  # the last reply was a question
+        self.tool_list = None  # this request's tools: the same for each of its steps
 
     # -------------------------------------------------------------- model calls
     def chat(self, messages, with_tools=True, cancel=None):
         body = {"model": self.model, "messages": messages}
         if with_tools:
-            body["tools"] = tools.schemas()
+            body["tools"] = self.tool_list or tools.schemas()
         for attempt, delay in enumerate((0,) + RETRY_DELAYS):
             if delay:
                 self.log(f"retrying the model in {delay}s")
@@ -55,27 +56,40 @@ class Agent:
                     self.log(f"model HTTP {r.status_code}: {r.text[:200]}")
                     continue
                 r.raise_for_status()
-                return r.json()["choices"][0]["message"]
+                j = r.json()
+                u = j.get("usage") or {}
+                cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens")
+                if cached is None:  # llama.cpp's own numbers
+                    cached = (j.get("timings") or {}).get("cache_n")
+                self.log(
+                    f"model: {u.get('prompt_tokens')} prompt tokens ({cached if cached is not None else '?'} cached), {u.get('completion_tokens')} out"
+                )
+                return j["choices"][0]["message"]
             except (requests.ConnectionError, requests.Timeout) as err:
                 self.log(f"model unreachable: {err}")
         raise RuntimeError("The assistant model server isn't answering.")
 
     # -------------------------------------------------------------- memory
     def system(self):
+        """Only what rarely changes, so the model server's prompt cache keeps it (with the tools,
+        which change only with the home row): the time and the screen go in each request."""
         from couchbox import settings
 
         text = open(PROMPT).read().strip()
-        st = settings.load()
-        off = tools.disabled_tools(st)
-        if off:
-            text += "\n\nNot set up on this box (don't mention or use): " + ", ".join(sorted(off)) + "."
-        if st["voice.notes"].strip():  # the household's own vocabulary (channel nicknames etc.)
-            text += "\n\nAbout this household:\n" + st["voice.notes"].strip()
-        text += "\n\nApps on the home screen: " + ", ".join(n for _, n in tools.home_apps()) + "."
-        text += "\nNow: " + time.strftime("%A %B %-d, " + ("%H:%M" if settings.derived(st)["clock24"] else "%-I:%M %p")) + "."
+        notes = settings.get("voice.notes").strip()
+        if notes:  # the household's own vocabulary (channel nicknames etc.)
+            text += "\n\nAbout this household:\n" + notes
         if self.summary:
             text += "\n\nEarlier in this conversation:\n" + self.summary
         return {"role": "system", "content": text}
+
+    @staticmethod
+    def note():
+        """The per-request context, after the user's words: what's on screen, and the time."""
+        from couchbox import settings
+
+        clock = "%H:%M" if settings.derived()["clock24"] else "%-I:%M %p"
+        return f"[{tools.screen_summary()} Now: {time.strftime('%a %b %-d, ' + clock)}.]"
 
     def history(self):
         return [m for t in self.turns for m in t]
@@ -122,7 +136,8 @@ class Agent:
         if self.size() > COMPACT_CHARS:
             status("thinking", "Tidying up memory")
             self.compact(cancel)
-        turn = [{"role": "user", "content": f"{text}\n\n[{tools.screen_summary()}]"}]
+        self.tool_list = tools.schemas()
+        turn = [{"role": "user", "content": f"{text}\n\n{self.note()}"}]
         self.turns.append(turn)
         for step in range(MAX_STEPS):
             if cancel.is_set():
