@@ -1,0 +1,4 @@
+# The Ubuntu image Couchbox images are built on (Ubuntu 26.10 for Raspberry Pi, server).
+# Update both lines together; CI checks the download against the SHA-256.
+BASE_URL=https://cdimage.ubuntu.com/ubuntu/releases/26.10/release/ubuntu-26.10-preinstalled-server-arm64+raspi.img.xz
+BASE_SHA256=52b6f58ce110bae34813729ddb54fe76333a1aa07ff5b032f47e41b7984c4b34

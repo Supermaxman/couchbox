@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox image: cloud-init only on the first boot (Raspberry Pi Imager's settings)
+After=cloud-final.service
+ConditionPathExists=/etc/couchbox/image-version
+ConditionPathExists=!/etc/cloud/cloud-init.disabled
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/touch /etc/cloud/cloud-init.disabled
+
+[Install]
+WantedBy=cloud-init.target multi-user.target

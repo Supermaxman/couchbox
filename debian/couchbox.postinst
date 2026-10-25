@@ -23,14 +23,22 @@ configure)
     install -d -m 700 /var/lib/couchbox/secrets /var/lib/couchbox/updates
     chmod 700 /etc/couchbox/luks
     python3 -c 'from couchbox import settings; settings.write_env()'
+    # SSH: keys only. On a system that already had SSH on (installed with install.sh over SSH),
+    # it stays on, and password logins stay allowed until some account has a key.
+    first_install=0; [ -z "$2" ] && first_install=1
+    if [ "$first_install" = 1 ] && ! in_chroot && systemctl is-enabled ssh.service >/dev/null 2>&1; then
+        python3 -c 'from couchbox import settings; settings.update({"ssh.enabled": True})' || true
+    fi
     install -d /etc/ssh/sshd_config.d
-    cat > /etc/ssh/sshd_config.d/00-couchbox.conf <<'X'
+    if in_chroot || ls /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys >/dev/null 2>&1; then
+        cat > /etc/ssh/sshd_config.d/00-couchbox.conf <<'X'
 # Couchbox: SSH is keys only (Settings → Remote access). 00- sorts first; sshd keeps the first value.
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 AuthenticationMethods publickey
 X
+    fi
     # NetworkManager runs networking, so Settings can change Wi-Fi
     if [ -d /etc/netplan ]; then
         printf 'network:\n  version: 2\n  renderer: NetworkManager\n' > /etc/netplan/90-couchbox-networkmanager.yaml

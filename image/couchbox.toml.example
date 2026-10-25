@@ -1,0 +1,40 @@
+# Couchbox preseed: copy this file to couchbox.toml (same folder) and fill in what you like.
+# It's read once, at first boot; passwords and keys in it are erased afterwards.
+# Everything is optional: the setup on the TV asks for whatever is missing.
+
+hostname = "livingroom"
+timezone = "America/Chicago"
+
+[wifi]
+ssid = ""
+password = ""          # erased after first boot
+country = "US"
+
+[location]
+name = ""              # e.g. "Springfield, IL" (looked up for the weather)
+
+[updates]
+mode = "automatic"     # or "manual"
+channel = "stable"     # or "beta"
+
+[media]
+jellyfin_url = ""      # e.g. "http://192.168.1.20:8096"
+seerr_url = ""
+
+[voice]
+mode = "off"           # "dictation" or "assistant"
+stt_url = ""           # OpenAI-compatible, e.g. "http://192.168.1.20:8000/v1"
+stt_model = ""
+llm_url = ""
+llm_model = ""
+llm_api_key = ""       # erased after first boot
+
+[ssh]
+github_user = ""       # turns SSH on with this GitHub user's keys
+
+[tailscale]
+auth_key = ""          # erased after first boot
+tags = ""
+
+[skip]
+wizard = false         # true: straight to the home screen

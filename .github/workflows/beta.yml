@@ -1,0 +1,40 @@
+name: Beta release
+
+# A prerelease for the beta channel, from main: Actions → Beta release → Run workflow,
+# version like 0.3.0-beta.1. Boxes on the beta channel pick it up; stable ones don't.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.3.0-beta.1)"
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' || { echo "::error::version must look like 1.2.3-beta.4"; exit 1; }
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --prerelease --title "v$VERSION" \
+            --notes "Beta release from $(git rev-parse --short HEAD). Changes since the last release: see the commits."
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: tag
+    uses: ./.github/workflows/build-release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+      prerelease: true
+    secrets: inherit
