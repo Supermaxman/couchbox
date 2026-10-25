@@ -19,7 +19,7 @@ This is the tested set. Other NVMe drives and cases generally work, but only thi
 
 | Path | For | Steps |
 |---|---|---|
-| **A. Image (recommended)** | Everyone | Flash `couchbox-<version>-rpi5.img.xz`, boot, follow the TV |
+| **A. Image on a USB stick (recommended)** | Everyone | Write `couchbox-<version>-rpi5.img.xz` to a USB stick, boot the Pi from it, follow the TV. The wizard installs to the SSD. No keyboard or monitor ([install.md](../install.md)) |
 | B. Installer | People already running Ubuntu Server 26.10 on a Pi 5 | `curl -fsSL https://github.com/Supermaxman/couchbox/releases/latest/download/install.sh \| sudo bash`, then reboot into the wizard ([image-and-packaging.md](image-and-packaging.md#installer)) |
 
 ### A. Flashing
@@ -29,10 +29,22 @@ This is the tested set. Other NVMe drives and cases generally work, but only thi
   - Then *Choose OS* → **Couchbox**.
   - Imager's **OS customisation** works: Wi-Fi, host name, time zone, user and SSH key are applied at first boot through cloud-init. Every one is optional; the wizard asks for whatever is missing.
 - **Any image writer** (Etcher, `dd`, GNOME Disks): write the `.img.xz`.
-- **NVMe:** write to the drive in a USB NVMe adapter, then fit it to the HAT+.
+- **USB stick → SSD (the default path):** the Pi 5 bootloader's default order is SD card, NVMe, USB.
+  - A blank SSD is skipped, so the stick boots.
+  - The wizard's **Install to the SSD** step (`couchbox.install_disk`) copies the running system to the NVMe drive:
+    - a FAT boot partition the size of the stick's;
+    - an ext4 root over the rest of the drive;
+    - `rsync -aHAXx`;
+    - fstab and every `cmdline.txt` rewritten to the new partitions' PARTUUIDs;
+    - a fresh swap file.
+  - It's the same box: settings, Wi-Fi, the paired remote, the machine-id and the wizard's progress come along.
+  - After the restart the SSD boots first, even with the stick still in. The PARTUUIDs keep `LABEL=writable` on the stick from being picked by mistake.
+  - From an SD card, the card has to come out: the wizard shuts down and says so.
+  - Tested on loop devices in CI (`ci/install-disk-loop.sh`). Also `couchbox install-to-disk` over SSH.
+- **NVMe directly:** write to the drive in a USB NVMe adapter, then fit it to the HAT+. The wizard skips the install step.
   - The Pi 5 bootloader boots NVMe when no SD card is inserted. This needs current bootloader firmware, and Pi 5 boards from 2024 on have it.
   - **To verify in M4:** the factory EEPROM boot order on new boards, and whether we need to tell people to update the bootloader first. The fallback is Raspberry Pi Imager's "Bootloader → NVMe/USB boot" image on a spare SD card.
-- **SD card:** works as is. Settings → System → **Move to NVMe** (post-1.0) will copy a running SD install to an NVMe drive.
+- **SD card:** works like the stick. Install to the SSD from it, or keep running from the card.
 
 ### Preseed
 
@@ -71,12 +83,17 @@ Order: package defaults, then Imager/cloud-init, then `couchbox.toml`, then the 
    - the **TV remote over CEC** (arrows, OK, Back);
    - a Fire TV remote, once paired;
    - a USB keyboard;
-   - later, the phone page.
+   - **the phone:** every step shows the phone page's QR code (by IP address, since not every phone resolves `.local`).
+     - Offline for 25 s (no Ethernet, no Wi-Fi from Imager or the preseed)? couchboxd opens a **setup Wi-Fi**, `Couchbox-XXXX`, with a random password. It's NetworkManager's hotspot at 10.42.0.1.
+     - The TV then shows two codes: a `WIFI:` code to join, and the phone page at `http://10.42.0.1:8791`.
+     - The radio can't scan while it's a hotspot, so the Wi-Fi list is the scan from just before.
+     - Joining home Wi-Fi closes the hotspot, and reopens it if the join fails. Ethernet coming up, or the end of the wizard, closes it too.
 
 | Step | What it shows | Skippable |
 |---|---|---|
 | 1. Hello | "Couchbox. Use your TV remote's arrows and OK." Also starts **scanning for remotes** in the background | — |
 | 2. Remote | "Have a Fire TV remote? Hold its **Home** button for 10 seconds." Pairs automatically as soon as one shows up (BlueZ agent, retries), then: "Press any button on the new remote" to confirm. Also explains: don't factory-reset the remote (Menu + Back + Left) because that erases its TV IR codes | yes ("Use the TV remote") |
+| 2b. Install to the SSD | Only when running from a USB stick or SD card with an SSD present. Copy, then restart (stick) or shut down and remove the card (SD). Setup resumes at Network on the SSD | yes ("keep running from the stick") |
 | 3. Network | Ethernet connected → shows it, Next. Otherwise the Wi-Fi list → password on the on-screen keyboard. Checks internet access and shows the result | no (needed for apps and time) |
 | 4. Time zone and location | A suggestion from the Wi-Fi country, or "Detect" (asks once). City search for the weather (optional). °F/°C | yes |
 | 5. Name | `couchbox`, or type one. Used on the network, in AirPlay and in the TV's source list | yes |
@@ -99,7 +116,7 @@ The wizard stores its progress in `/var/lib/couchbox/state/setup.json`, so a reb
 - **No remote at all:**
   - The TV's own remote keeps working over CEC.
   - A USB keyboard works.
-  - The phone page works once the network is up; its QR code is in Settings → Remote access.
+  - The phone page: its QR code is on every wizard step (through the setup Wi-Fi when offline), and later in Settings → Remote access.
 
 ## Failure paths the wizard handles
 

@@ -90,20 +90,20 @@ Details: [ci-and-testing.md](design/ci-and-testing.md).
 
 ## 6. Fresh-hardware acceptance test (M8)
 
-The person running it gets only the README:
-1. Flash the image with Raspberry Pi Imager onto the NVMe drive (USB adapter) or an SD card.
-2. Optionally set Wi-Fi and a user in Imager's customisation.
-3. Plug in and power on. The TV wakes up and switches to the box over CEC.
-4. Go through the wizard with the **TV remote only**:
+The person running it gets only the README and [the install guide](install.md). The run sheet is [hardware-test.md](hardware-test.md):
+1. Write the image to a USB stick with Raspberry Pi Imager. Optionally set Wi-Fi in Imager's customisation.
+2. Plug in and power on, with no keyboard or monitor. The TV wakes up and switches to the box over CEC.
+3. Go through the wizard with the **TV remote**, the **Fire TV remote** or the **phone** (QR code; with no network, through the setup Wi-Fi):
    - pair the Fire TV remote;
+   - **install to the SSD**, and restart from it;
    - set up Wi-Fi;
    - choose the time zone;
    - name the box;
    - choose updates (leave them on Automatic).
-5. Watch YouTube at 1080p60, Twitch with chat, and an AirPlay mirror.
-6. In Settings, turn on and test each of: Tailscale (QR sign-in), Jellyfin (found on the LAN), Seerr, voice endpoints, encryption with Tang over Wi-Fi.
-7. Publish a test release `vX.Y.Z+1`. The box updates itself overnight, with the TV in standby, and shows what's new.
-8. Publish a deliberately broken test release. The box rolls back by itself and reports it in Settings → Updates.
+4. Watch YouTube at 1080p60, Twitch with chat, and an AirPlay mirror.
+5. In Settings, turn on and test each of: Tailscale (QR sign-in), Jellyfin (found on the LAN), Seerr, voice endpoints, encryption with Tang over Wi-Fi.
+6. Publish a test release `vX.Y.Z+1`. The box updates itself overnight, with the TV in standby, and shows what's new.
+7. Publish a deliberately broken test release. The box rolls back by itself and reports it in Settings → Updates.
 
 ## 7. Risks
 
@@ -139,7 +139,7 @@ The person running it gets only the README:
 | M6a | Partly | Online re-encryption is proven on loop devices in CI (`ci/encryption-loop.sh`). The Pi 5 measurement and the LUKS image layout (`build-image.sh --luks`) wait for hardware. The image ships plain ext4 until then |
 | M6b | Code done, hardware test pending | Settings → Security flow; `couchbox.encryption` |
 | M7 | Done | `media.yml` builds `couchbox-media` natively on arm64 |
-| M8 | Waiting for hardware | |
+| M8 | Ready for the live test | No keyboard or monitor needed: USB stick → TV. The setup has the phone remote from the first screen, a setup Wi-Fi when offline, and **Install to the SSD** (tested on loop devices in CI, `ci/install-disk-loop.sh`). Run sheet: [hardware-test.md](hardware-test.md) |
 | M9 | `couchbox import-mtv` ready | |
 
 **Changes from the design while building:**

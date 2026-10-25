@@ -28,7 +28,8 @@ NODES=$!
 # a partition is there when the kernel has it and the node matches (privileged containers
 # start with stale nodes copied from the host)
 waitdev() {
-  local s=/sys/block/$(basename "${1%p[0-9]*}")/$(basename "$1")/dev
+  local s
+  s=/sys/block/$(basename "${1%p[0-9]*}")/$(basename "$1")/dev
   for _ in $(seq 50); do
     [[ -e $s && -b $1 && $(stat -c '%Hr:%Lr' "$1") == "$(cat "$s")" ]] && return 0; sleep 0.2
   done

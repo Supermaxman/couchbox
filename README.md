@@ -2,11 +2,18 @@
 
 **An open-source TV box you own end to end.** Couchbox turns a Raspberry Pi 5 into a TV box you control with a remote. It replaces a Fire TV Stick or Roku. One HDMI cable to the TV carries the picture, the sound and HDMI-CEC, so the TV turns on and off with the box.
 
-> **Status: first preview (`v0.1.0`) on its way.** The code is ported from a prototype that runs a real TV every day, and CI builds and tests it, including a bootable image. Fresh-hardware validation (milestone M8) comes before 1.0. See [docs/PLAN.md](docs/PLAN.md) and [docs/install.md](docs/install.md).
+> **Status: preview.** The code is ported from a prototype that runs a real TV every day, and CI builds and tests it, including a bootable image. Fresh-hardware validation (milestone M8) comes before 1.0. See [docs/PLAN.md](docs/PLAN.md).
+
+## Install
+
+**→ [The install guide](docs/install.md)**. It takes about 20 minutes, with no keyboard or monitor:
+1. Write Couchbox onto a USB stick with Raspberry Pi Imager.
+2. Plug the stick into the Pi and the Pi into the TV.
+3. Follow the setup on the TV, using the TV's remote, a Fire TV remote or your phone (scan the QR code). The setup copies Couchbox onto the SSD for you.
 
 ## What it does
 
-- **Flash and go.** You write an image to an SSD or SD card, plug the box into the TV, and follow the on-screen setup with your TV's remote or a Fire TV remote. You don't need a keyboard, SSH or a config file.
+- **Flash and go.** You write the image to a USB stick, plug the box into the TV, and follow the on-screen setup with your TV's remote, a Fire TV remote or your phone. The setup installs Couchbox onto the SSD. You don't need a keyboard, a monitor, SSH or a config file.
 - **TV interface:** KDE Plasma Bigscreen on Ubuntu, with a home row you can reorder and hide apps in. It shows a clock and the weather.
 - **Apps:**
   - YouTube (VacuumTube, ad-free, with SponsorBlock);
@@ -36,7 +43,8 @@ Couchbox targets the **Raspberry Pi 5 (8 GB recommended)** with an NVMe SSD on t
 
 | Doc | What |
 |---|---|
-| [docs/install.md](docs/install.md) | **Install**: flash the image (or run the installer), set up on the TV |
+| [docs/install.md](docs/install.md) | **Install**: USB stick → TV → phone or remote, step by step, with troubleshooting |
+| [docs/hardware-test.md](docs/hardware-test.md) | The checklist for testing a release on fresh hardware |
 | [docs/PLAN.md](docs/PLAN.md) | The plan: goals, decisions, milestones with done-when criteria, risks, progress |
 | [docs/design/architecture.md](docs/design/architecture.md) | Components, processes, privilege and security model, file layout |
 | [docs/design/settings.md](docs/design/settings.md) | Every setting, the Settings app, and home screen customization |
