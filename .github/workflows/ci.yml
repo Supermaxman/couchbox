@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: ${{ matrix.check }}
+    runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, unit, qml, encryption-loop]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: CI image (Ubuntu 26.10)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: couchbox-dev
+          load: true
+          cache-from: type=gha,scope=ci-image
+          cache-to: type=gha,mode=max,scope=ci-image
+      - name: lint
+        if: matrix.check == 'lint'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src couchbox-dev sh -c '
+            set -e
+            ruff check src tests bin/couchbox-firstboot bin/couchbox-updater
+            ruff format --check src tests
+            shellcheck -S warning $(grep -l "^#!/.*sh" bin/* ci/*.sh installer/*.sh image/*.sh system/dracut/90couchbox/*.sh 2>/dev/null)
+            python3 ci/check_data.py
+            reuse lint'
+      - name: unit tests
+        if: matrix.check == 'unit'
+        run: docker run --rm -v "$PWD:/src" -w /src couchbox-dev python3 -m pytest --cov --cov-report=term-missing:skip-covered -p no:cacheprovider
+      - name: QML lint and screenshots
+        if: matrix.check == 'qml'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src couchbox-dev sh -c 'ci/qmllint.sh && ci/screenshots.sh build/shots'
+      - uses: actions/upload-artifact@v4
+        if: matrix.check == 'qml' && always()
+        with:
+          name: screenshots
+          path: build/shots
+          if-no-files-found: ignore
+      - name: encryption on loop devices
+        if: matrix.check == 'encryption-loop'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin e2fsprogs && sudo ci/encryption-loop.sh
+
+  package:
+    runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: couchbox-dev
+          load: true
+          cache-from: type=gha,scope=ci-image
+      - name: build the .deb
+        run: |
+          docker run --rm -v "$PWD:/src" couchbox-dev sh -c '
+            set -e; cp -r /src /tmp/b; cd /tmp/b; rm -rf .git build
+            dpkg-buildpackage -us -uc -b
+            lintian --fail-on error ../couchbox_*.deb
+            mkdir -p /src/build && cp ../couchbox_*.deb /src/build/'
+      - name: install into a clean Ubuntu 26.10
+        run: docker run --rm -v "$PWD/build:/debs" ubuntu:26.10 sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /debs/couchbox_*.deb >/tmp/apt.log 2>&1 || { tail -40 /tmp/apt.log; exit 1; }; couchbox doctor --container && couchbox config set voice.mode dictation && couchbox config get voice.mode && apt-get purge -y -qq couchbox >/dev/null && test ! -e /etc/couchbox'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: build/*.deb
+
+  no-private-values:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: private values (patterns kept in a secret)
+        env:
+          PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+        run: |
+          if [ -z "$PATTERNS" ]; then echo "::notice::PRIVATE_PATTERNS isn't available here (fork PR): skipped"; exit 0; fi
+          printf '%s\n' "$PATTERNS" | grep -v '^$' > /tmp/p
+          if git grep -I -l -i -E -f /tmp/p -- . ':!docs/design/porting.md'; then echo "::error::private values in the files above (contents not shown: this log is public)"; exit 1; fi

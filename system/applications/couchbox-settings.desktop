@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Couchbox settings: network, home screen, apps, voice, remote, updates
+Icon=preferences-system
+Exec=/usr/lib/couchbox/bin/couchbox-settings
+StartupWMClass=couchbox-settings
+Categories=Settings;

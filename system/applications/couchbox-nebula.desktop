@@ -3,6 +3,6 @@ Type=Application
 Name=Nebula
 Comment=Nebula as a TV app (shows, episodes, search, player for the remote)
 Icon=applications-multimedia
-Exec=couchbox-nebula
+Exec=/usr/lib/couchbox/bin/couchbox-nebula
 StartupWMClass=couchbox-nebula
 Categories=AudioVideo;Video;

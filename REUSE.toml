@@ -1,0 +1,25 @@
+version = 1
+
+[[annotations]]
+path = ["**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Couchbox Authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["shell/home/HomeHeader.qml", "shell/home/HomeScreen.qml", "shell/home/indicators/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2015-2025 Marco Martin, Aditya Mehra, Devin Lin and the Plasma Bigscreen authors; 2026 The Couchbox Authors"
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = ["shell/home/launcher/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2015-2025 Marco Martin, Devin Lin; 2026 The Couchbox Authors"
+SPDX-License-Identifier = "LGPL-2.0-or-later"
+
+[[annotations]]
+path = ["shell/theme/tiles/logos/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "The respective services (trademarks, used to identify them)"
+SPDX-License-Identifier = "LicenseRef-Trademark"

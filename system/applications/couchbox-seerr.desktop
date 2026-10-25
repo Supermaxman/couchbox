@@ -4,5 +4,5 @@ Name=Seerr
 Comment=Request movies and shows for Jellyfin
 Icon=applications-multimedia
 Categories=AudioVideo;Video;
-Exec=couchbox-seerr
+Exec=/usr/lib/couchbox/bin/couchbox-seerr
 StartupWMClass=couchbox-seerr

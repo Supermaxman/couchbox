@@ -311,7 +311,7 @@ FocusScope {
                     Text { id: liveT; anchors.centerIn: parent; text: "LIVE"; color: "white"; font.family: D.font; font.pixelSize: 20 * D.u; font.weight: Font.Black }
                 }
                 Text {
-                    text: player.v && player.v.started ? "◷ " + (player.tick, D.uptime(player.v.started)) : ""
+                    text: player.v && player.v.started ? "◷ " + D.uptime(player.v.started, player.tick) : ""
                     color: D.text; font.family: D.font; font.pixelSize: 23 * D.u; font.weight: Font.DemiBold
                     anchors.verticalCenter: parent.verticalCenter
                 }

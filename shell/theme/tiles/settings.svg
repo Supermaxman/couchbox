@@ -1,0 +1,19 @@
+<svg data-couchbox-glow="#7aa2ff" xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <!-- Couchbox home tile: Settings (always last on the row). Rendered to PNG by couchbox.home. -->
+  <defs>
+    <clipPath id="r"><rect width="800" height="450" rx="36"/></clipPath>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a3350"/><stop offset="1" stop-color="#141826"/></linearGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="800" height="450" fill="url(#bg)"/>
+    <g transform="translate(270 225)" fill="none" stroke="#e8ecff" stroke-width="16" stroke-linejoin="round">
+      <path d="M-14 -78h28l6 22a60 60 0 0 1 17 10l22-7 14 24-17 15a60 60 0 0 1 0 20l17 15-14 24-22-7a60 60 0 0 1-17 10l-6 22h-28l-6-22a60 60 0 0 1-17-10l-22 7-14-24 17-15a60 60 0 0 1 0-20l-17-15 14-24 22 7a60 60 0 0 1 17-10z"/>
+      <circle r="24"/>
+    </g>
+    <text x="380" y="245" font-family="Inter, sans-serif" font-size="72" font-weight="700" fill="#e8ecff">Settings</text>
+    <rect width="800" height="450" fill="url(#sheen)"/>
+  </g>
+</svg>

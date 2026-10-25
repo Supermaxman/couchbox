@@ -173,7 +173,7 @@ def reencrypt(dev: str | None = None) -> None:
     dev = dev or root_device()
     meta = luks_meta(dev)
     resuming = "online-reencrypt" in json.dumps((meta.get("config") or {}).get("requirements") or {})
-    cmd = ["cryptsetup", "reencrypt", "--progress-json", "--key-file", str(image_key())]
+    cmd = ["cryptsetup", "reencrypt", "--batch-mode", "--progress-json", "--progress-frequency", "5", "--key-file", str(image_key())]
     cmd += ["--resume-only"] if resuming else ["--resilience", "checksum"]
     cmd.append(dev)
     log.info("%s %s", "resuming" if resuming else "starting", " ".join(cmd))
@@ -183,8 +183,8 @@ def reencrypt(dev: str | None = None) -> None:
         if line.startswith("{"):
             try:
                 p = json.loads(line)
-                done, size = int(p.get("bytes", 0)), int(p.get("size", 0)) or 1
-                progress_file().write_text(json.dumps({"percent": round(100 * done / size, 1), "eta_s": p.get("eta_ms", 0) // 1000}))
+                done, size = int(p.get("device_bytes", 0)), int(p.get("device_size", 0)) or 1
+                progress_file().write_text(json.dumps({"percent": round(100 * done / size, 1), "eta_s": int(p.get("eta_ms", 0)) // 1000}))
             except (ValueError, OSError):
                 pass
         else:
