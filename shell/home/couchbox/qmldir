@@ -1,0 +1,4 @@
+singleton Style 1.0 Style.qml
+Home 1.0 Home.qml
+AppTile 1.0 AppTile.qml
+Weather 1.0 Weather.qml

@@ -1,0 +1,15 @@
+[Unit]
+Description=Couchbox voice control (remote mic -> speech-to-text, dictation or assistant)
+Documentation=file:///usr/lib/couchbox/bin/couchbox-voice
+After=bluetooth.service network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-voice
+RuntimeDirectory=couchbox/voice
+OOMScoreAdjust=-500
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

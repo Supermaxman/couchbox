@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""couchbox-jellyfin-stats: is Jellyfin's video smooth? While something plays, samples the
+player for a few seconds and prints the decoder in use and frames dropped meanwhile.
+  couchbox-jellyfin-stats [seconds]      (default 20)"""
+import json, os, pwd, socket, sys, time
+
+user = "tv"
+uid = pwd.getpwnam(user).pw_uid
+if os.geteuid() not in (0, uid):
+    os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+path = f"/run/user/{uid}/mpv-jellyfin.sock"
+try:
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(path)
+except OSError:
+    sys.exit(f"No player socket at {path}: is Jellyfin open (and set up by 9-jellyfin-hevc.sh)?")
+f = s.makefile("rwb")
+
+def get(prop):
+    f.write((json.dumps({"command": ["get_property", prop], "request_id": 7}) + "\n").encode())
+    f.flush()
+    while True:
+        r = json.loads(f.readline())
+        if r.get("request_id") == 7:
+            return r.get("data")
+
+counters = ["frame-drop-count", "decoder-frame-drop-count", "vo-delayed-frame-count"]
+if get("time-pos") is None:
+    sys.exit("Nothing is playing.")
+secs = float(sys.argv[1]) if len(sys.argv) > 1 else 20
+before = {c: get(c) or 0 for c in counters}
+t0 = get("time-pos")
+time.sleep(secs)
+fps = get("container-fps") or 0
+print(f"video     {get('video-codec')}  {get('width')}x{get('height')} @ {fps:.3f} fps")
+print(f"decoder   {get('hwdec-current')} (no = software)")
+played = (get("time-pos") or t0) - t0
+print(f"played    {played:.1f} s in {secs:.0f} s  (~{played * fps:.0f} frames)")
+for c in counters:
+    print(f"{c:25} +{(get(c) or 0) - before[c]}")

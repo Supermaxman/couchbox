@@ -1,0 +1,10 @@
+{
+  "id": "twitch",
+  "name": "Twitch",
+  "desktop": "couchbox-twitch.desktop",
+  "kind": "native",
+  "tile": "twitch",
+  "default_order": 70,
+  "unofficial": true,
+  "settings_page": "apps/twitch"
+}

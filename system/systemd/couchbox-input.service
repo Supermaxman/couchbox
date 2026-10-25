@@ -1,0 +1,13 @@
+[Unit]
+Description=Couchbox remote key mapper (Fire TV remote, TV remote over CEC)
+Documentation=file:///usr/share/couchbox/input/default.toml
+After=bluetooth.service
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-input
+OOMScoreAdjust=-900
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

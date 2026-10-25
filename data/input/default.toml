@@ -1,0 +1,55 @@
+# couchbox-input key map, installed to /etc/couchbox/input.toml.
+#
+# Each [device.<name>] section applies to every input device it matches; the first
+# matching section wins. Matched devices are grabbed exclusively, their keys are
+# rewritten or dropped per [device.<name>.map], and everything else passes through.
+# Devices that match no section are left alone.
+#
+# Key names are Linux input names (KEY_*). To see what a remote actually sends:
+#   sudo couchbox-input --monitor
+# After editing:  sudo systemctl restart couchbox-input
+#
+# Bigscreen keys (plasma-bigscreen 6.7.5 shortcuts.cpp / backhandler.cpp): Home = KEY_HOMEPAGE,
+# Menu = KEY_MENU (tasks), Settings = Qt::Key_Settings, Back = Esc or KEY_BACK.
+
+[device.fire-remote]
+# Amazon Fire TV remotes. Over Bluetooth LE they report Amazon's Bluetooth company id
+# 0171 (seen on the Pi: "AR" and "AR Keyboard"); 1949 is Lab126's USB id.
+# Power, Volume and Mute switch the TV by IR: sudo couchbox-remote-ir program stores the TV's codes
+# in the remote (a factory reset of the remote erases them); their Bluetooth copies are dropped.
+match = { vendor = ["0171", "1949"] }
+# Vendor HID reports read from the remote's hidraw node: 0xEF carries the app buttons
+# (a1 Prime Video, a2 Netflix, a3 app button, a4 Music, per pi-zero-remote-bridge); 0xF1 is
+# undocumented and only logged. Map them as "hid:ef:a1" etc.
+hid_reports = ["ef", "f1"]
+
+[device.fire-remote.map]
+KEY_POWER = "drop"                              # Power switches the TV by IR (codes stored in the
+                                                # remote by couchbox-remote-ir); its Bluetooth copy is ignored
+KEY_PROGRAM = "run:couchbox-tv power"                # Guide button (HID 0x8d): TV power over CEC
+"scan:c0002" = "run:couchbox-tv next-input"          # clone button (HID 0x0002): TV to this box, then
+                                                # its other HDMI inputs on further presses
+KEY_SEARCH = "drop"                             # mic button: couchbox-voice handles it (hidraw), so
+                                                # Bigscreen's search bar doesn't open too
+KEY_VOLUMEUP = "drop"                           # Volume and Mute: IR straight to the TV too
+KEY_VOLUMEDOWN = "drop"                         # (couchbox-remote-ir); over CEC they were one slow step
+KEY_MUTE = "drop"                               # at a time. Back to CEC: "run-repeat:couchbox-tv volume-up" etc.
+KEY_BACK = "voice-or:KEY_ESC"                   # dismisses the voice assistant if it's up
+KEY_SELECT = "KEY_ENTER"
+KEY_KPENTER = "KEY_ENTER"          # the D-pad centre sends keypad Enter (seen on the Pi)
+"hid:ef:a1" = "mouse-mode"         # Prime Video button: mouse mode on/off (arrows move a pointer,
+                                   # OK clicks, Rewind / Fast-forward scroll), for web pages
+KEY_HOMEPAGE = "KEY_HOMEPAGE+run:couchbox-pause-all"  # Home: the home screen, and pause what's playing
+# Menu (KEY_MENU) passes through unchanged. Bigscreen binds Qt::Key_HomePage to its home
+# screen and Qt::Key_Menu to the running-apps overview.
+
+[device.tv-remote-cec]
+# The TV's own remote, arriving over HDMI-CEC (kernel rc-cec keymap).
+match = { name_contains = "hdmi" }
+
+[device.tv-remote-cec.map]
+KEY_OK = "KEY_ENTER"
+KEY_SELECT = "KEY_ENTER"
+KEY_EXIT = "voice-or:KEY_ESC"
+KEY_BACK = "voice-or:KEY_ESC"
+KEY_ROOT_MENU = "KEY_HOMEPAGE+run:couchbox-pause-all"   # TV remote Home/Menu -> home screen, pause

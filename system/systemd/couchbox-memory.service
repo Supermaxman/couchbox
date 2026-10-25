@@ -1,0 +1,13 @@
+[Unit]
+Description=Couchbox memory: close unused apps, set which processes the kernel kills first
+Documentation=file:///usr/lib/couchbox/bin/couchbox-memory
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-memory
+RuntimeDirectory=couchbox/memory
+OOMScoreAdjust=-900
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

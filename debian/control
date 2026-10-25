@@ -1,0 +1,30 @@
+Source: couchbox
+Section: video
+Priority: optional
+Maintainer: Couchbox Authors <couchbox@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), dh-python, python3
+Standards-Version: 4.7.0
+Homepage: https://github.com/Supermaxman/couchbox
+Vcs-Git: https://github.com/Supermaxman/couchbox.git
+Vcs-Browser: https://github.com/Supermaxman/couchbox
+Rules-Requires-Root: no
+
+Package: couchbox
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends},
+ python3-dbus-fast, python3-evdev, python3-dbus, python3-gi, python3-requests, python3-websocket,
+ python3-pyside6.qtquick, python3-pyside6.qtdbus, python3-mpv, qt6-image-formats-plugins,
+ qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-window,
+ qml6-module-qtquick-shapes, qml6-module-qtquick-effects, qml6-module-qtcore, qml6-module-org-kde-layershell, qml-qt6,
+ plasma-bigscreen, kwin-wayland, sddm, kscreen, plasma-nm, plasma-pa, bluedevil, xdg-desktop-portal-kde, libkf6config-bin,
+ breeze, breeze-icon-theme, fonts-inter, fonts-noto-core, fonts-noto-color-emoji, librsvg2-bin,
+ network-manager, bluez, pipewire-pulse, wireplumber, avahi-daemon, libglib2.0-bin,
+ flatpak, uxplay, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav,
+ mpv, ffmpeg, cec-utils, v4l-utils, libopus0, qrencode, iw, wpasupplicant, jq, curl, openssh-client,
+ cryptsetup, clevis, clevis-luks, clevis-dracut, dracut, unattended-upgrades
+Recommends: couchbox-media, tailscale, openssh-server, rpi-eeprom, raspi-utils-core, evtest
+Description: open-source TV box for the Raspberry Pi 5
+ Couchbox turns a Raspberry Pi 5 into a TV box: KDE Plasma Bigscreen with a
+ customizable home screen, native TV apps (Seerr, Twitch, Nebula, Dropout,
+ 2nd Try), YouTube, Jellyfin, AirPlay, HDMI-CEC TV control, Fire TV remote
+ support with voice, and Settings for everything on the TV.

@@ -1,0 +1,12 @@
+{
+  "id": "seerr",
+  "name": "Seerr",
+  "desktop": "couchbox-seerr.desktop",
+  "kind": "native",
+  "tile": "seerr",
+  "requires": [
+    "media.seerr.url"
+  ],
+  "default_order": 30,
+  "settings_page": "apps/seerr"
+}

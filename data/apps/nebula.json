@@ -1,0 +1,9 @@
+{
+  "id": "nebula",
+  "name": "Nebula",
+  "desktop": "couchbox-nebula.desktop",
+  "kind": "native",
+  "tile": "nebula",
+  "default_order": 60,
+  "unofficial": true
+}

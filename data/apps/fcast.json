@@ -1,0 +1,9 @@
+{
+  "id": "fcast",
+  "name": "FCast",
+  "desktop": "org.fcast.Receiver.desktop",
+  "kind": "flatpak",
+  "icon": "org.fcast.Receiver",
+  "default_order": 200,
+  "default_visible": false
+}

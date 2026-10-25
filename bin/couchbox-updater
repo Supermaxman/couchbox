@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""couchbox-updater [run | check | install | rollback | status]: see couchbox.updater."""
+import sys
+
+from couchbox.updater.__main__ import main
+
+sys.exit(main())

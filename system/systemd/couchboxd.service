@@ -1,0 +1,15 @@
+[Unit]
+Description=Couchbox settings service (the one privileged API for Settings and the setup wizard)
+Documentation=https://github.com/Supermaxman/couchbox/blob/main/docs/design/architecture.md
+After=network.target NetworkManager.service bluetooth.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m couchbox.daemon.server
+Restart=always
+RestartSec=2
+OOMScoreAdjust=-900
+
+[Install]
+WantedBy=multi-user.target

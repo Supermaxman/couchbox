@@ -1,0 +1,3 @@
+#!/bin/sh
+# Couchbox: the dropout TV app (couchbox-streaming --site dropout)
+exec /usr/lib/couchbox/bin/couchbox-streaming --site dropout "$@"

@@ -1,0 +1,205 @@
+#!/usr/bin/python3
+"""couchbox-remote-ir: store TV infrared codes in the Fire TV remote, like Fire OS's Equipment
+Control does, so its Power button switches the TV by IR again (that button sends nothing
+over Bluetooth by itself).
+
+  sudo couchbox-remote-ir status        read-only: firmware, stored key tables
+  sudo couchbox-remote-ir program       store our table (Samsung Power, Volume, Mute) and activate it
+  sudo couchbox-remote-ir switch        re-activate our stored table if the remote has it (couchbox-voice
+                                   runs this whenever the remote reconnects, as Fire OS does)
+  sudo couchbox-remote-ir blast KEY     send one IR code right now, nothing stored
+                                   (KEY: Power, VolumeUp, VolumeDown, Mute)
+  sudo couchbox-remote-ir erase         delete all stored tables (the remote's default again)
+
+The remote must be awake (press a button on it first). A factory reset of the remote
+(Menu + Back + Left) also erases the tables.
+
+Protocol, recovered from Fire OS (BluetoothKeyMapLib and DeviceControl in Fire OS 7.7.1.3
+and 8.1.8.5; details in docs/remote-ir.md): GATT service fe151500 ("keymap").
+  fe151502  commands in (10 = erase all, 02 01 <id16> 0000 <len16> = start an upload,
+            01 <id16> 00 = activate a table, 05 = fire the blast buffer); reads back the
+            stored table ids
+  fe151501  table data in, 200-byte chunks; reads back status (first byte 02 = ok)
+  fe151503  one-shot blast data in; reads back 02 when sent
+A table is rows of  button u8 | nActions u8 | actionsLen u16le | actions,  each action
+[type u8][flags u8][len u16le][payload]; type 3/6 = IR (6 "optional", what Fire OS uses for
+Power), 5 = also send the Bluetooth key press. IR payload: ASCII
+"f[Hz]c[duty]l[n1][n2]r[repeat]d[postDelayMs]t[toggle]" NUL, then mark/space durations in
+10 us units (u16le). An upload is the table plus its SHA-256.
+Never touches service cfbfa000 (firmware update; cfbfa004 carries factory-reset commands).
+"""
+import hashlib
+import struct
+import sys
+import time
+import uuid
+
+import dbus
+
+MAPPING = "fe151501-5e8d-11e6-8b77-86f30ca893d3"
+CONTROL = "fe151502-5e8d-11e6-8b77-86f30ca893d3"
+BLAST = "fe151503-5e8d-11e6-8b77-86f30ca893d3"
+FIRMWARE = "00002a26-0000-1000-8000-00805f9b34fb"
+CHUNK = 200
+OK = 0x02
+
+BUTTON = {"Power": 2, "VolumeUp": 6, "VolumeDown": 9, "Mute": 18}     # 0x0427 remote
+A_IR, A_BT_KEY, A_IR_OPTIONAL = 3, 5, 6
+
+# Samsung TVs: Samsung32 protocol, address 0x07 (the E0E0xxxx codes)
+SAMSUNG = {"Power": 0x02, "VolumeUp": 0x07, "VolumeDown": 0x0B, "Mute": 0x0F}
+TABLE_ID = "6d74762d-6972-0000-0000-53616d73756e"   # ours ("couchbox-ir..Samsun")
+PROGRAMMED = ("Power", "VolumeUp", "VolumeDown", "Mute")   # couchbox-input drops their Bluetooth copies
+
+
+def u16(v):
+    return struct.pack("<H", v & 0xFFFF)
+
+
+def action(atype, payload):
+    return bytes([atype, 0]) + u16(len(payload)) + payload
+
+
+def samsung32(cmd, addr=0x07):
+    """Durations in 10 us units at Fire OS's carrier (38028 Hz), rounded through Pronto
+    cycles the way its IrCodeConverter does."""
+    period = 0x6D * 0.241246           # us per carrier cycle
+    freq = int(1000000.0 / period)
+    us = [4500, 4500]
+    for byte in (addr, addr, cmd, ~cmd & 0xFF):
+        for b in range(8):
+            us += [560, 1690 if byte >> b & 1 else 560]
+    us += [560]
+    us += [108000 - sum(us)]
+    return [max(1, int(max(1, round(u / period)) * 100000.0 // freq)) for u in us], freq
+
+
+def ir_action(name, optional=False, post_delay_ms=0):
+    raw, freq = samsung32(SAMSUNG[name])
+    head = f"f[{freq}]c[33]l[{len(raw)}][0]r[0]d[{post_delay_ms}]t[0]".encode() + b"\0"
+    return action(A_IR_OPTIONAL if optional else A_IR, head + b"".join(u16(x) for x in raw))
+
+
+def table():
+    rows = b""
+    for name in PROGRAMMED:
+        power = name == "Power"
+        acts = [ir_action(name, optional=power, post_delay_ms=1000 if power else 0), action(A_BT_KEY, b"\0")]
+        body = b"".join(acts)
+        rows += bytes([BUTTON[name], len(acts)]) + u16(len(body)) + body
+    return bytes([len(PROGRAMMED)]) + rows
+
+
+def start_upload(table_id, length):
+    return bytes([0x02, 0x01]) + uuid.UUID(table_id).bytes + u16(0) + u16(length)
+
+
+def chunks(data):
+    for i in range(0, len(data), CHUNK):
+        yield data[i:i + CHUNK].ljust(CHUNK, b"\0")
+
+
+def table_ids(v):
+    return [str(uuid.UUID(bytes=bytes(v[1 + 16 * i:17 + 16 * i]))) for i in range(v[0] & 0x7F)]
+
+
+class Remote:
+    def __init__(self):
+        self.bus = dbus.SystemBus()
+        om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
+        objs = om.GetManagedObjects()
+        dev = next((p for p, i in objs.items() if "org.bluez.Device1" in i
+                    and str(i["org.bluez.Device1"].get("Modalias", "")).startswith("usb:v0171")), None)
+        if not dev:
+            sys.exit("No paired Amazon remote.")
+        if not objs[dev]["org.bluez.Device1"].get("Connected"):
+            sys.exit("The remote is asleep: press a button on it, then run this again.")
+        self.chars = {str(i["org.bluez.GattCharacteristic1"]["UUID"]): p for p, i in objs.items()
+                      if p.startswith(dev + "/") and "org.bluez.GattCharacteristic1" in i}
+        if CONTROL not in self.chars:
+            sys.exit("This remote has no keymap service.")
+
+    def _char(self, u):
+        return dbus.Interface(self.bus.get_object("org.bluez", self.chars[u]), "org.bluez.GattCharacteristic1")
+
+    def read(self, u):
+        return bytes(self._char(u).ReadValue({}))
+
+    def write(self, u, data):
+        self._char(u).WriteValue(dbus.ByteArray(data), {"type": "request"})
+
+    def wait_ok(self, u, what):
+        v = b""
+        for n in range(10):
+            v = self.read(u)
+            if v and v[0] == OK:
+                return
+            time.sleep(0.05 * (n + 1))
+        sys.exit(f"{what}: the remote answered {v.hex(' ') or 'nothing'}, expected 02.")
+
+
+def status(r):
+    if FIRMWARE in r.chars:
+        print("firmware:", r.read(FIRMWARE).decode(errors="replace"))
+    ids = table_ids(r.read(CONTROL))
+    print("stored tables:", ", ".join(t + (" (couchbox)" if t == TABLE_ID else "") for t in ids) or "none")
+
+
+def program(r):
+    data = table()
+    data += hashlib.sha256(data).digest()
+    r.write(CONTROL, b"\x10")                         # erase all stored tables (as Fire OS does)
+    r.write(CONTROL, start_upload(TABLE_ID, len(data)))
+    for c in chunks(data):
+        r.write(MAPPING, c)
+    r.wait_ok(MAPPING, "upload")
+    if TABLE_ID not in table_ids(r.read(CONTROL)):
+        sys.exit("The remote accepted the upload but doesn't list the table.")
+    switch(r)
+    print(f"Stored and activated: {', '.join(PROGRAMMED)} (Samsung IR).")
+
+
+def switch(r):
+    r.write(CONTROL, b"\x01" + uuid.UUID(TABLE_ID).bytes + b"\x00")
+
+
+def blast(r, name):
+    if name not in SAMSUNG:
+        sys.exit(f"KEY is one of: {', '.join(SAMSUNG)}")
+    body = ir_action(name)
+    data = bytes([0xFF, 1]) + u16(len(body)) + body     # one row, button 0xFF, no row count
+    r.write(CONTROL, start_upload(str(uuid.UUID(int=0)), len(data)))
+    for c in chunks(data):
+        r.write(BLAST, c)
+    r.write(CONTROL, b"\x05")
+    r.wait_ok(BLAST, "blast")
+    print(f"Sent {name}.")
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd not in ("status", "program", "switch", "blast", "erase"):
+        sys.exit(__doc__.split("\n\n")[1])
+    r = Remote()
+    if cmd == "status":
+        status(r)
+    elif cmd == "program":
+        program(r)
+    elif cmd == "switch":
+        if TABLE_ID in table_ids(r.read(CONTROL)):
+            switch(r)
+            print("Activated the couchbox table.")
+        else:
+            print("The remote has no couchbox table (sudo couchbox-remote-ir program).")
+    elif cmd == "blast":
+        blast(r, sys.argv[2] if len(sys.argv) > 2 else "")
+    else:
+        r.write(CONTROL, b"\x10")
+        print("Erased all stored tables.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except dbus.DBusException as err:
+        sys.exit(f"Bluetooth error: {err.get_dbus_message()}")

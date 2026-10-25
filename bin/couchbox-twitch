@@ -1,0 +1,3 @@
+#!/bin/sh
+# Couchbox: the twitch TV app (couchbox-streaming --site twitch)
+exec /usr/lib/couchbox/bin/couchbox-streaming --site twitch "$@"

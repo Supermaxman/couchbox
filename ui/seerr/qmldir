@@ -1,0 +1,27 @@
+singleton S 1.0 S.qml
+CompanyCard 1.0 CompanyCard.qml
+DiscoverPage 1.0 DiscoverPage.qml
+GenreCard 1.0 GenreCard.qml
+GridPage 1.0 GridPage.qml
+IssueDialog 1.0 IssueDialog.qml
+IssuesPage 1.0 IssuesPage.qml
+MediaPage 1.0 MediaPage.qml
+MoreCard 1.0 MoreCard.qml
+PeoplePage 1.0 PeoplePage.qml
+PersonCard 1.0 PersonCard.qml
+PersonPage 1.0 PersonPage.qml
+Picker 1.0 Picker.qml
+Pill 1.0 Pill.qml
+Rating 1.0 Rating.qml
+RequestCard 1.0 RequestCard.qml
+RequestDialog 1.0 RequestDialog.qml
+RequestsPage 1.0 RequestsPage.qml
+Ring 1.0 Ring.qml
+RoundImage 1.0 RoundImage.qml
+SButton 1.0 SButton.qml
+Shelf 1.0 Shelf.qml
+StatusIcon 1.0 StatusIcon.qml
+TitleCard 1.0 TitleCard.qml
+Toggle 1.0 Toggle.qml
+TypePill 1.0 TypePill.qml
+VPage 1.0 VPage.qml

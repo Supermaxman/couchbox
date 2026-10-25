@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# couchbox-clean-caches: empty the TV apps' disk caches so they can't grow without limit.
+# Logins and settings are untouched (they live in config/data, not cache).
+# Skips the run if a TV app is open, so nothing is pulled out from under it.
+set -euo pipefail
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+home=$(getent passwd "$COUCHBOX_TV_USER" | cut -d: -f6)
+[[ -d $home/.var/app ]] || exit 0
+
+if pgrep -u "$COUCHBOX_TV_USER" -f 'chromium|VacuumTube|vacuumtube|jellyfin|fcast' >/dev/null; then
+  echo "a TV app is running; skipping"; exit 0
+fi
+
+before=$(du -sm "$home/.var/app" | cut -f1)
+find "$home/.var/app" -mindepth 2 -maxdepth 2 -name cache -type d -exec sh -c 'rm -rf "$1"/*' _ {} \;
+find "$home/.var/app" -type d \( -name Cache -o -name 'Code Cache' -o -name GPUCache \) \
+  -prune -exec sh -c 'rm -rf "$1"/*' _ {} \;
+after=$(du -sm "$home/.var/app" | cut -f1)
+echo "app data: ${before} MB -> ${after} MB"

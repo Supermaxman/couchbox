@@ -1,0 +1,24 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: couchbox
+Source: https://github.com/Supermaxman/couchbox
+
+Files: *
+Copyright: 2026 The Couchbox Authors
+License: Apache-2.0
+
+Files: shell/home/HomeHeader.qml shell/home/HomeScreen.qml shell/home/indicators/*
+Copyright: 2015-2025 Marco Martin, Aditya Mehra, Devin Lin and the Plasma Bigscreen authors
+License: GPL-2.0-or-later
+
+Files: shell/home/launcher/*
+Copyright: 2015-2025 Marco Martin, Devin Lin
+License: LGPL-2.0-or-later
+
+License: Apache-2.0
+ On Debian systems, see /usr/share/common-licenses/Apache-2.0.
+
+License: GPL-2.0-or-later
+ On Debian systems, see /usr/share/common-licenses/GPL-2.
+
+License: LGPL-2.0-or-later
+ On Debian systems, see /usr/share/common-licenses/LGPL-2.

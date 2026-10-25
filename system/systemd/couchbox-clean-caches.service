@@ -1,0 +1,10 @@
+[Unit]
+Description=Couchbox: empty TV app caches (skipped while an app is open)
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-clean-caches
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# couchbox-audio: make the TV session's sound come out of the TV.
+#   sudo couchbox-audio           default output = the HDMI port with a TV on it, unmuted, 100 %
+#   sudo couchbox-audio status    just show the outputs
+#   sudo couchbox-audio install   only write the PipeWire HDMI config (used by phase 7)
+#   sudo couchbox-audio volume    only set every output to 100 %, unmuted (no restart; couchbox-update)
+# Audio is restarted only when the HDMI config changes: apps playing then (YouTube's
+# Electron, Chromium) lose their sound until they're reopened.
+# (The TV's own volume stays on the remote's IR buttons.)
+set -euo pipefail
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+trap 'echo "couchbox-audio: failed at line $LINENO (run: sudo couchbox-audio debug)" >&2' ERR
+user=$COUCHBOX_TV_USER
+uid=$(id -u "$user")
+as_tv() { runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" "$@"; }
+status() { as_tv wpctl status | sed -n '/Audio/,/Video/p' | sed -n '/Sinks:/,/Sources:/p' | sed '$d'; }
+
+# The TV interface must be up (its audio services may be down; repairing them is the point).
+[[ ${1:-} == install ]] || pgrep -u "$user" -x kwin_wayland >/dev/null \
+  || { echo "The TV session isn't running (is the TV interface up?)"; exit 1; }
+if [[ ${1:-} == status ]]; then status; exit 0; fi
+if [[ ${1:-} == volume ]]; then
+  for id in $(as_tv pw-dump | jq -r '.[] | select(.info.props["media.class"]? == "Audio/Sink") | .id'); do
+    as_tv wpctl set-volume "$id" 1.0; as_tv wpctl set-mute "$id" 0
+  done
+  status; exit 0
+fi
+if [[ ${1:-} == debug ]]; then
+  # Everything needed to see why PipeWire has no HDMI output, in a file the admin
+  # user can read over SSH (no long output to copy off the screen).
+  out=/tmp/couchbox-audio-report.txt
+  command -v aplay >/dev/null || apt-get -o DPkg::Lock::Timeout=300 install -y -qq alsa-utils >/dev/null || true
+  {
+    echo "== $(date -Is)"
+    echo "== logind sessions for $user"
+    for s in $(loginctl list-sessions --no-legend | awk -v u="$user" '$3 == u {print $1}'); do
+      loginctl show-session "$s" -p Id -p Active -p State -p Seat -p VTNr -p Type -p Class
+    done
+    echo "== ALSA cards (as $user)"; as_tv aplay -l 2>&1
+    echo "== ALSA PCMs (as $user)"; as_tv aplay -L 2>&1 | grep -iE "hdmi|vc4|default" | head -20
+    echo "== wpctl status"; as_tv wpctl status 2>&1
+    echo "== PipeWire devices/nodes"
+    as_tv pw-dump 2>/dev/null | jq -r '.[] | select(.type == "PipeWire:Interface:Device" or .type == "PipeWire:Interface:Node")
+      | "\(.id) \(.type | sub("PipeWire:Interface:"; "")) \(.info.props["media.class"] // "-") \(.info.props["device.name"] // .info.props["node.name"] // "-")"' 2>&1
+    echo "== pw-top (ERR = xruns; QUANT/RATE = buffer size and rate)"
+    as_tv timeout 6 pw-top -b -n 3 2>&1 | tail -25
+    echo "== HDMI sink properties"
+    as_tv pw-dump 2>/dev/null | jq '[.[] | select((.info.props["node.name"]? // "") | startswith("couchbox_hdmi")) | {id, props: .info.props, state: .info.state, error: .info.error}]'
+    echo "== user services"; as_tv systemctl --user --no-pager status pipewire wireplumber 2>&1 | grep -E "Active:|Loaded:|●"
+    echo "== wireplumber/pipewire log (this boot)"
+    journalctl -b --no-pager _UID="$uid" 2>/dev/null | grep -E "wireplumber|pipewire" | tail -40
+    echo "== direct ALSA test: 1 s tone on the TV's HDMI port (as $user)"
+    for f in /proc/asound/card*/eld#*; do
+      awk -F'\t+' '$1 == "monitor_name" && $2 != "" {f = 1} END {exit !f}' "$f" || continue
+      c=$(cat "$(dirname "$f")/id")
+      timeout 4 runuser -u "$user" -- speaker-test -D "hdmi:CARD=$c,DEV=0" -c 2 -t sine -l 1 2>&1 | tail -4
+    done
+  } > "$out" 2>&1
+  chmod 644 "$out"
+  echo "Report written to $out"
+  exit 0
+fi
+
+# Which HDMI port has a screen that takes audio (its ELD names the monitor)?
+idx=
+for f in /proc/asound/card*/eld#*; do
+  if awk -F'\t+' '$1 == "monitor_name" && $2 != "" {found = 1} END {exit !found}' "$f"; then
+    idx=$(basename "$(dirname "$f")"); idx=${idx#card}; break
+  fi
+done
+[[ -n $idx || ${1:-} == install ]] || { echo "No HDMI screen with audio found. Is the TV on and plugged in?"; status; exit 1; }
+card=$( [[ -n $idx ]] && cat "/proc/asound/card$idx/id" || echo none)
+
+# Ubuntu has no ALSA UCM profile for the Pi's vc4-hdmi cards, so PipeWire's card profiles
+# are only "off" and "pro-audio" (raw IEC958 frames). The alsa-lib "hdmi:" PCM from
+# vc4-hdmi.conf does the IEC958 conversion (that's what speaker-test played through),
+# so define one PipeWire sink per HDMI port on top of it.
+home=$(getent passwd "$user" | cut -d: -f6)
+conf=$home/.config/pipewire/pipewire.conf.d/51-couchbox-hdmi.conf
+units=(pipewire.socket pipewire-pulse.socket pipewire.service pipewire-pulse.service wireplumber.service)
+restart_audio() {  # clears systemd's start limit first (a failed start leaves pipewire.socket locked)
+  systemctl --user -M "$user@" reset-failed "${units[@]}" 2>/dev/null || true
+  systemctl --user -M "$user@" restart "${units[@]}"
+  for _ in $(seq 20); do sleep 0.5; as_tv wpctl status >/dev/null 2>&1 && return 0; done
+  return 1
+}
+sink_id() { as_tv pw-dump 2>/dev/null | jq -r --arg n "$1" '[.[] | select(.info.props["node.name"]? == $n) | .id] | first // empty' || true; }
+
+# Only the port with a screen attached: opening a vc4-hdmi port with nothing on it fails
+# (error 524), and must never stop PipeWire from starting (nofail).
+write_conf() {  # write_conf <card index>
+  cat <<EOF2
+# couchbox: stereo sink for the Raspberry Pi HDMI port with the TV on it, via alsa-lib's
+# hdmi: PCM (it does the IEC958 conversion the vc4-hdmi hardware needs). Written by couchbox-audio.
+context.objects = [
+  { factory = adapter
+    args = {
+      factory.name       = api.alsa.pcm.sink
+      node.name          = "couchbox_hdmi$1"
+      node.description   = "TV (HDMI $1)"
+      media.class        = "Audio/Sink"
+      api.alsa.path      = "hdmi:CARD=vc4hdmi$1,DEV=0"
+      audio.channels     = 2
+      audio.position     = [ FL FR ]
+      node.pause-on-idle = false
+    }
+    flags = [ nofail ]
+  }
+]
+EOF2
+}
+rm -f "$home/.config/wireplumber/wireplumber.conf.d/51-couchbox-hdmi.conf"   # earlier attempt; not needed
+if [[ ${1:-} == install ]]; then
+  # No TV session needed: default to HDMI 0 (the port next to the power input).
+  runuser -u "$user" -- mkdir -p "$(dirname "$conf")"
+  write_conf "${idx:-0}" | runuser -u "$user" -- tee "$conf" >/dev/null
+  echo "Installed $conf"; exit 0
+fi
+
+sink=$(sink_id "couchbox_hdmi$idx")
+if [[ -n $sink ]] && cmp -s "$conf" <(write_conf "$idx"); then
+  as_tv wpctl set-default "$sink"; as_tv wpctl set-mute "$sink" 0; as_tv wpctl set-volume "$sink" 1.0
+  echo "Sound already goes to $card (output $sink): unmuted, 100 %."
+  status; exit 0
+fi
+backup=$(mktemp); had_conf=0
+[[ -f $conf ]] && { cp "$conf" "$backup"; had_conf=1; }
+runuser -u "$user" -- mkdir -p "$(dirname "$conf")"
+write_conf "$idx" | runuser -u "$user" -- tee "$conf" >/dev/null
+
+echo "Restarting the TV session's audio to load the HDMI output"
+sink=
+if restart_audio; then
+  for _ in $(seq 10); do sink=$(sink_id "couchbox_hdmi$idx"); [[ -n $sink ]] && break; sleep 0.5; done
+fi
+if [[ -z $sink ]]; then
+  echo "The HDMI output didn't come up; putting the audio setup back as it was."
+  if (( had_conf )); then cp "$backup" "$conf"; else rm -f "$conf"; fi
+  restart_audio || true
+  rm -f "$backup"
+  journalctl _UID="$uid" --since "-1min" --no-pager 2>/dev/null | grep -E "pipewire\[" | tail -5
+  exit 1
+fi
+rm -f "$backup"
+
+as_tv wpctl set-default "$sink"
+as_tv wpctl set-mute "$sink" 0
+as_tv wpctl set-volume "$sink" 1.0
+echo "Sound now goes to $card (output $sink): unmuted, 100 %."
+status

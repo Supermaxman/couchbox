@@ -1,0 +1,15 @@
+[Unit]
+Description=Couchbox apps: install YouTube, Chromium, FCast (Flatpak) when they're missing
+After=network-online.target couchboxd.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/couchbox/state/apps.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-apps
+Restart=on-failure
+RestartSec=60
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=2nd Try
+Comment=2nd Try as a TV app (shows, episodes, search, player for the remote)
+Icon=applications-multimedia
+Exec=couchbox-2ndtry
+StartupWMClass=couchbox-2ndtry
+Categories=AudioVideo;Video;

@@ -1,0 +1,406 @@
+#!/usr/bin/python3
+"""couchbox-voice: voice control of the TV with the Fire TV remote's mic button.
+
+Hold the mic button and speak; on release the audio goes to the speech-to-text server
+(Settings → Voice: voice.stt.*). What happens next depends on voice.mode:
+  off        the indicator says how to set voice up
+  dictation  the words go into the open text box or search; else a few fixed commands
+             (pause, play, home, back, open <app>, volume, search for ...)
+  assistant  dictation into open text boxes, else the agent (voice.llm.*, with tools that
+             drive the TV apps)
+The indicator (couchbox-voice-overlay) shows what's happening.
+
+  couchbox-voice                     the service (systemd: couchbox-voice.service, as root)
+  couchbox-voice ask "pause"         run a typed request through the agent and print each step
+  sudo couchbox-voice tool youtube '{"action": "history"}'
+                                call one tool directly, without the model
+  couchbox-voice state               the indicator's current state (JSON)
+
+The service also serves http://127.0.0.1:8790 (always, even with voice off: the Seerr app and
+the keyboard pop-ups use it): GET /state (read by the indicator), GET /log?after=N,
+POST /ask {"text": ...}, POST /cancel (the remote's Back button, via couchbox-input: stops
+the request and hides the indicator; answers whether anything was showing), POST /typing,
+/seerr/... (the Seerr app's allow-listed proxy, adding the API key), POST /play/....
+Writes need the header "X-Couchbox: 1" and no foreign Origin, so web pages in the TV's
+browser can't drive it. Code and prompt: couchbox.voice (Python package)."""
+import io
+import json
+import re
+import os
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+import wave
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from couchbox import secrets, settings
+from couchbox.voice import commands
+
+PORT = 8790
+SETUP_HINT = "Voice isn't set up. Open Settings → Voice to add a speech-to-text server."
+SEERR_GET = ("/discover/", "/search?", "/movie/", "/tv/", "/person/", "/collection/", "/request?", "/request/",
+             "/media?", "/service/radarr", "/service/sonarr", "/studio/", "/network/", "/auth/me",
+             "/genres/", "/watchproviders/", "/issue")  # the Seerr app's reads
+# ... and its writes: request, approve/decline a request, watchlist add/remove, report an issue
+SEERR_WRITE = [("POST", r"/request"), ("POST", r"/request/\d+/(approve|decline)"), ("POST", r"/watchlist"),
+               ("DELETE", r"/watchlist/\d+"), ("POST", r"/issue")]
+STT_PROMPT = "YouTube, Jellyfin, Dropout, 2nd Try, Nebula, Twitch."
+
+
+class Service:
+    def __init__(self):
+        from couchbox.voice import agent
+        c = settings.load()
+        self.mode = c["voice.mode"]
+        self.language = c["voice.language"]
+        self.stt_url = c["voice.stt.url"]
+        self.stt_model = c["voice.stt.model"]
+        self.stt_key = secrets.get("voice.stt.api_key")
+        self.captions = c["apps.youtube.captions"]
+        if self.mode != "off" and not self.stt_url:
+            self.mode = "off"
+        if self.mode == "assistant" and not (c["voice.llm.url"] and c["voice.llm.model"]):
+            self.mode = "dictation"             # no model set up: commands and dictation still work
+        key = secrets.get("voice.llm.api_key")
+        self.lock = threading.Lock()
+        self.state = {"seq": 0, "phase": "idle", "heard": "", "status": "", "note": "", "reply": "",
+                      "question": False, "t": time.time()}
+        self.logs = []
+        self.cancel = threading.Event()
+        self.dropped_listen = False
+        self.typing_until = 0.0                 # one of our apps' keyboard pop-ups is open (POST /typing)
+        self.agent = agent.Agent(c["voice.llm.url"], c["voice.llm.model"], key, self.log)
+
+    def log(self, line):
+        print(line, flush=True)
+        with self.lock:
+            self.logs.append((len(self.logs) + 1, line))
+            del self.logs[:-500]
+
+    def set(self, phase=None, status=None, **kw):
+        with self.lock:
+            if phase:
+                self.state["phase"] = phase
+            if status is not None:
+                self.state["status"] = status
+            self.state.update(kw)
+            self.state["seq"] += 1
+            self.state["t"] = time.time()
+
+    def showing(self):
+        """Whether the indicator is up (same rule as Overlay.qml)."""
+        st = self.state
+        if st["phase"] in ("listening", "transcribing", "thinking", "working"):
+            return True
+        if st["phase"] in ("done", "error"):
+            linger = 120 if st.get("question") else min(20, 6 + len(st.get("reply") or "") / 18)
+            return time.time() - st["t"] < linger
+        return False
+
+    def cancel_all(self):
+        """Back button: stop whatever the assistant is doing and hide it."""
+        with self.lock:
+            was = self.showing()
+        self.cancel.set()
+        self.dropped_listen = self.state["phase"] == "listening"
+        self.agent.asked = False
+        self.set("idle", "", heard="", reply="", note="", question=False)
+        if was:
+            self.log("cancelled (Back)")
+        return was
+
+    # -------------------------------------------------------------- voice
+    def on_press(self):
+        self.cancel.set()                       # a new request interrupts the running one
+        self.dropped_listen = False
+        if self.mode == "off":
+            self.set("done", "", heard="", reply=SETUP_HINT, note="", question=False)
+            return
+        self.set("listening", "Listening", heard="", reply="", note="", question=False)
+        self.log("mic on")
+
+    def on_release(self, pcm):
+        self.log(f"mic off: {len(pcm) / 32000:.1f}s of audio")
+        if self.dropped_listen or self.mode == "off":   # Back was pressed while listening
+            return
+        if len(pcm) < 16000:                    # under half a second: a stray press
+            self.set("idle", "")
+            return
+        threading.Thread(target=self.handle, args=(pcm, None), daemon=True).start()
+
+    def transcribe(self, pcm):
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(pcm)
+        import requests
+        for delay in (0, 1, 3):
+            time.sleep(delay)
+            try:
+                r = requests.post(f"{self.stt_url}/audio/transcriptions", timeout=60,
+                                  headers={"Authorization": f"Bearer {self.stt_key}"} if self.stt_key else {},
+                                  files={"file": ("voice.wav", buf.getvalue(), "audio/wav")},
+                                  data={"model": self.stt_model, "language": self.language, "prompt": STT_PROMPT})
+                if r.status_code < 500:
+                    r.raise_for_status()
+                    return r.json().get("text", "").strip()
+            except requests.RequestException as err:
+                self.log(f"speech-to-text: {err}")
+        raise RuntimeError("The speech-to-text server isn't answering.")
+
+    def handle(self, pcm, text):
+        from couchbox.voice import agent
+        cancel = threading.Event()
+        self.cancel = cancel
+        try:
+            if pcm is not None:
+                self.set("transcribing", "Understanding")
+                text = self.transcribe(pcm)
+                if cancel.is_set():
+                    return
+            self.log(f"heard: {text!r}")
+            if not text:
+                self.set("done", "", reply="I didn't catch that.")
+                return
+            if pcm is not None and self.dictate(text):
+                return
+            if self.mode != "assistant":
+                self.set("done", "", heard=text, reply=self.command(text))
+                return
+            self.set("thinking", "Thinking", heard=text, note="", reply="", question=False)
+
+            def status(phase, line, note=None):
+                if not cancel.is_set():
+                    self.set(phase, line, **({"note": note} if note is not None else {}))
+            reply = self.agent.run(text, status, cancel)
+            if not cancel.is_set():
+                self.set("done", "", reply=reply, question=reply.endswith("?"))
+        except agent.Cancelled:
+            self.agent.turns = self.agent.turns[:-1]
+        except Exception as err:
+            self.log(f"error: {err}")
+            if self.agent.turns and self.agent.turns[-1] and self.agent.turns[-1][-1].get("tool_calls"):
+                self.agent.turns = self.agent.turns[:-1]
+            if not cancel.is_set():
+                self.set("error", "", reply=str(err))
+
+    def command(self, text):
+        """Dictation mode: a fixed phrase (pause, open YouTube...) without a model."""
+        from couchbox.voice import tools
+        cmd = commands.parse(text)
+        if not cmd:
+            return "Try “pause”, “open YouTube” or “search for …”. The assistant can be set up in Settings → Voice."
+        action, arg = cmd
+        self.log(f"command: {action} {arg!r}")
+        if action == "pause":
+            return tools.media("pause")
+        if action == "play":
+            return tools.media("play")
+        if action == "key":
+            return tools.press([arg])
+        if action == "tv":
+            return tools.tv(arg)
+        if action == "open":
+            name = commands.match_app(arg, [n for _, n in tools.home_apps()] + ["Home"])
+            return tools.open_app(name) if name else f"There's no app called {arg}."
+        if action == "search":
+            tools.open_app("YouTube")
+            tools.youtube("search", query=arg)
+            return f"Searching YouTube for “{arg}”."
+        return "Done."
+
+    def dictate(self, text):
+        """A keyboard pop-up, text box or search screen is open: type what was said there (and
+        search) instead of asking the assistant. True if it was typed."""
+        from couchbox.voice import tools
+        words = text.strip().rstrip(".!?")
+        try:
+            if time.time() < self.typing_until:      # our Qt apps: type it like the phone does
+                http_type = lambda path, body: urllib.request.urlopen(urllib.request.Request(
+                    f"http://127.0.0.1:8791{path}", json.dumps(body).encode(), {"Content-Type": "application/json",
+                                                                               "X-Couchbox": "1"}), timeout=10).read()
+                http_type("/key", {"key": "clear"})
+                http_type("/type", {"text": words, "enter": True})
+                how = "typed"
+            else:
+                how = tools.enter_text(words)
+        except Exception as err:
+            self.log(f"dictation: {err}")
+            return False
+        if not how:
+            return False
+        self.log(f"dictated ({how}): {words!r}")
+        self.set("done", "", heard=text, reply=f"Searching for “{words}”." if how == "searched" else f"Typed “{words}”.")
+        return True
+
+    # -------------------------------------------------------------- HTTP
+    def serve(self):
+        svc = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def send(self, obj, code=200):
+                data = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):
+                if self.path.startswith("/state"):
+                    with svc.lock:
+                        return self.send(dict(svc.state, now=time.time()))
+                if self.path.startswith("/log"):
+                    after = int(self.path.partition("after=")[2] or 0)
+                    with svc.lock:
+                        return self.send([l for l in svc.logs if l[0] > after])
+                if self.path.startswith("/seerr/"):
+                    if not self.guarded():
+                        return
+                    return self.seerr("GET")
+                self.send({"error": "not found"}, 404)
+
+            def seerr(self, method):
+                """The Seerr TV app's way to Seerr: an allow-listed proxy that adds the API key
+                (root-only), so the app (TV user) never holds it."""
+                path = self.path[len("/seerr"):]
+                ok = (path.startswith(SEERR_GET) if method == "GET" else
+                      any(m == method and re.fullmatch(rx, path) for m, rx in SEERR_WRITE)) and ".." not in urllib.parse.unquote(path)
+                if not ok:
+                    return self.send({"error": "not allowed"}, 403)
+                try:
+                    body = None
+                    if method == "POST" and self.headers.get("Content-Length"):
+                        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    from couchbox.voice import tools
+                    self.send(tools.seerr_api(method, path, body))
+                except Exception as err:
+                    self.send({"error": str(err)}, 502)
+
+            def play(self):
+                """The Seerr app's Play on Jellyfin and Watch Trailer buttons: {"id": ...}."""
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                vid = str(body.get("id", ""))
+                if not vid.replace("-", "").replace("_", "").isalnum():
+                    return self.send({"error": "bad id"}, 400)
+                from couchbox.voice import tools
+                app = tools.jellyfin if self.path == "/play/jellyfin" else tools.youtube
+                threading.Thread(target=app, args=("play",), kwargs={"id": vid}, daemon=True).start()
+                self.send({"result": "playing"})
+
+            def guarded(self):
+                """Writes: our own programs only. A web page can't add the custom header
+                (that needs a CORS preflight we never answer) or hide its Origin."""
+                origin = self.headers.get("Origin")
+                if self.headers.get("X-Couchbox") != "1" or (origin and origin != "null"):
+                    self.send({"error": "forbidden"}, 403)
+                    return False
+                return True
+
+            def do_DELETE(self):
+                if not self.guarded():
+                    return
+                if self.path.startswith("/seerr/"):
+                    return self.seerr("DELETE")
+                self.send({"error": "not found"}, 404)
+
+            def do_POST(self):
+                if not self.guarded():
+                    return
+                if self.path.startswith("/seerr/"):
+                    return self.seerr("POST")
+                if self.path in ("/play/jellyfin", "/play/youtube"):
+                    return self.play()
+                if self.path == "/typing":           # an app's keyboard pop-up opened / closed
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    svc.typing_until = time.time() + 120 if body.get("on") else 0.0
+                    return self.send({"ok": True})
+                if self.path == "/cancel":
+                    return self.send({"cancelled": svc.cancel_all()})
+                if self.path != "/ask":
+                    return self.send({"error": "not found"}, 404)
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                svc.cancel.set()
+                with svc.lock:
+                    seq = svc.state["seq"]
+                threading.Thread(target=svc.handle, args=(None, body.get("text", "")), daemon=True).start()
+                self.send({"ok": True, "seq": seq})
+
+        ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+
+    def run(self):
+        from couchbox.voice import capture
+        os.makedirs("/run/couchbox/voice", exist_ok=True)
+        threading.Thread(target=self.serve, daemon=True).start()
+        if self.captions:
+            threading.Thread(target=self.caption_keeper, daemon=True).start()
+        self.log(f"couchbox-voice ready: mode {self.mode}" + (f", speech {self.stt_url}" if self.mode != "off" else "")
+                 + (f", model {self.agent.model} at {self.agent.url}" if self.mode == "assistant" else ""))
+        capture.run(self.on_press, self.on_release, self.log, self.on_connect)
+
+    def caption_keeper(self):
+        from couchbox.voice import tools
+        while True:
+            time.sleep(3)
+            vid = tools.keep_captions(self.captions)
+            if vid:
+                self.log(f"YouTube: {self.captions} captions on for {vid}")
+
+    def on_connect(self):
+        # Re-activate the remote's IR key table (Power -> TV), as Fire OS does on each connect
+        def switch():
+            time.sleep(3)
+            r = subprocess.run(["/usr/lib/couchbox/bin/couchbox-remote-ir", "switch"], capture_output=True, text=True, timeout=30)
+            self.log("remote IR: " + (r.stdout or r.stderr).strip())
+        threading.Thread(target=switch, daemon=True).start()
+
+
+def http(path, body=None):
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}",
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json", "X-Couchbox": "1"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
+
+
+def cmd_ask(text):
+    after = max([n for n, _ in http("/log?after=0")] or [0])
+    http("/ask", {"text": text})
+    time.sleep(0.5)
+    while True:
+        for n, line in http(f"/log?after={after}"):
+            print(line, flush=True)
+            after = n
+        st = http("/state")
+        if st["phase"] in ("done", "error", "idle"):
+            print(f"[{st['phase']}] {st['reply']}")
+            return
+        time.sleep(0.5)
+
+
+def main():
+    arg = sys.argv[1:]
+    if not arg:
+        Service().run()
+    elif arg[0] == "ask" and len(arg) > 1:
+        cmd_ask(" ".join(arg[1:]))
+    elif arg[0] == "state":
+        print(json.dumps(http("/state"), indent=1))
+    elif arg[0] == "tool" and len(arg) > 1:
+        from couchbox.voice import tools
+        os.makedirs("/run/couchbox/voice", exist_ok=True)
+        print(tools.run_tool(arg[1], json.loads(arg[2]) if len(arg) > 2 else {}))
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

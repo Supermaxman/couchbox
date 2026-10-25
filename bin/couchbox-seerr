@@ -1,0 +1,57 @@
+#!/usr/bin/python3
+"""couchbox-seerr: Seerr as a TV app. Browse what's trending or popular, search, and request
+movies and shows for Jellyfin, all with the remote.
+
+The interface is QML (/usr/share/couchbox/ui/seerr/Main.qml). It reaches Seerr through
+couchbox-voice's allow-listed proxy (127.0.0.1:8790/seerr/...), which adds Seerr's API key, so
+the TV session never holds the key.
+
+  couchbox-seerr                          open it (the Seerr tile)
+  couchbox-seerr --shot FILE [--open movie:ID|tv:ID|person:ID|requests|search:TEXT] [--dialog] [--keyboard]
+                                     render once off screen to a PNG (testing)
+"""
+import os
+import sys
+
+from PySide6.QtCore import QObject, QUrl, Slot
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickWindow  # noqa: F401  (root object typed as QQuickWindow: grabWindow)
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_SEERR_QML", str(paths.share() / "ui/seerr/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # shared QML (CouchKit: keyboard pop-up)
+
+
+class Shooter(QObject):
+    """--shot: lets the QML save the whole window to a PNG (grabToImage can't grab the window)."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+
+def main():
+    os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"    # CouchKit reads the phone page's address
+    if "--shot" in sys.argv:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    app = QGuiApplication(sys.argv)
+    app.setApplicationName("couchbox-seerr")
+    app.setApplicationDisplayName("Seerr")
+    app.setDesktopFileName("couchbox-seerr")      # Wayland app id: matches couchbox-seerr.desktop
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    shooter = Shooter()
+    engine.rootContext().setContextProperty("shooter", shooter)
+    engine.rootContext().setContextProperty("seerrUrl", settings.get("media.seerr.url"))
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Jellyfin
+Comment=Movies and shows from your Jellyfin server
+Exec=couchbox-jellyfin
+Icon=org.jellyfin.JellyfinDesktop
+StartupWMClass=jellyfin-desktop
+Categories=AudioVideo;Video;Player;

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Twitch
+Comment=Twitch as a TV app (live streams, chat, videos, search)
+Icon=applications-multimedia
+Exec=couchbox-twitch
+StartupWMClass=couchbox-twitch
+Categories=AudioVideo;Video;

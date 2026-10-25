@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox always-on Bluetooth capture for debugging the remote (couchbox-btlog)
+After=bluetooth.service
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-btlog
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

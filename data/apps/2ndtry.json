@@ -1,0 +1,9 @@
+{
+  "id": "2ndtry",
+  "name": "2nd Try",
+  "desktop": "couchbox-2ndtry.desktop",
+  "kind": "native",
+  "tile": "2ndtry",
+  "default_order": 50,
+  "unofficial": true
+}

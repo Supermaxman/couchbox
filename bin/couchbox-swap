@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# couchbox-swap: a swap file on the SSD (/swapfile, COUCHBOX_SYSTEM_SWAP_GB in couchbox.env, default 8), so a
+# memory-hungry app pushes idle memory to disk instead of getting the box's apps killed.
+# Idempotent; used by phase 7 and couchbox-update.
+#   sudo couchbox-swap
+set -euo pipefail
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+gb=${COUCHBOX_SYSTEM_SWAP_GB:-0}
+if [[ $gb == 0 ]]; then   # automatic: 8 GB on an NVMe drive, 2 GB on an SD card
+  if findmnt -no SOURCE / | grep -q mmcblk || lsblk -sno NAME "$(findmnt -no SOURCE /)" 2>/dev/null | grep -q mmcblk; then gb=2; else gb=8; fi
+fi
+f=/swapfile
+want=$((gb * 1024 * 1024 * 1024))
+if [[ ! -f $f || $(stat -c %s "$f") -ne $want ]]; then
+  swapoff "$f" 2>/dev/null || true
+  rm -f "$f"
+  fallocate -l "$want" "$f"
+  chmod 600 "$f"
+  mkswap -q "$f"
+fi
+grep -q "^$f " /etc/fstab || echo "$f none swap sw 0 0" >> /etc/fstab
+swapon --show=NAME --noheadings | grep -qx "$f" || swapon "$f"
+echo "swap: $(swapon --show=NAME,SIZE --noheadings | paste -sd, -)"

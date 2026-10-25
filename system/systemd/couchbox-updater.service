@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox updates: check GitHub Releases, install when nobody's watching
+Documentation=https://github.com/Supermaxman/couchbox/blob/main/docs/design/updates-and-releases.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-updater run
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

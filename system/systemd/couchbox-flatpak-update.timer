@@ -1,0 +1,10 @@
+[Unit]
+Description=Couchbox: weekly TV app updates
+
+[Timer]
+OnCalendar=Sun 04:30
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

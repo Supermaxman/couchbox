@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# couchbox-tv: control the TV over HDMI-CEC (the box's one HDMI cable).
+#   couchbox-tv on       turn the TV on and switch it to this box
+#   couchbox-tv off      put the TV in standby
+#   couchbox-tv input    switch the TV to this box (no power change)
+#   couchbox-tv status   ask the TV for its power state
+#   couchbox-tv scan     show every device on the CEC bus
+#   couchbox-tv boot     at boot: register as a playback device and claim the input
+#   couchbox-tv power    remote's Power button: TV on (and to this box) if it's off, else standby
+#   couchbox-tv next-input
+#                   remote's input button: the first press switches the TV to this box; more
+#                   presses within 30 s step through the TV's other HDMI ports (COUCHBOX_TV_INPUTS)
+#   couchbox-tv volume-up | volume-down | mute
+#                   remote's volume keys: the TV's own volume over CEC (COUCHBOX_TV_VOLUME=tv),
+#                   or this box's volume (COUCHBOX_TV_VOLUME=box)
+set -euo pipefail
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+
+# The CEC device with a TV attached reports a real physical address (not f.f.f.f).
+phys_of() { cec-ctl -d "$1" 2>/dev/null | awk -F: '/Physical Address/ {gsub(/ /, "", $2); print $2; exit}'; }
+
+pick_dev() {
+  if [[ ${COUCHBOX_TV_CEC_DEVICE:-auto} != auto ]]; then echo "$COUCHBOX_TV_CEC_DEVICE"; return; fi
+  for d in /dev/cec*; do
+    [[ -e $d ]] || continue
+    p=$(phys_of "$d")
+    [[ -n $p && $p != f.f.f.f ]] && { echo "$d"; return; }
+  done
+  echo "no CEC device with a TV attached (is Anynet+/HDMI-CEC on in the TV?)" >&2
+  exit 1
+}
+
+DEV=$(pick_dev)
+cec() { cec-ctl -d "$DEV" "$@"; }
+# Re-registering resets the adapter's addresses, so only do it when something else (or
+# nothing) has configured it.
+register() {
+  cec | grep -q 'Logical Address *: [0-9]* (Playback' \
+    || cec --playback --osd-name "$COUCHBOX_CEC_NAME" >/dev/null
+}
+# A soundbar or receiver (logical address 5) owns the volume when present; otherwise the TV.
+volume_to() { cec --to 5 --give-device-power-status 2>/dev/null | grep -q 'REPORT_POWER_STATUS' && echo 5 || echo 0; }
+key() {  # key <ui-cmd>: one press and release of a remote button, sent to the volume owner
+  local to
+  to=$(volume_to)
+  cec --to "$to" --user-control-pressed ui-cmd="$1" >/dev/null
+  cec --to "$to" --user-control-released >/dev/null
+}
+box_volume() {  # box_volume <wpctl args...>: the TV session's default output
+  local uid
+  uid=$(id -u "$COUCHBOX_TV_USER")
+  runuser -u "$COUCHBOX_TV_USER" -- env XDG_RUNTIME_DIR="/run/user/$uid" wpctl "$@" @DEFAULT_AUDIO_SINK@
+}
+volume() {  # volume <ui-cmd> <wpctl args...>
+  if [[ ${COUCHBOX_TV_VOLUME:-tv} == box ]]; then shift; box_volume "$@"; else register; key "$1"; fi
+}
+claim_input() { cec --to 15 --active-source phys-addr="$(phys_of "$DEV")"; }
+next_input() {
+  local state=/run/couchbox-tv-input ours last=0 cur= next p i
+  ours=$(phys_of "$DEV")
+  [[ -f $state ]] && read -r last cur < "$state"
+  local ports=("$ours")
+  for p in ${COUCHBOX_TV_INPUTS:-1.0.0.0 2.0.0.0 3.0.0.0}; do [[ $p != "$ours" ]] && ports+=("$p"); done
+  next=$ours
+  if (( $(date +%s) - last <= 30 )); then
+    for i in "${!ports[@]}"; do [[ ${ports[$i]} == "$cur" ]] && next=${ports[$(((i + 1) % ${#ports[@]}))]}; done
+  fi
+  if [[ $next == "$ours" ]]; then
+    cec --to 0 --image-view-on >/dev/null; claim_input >/dev/null
+  else
+    cec --to 15 --set-stream-path phys-addr="$next" >/dev/null   # the TV routes to that port
+  fi
+  echo "$(date +%s) $next" > "$state"
+  echo "TV input: $next$([[ $next == "$ours" ]] && echo " (this box)")"
+}
+
+case ${1:-} in
+  on)     register; cec --to 0 --image-view-on; claim_input ;;
+  off)    register; cec --to 0 --standby ;;
+  input)  register; claim_input ;;
+  next-input) register; next_input ;;
+  status) register; cec --to 0 --give-device-power-status ;;
+  scan)   register; cec --show-topology ;;
+  # Boot claims the input but never powers the TV on, so a reboot at 3 a.m.
+  # (power cut, update) doesn't light up the living room.
+  boot)   register; claim_input ;;
+  power)
+    register
+    if cec --to 0 --give-device-power-status 2>/dev/null | grep -q 'pwr-state: on'; then
+      cec --to 0 --standby
+    else
+      cec --to 0 --image-view-on; claim_input
+    fi ;;
+  volume-up)   volume volume-up set-volume -l 1.0 5%+ ;;
+  volume-down) volume volume-down set-volume 5%- ;;
+  mute)        volume mute set-mute toggle ;;
+  *)      sed -n '2,16p' "$0"; exit 1 ;;
+esac

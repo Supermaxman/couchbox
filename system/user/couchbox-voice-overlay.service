@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox voice indicator (shows what the voice assistant is doing)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/qml6 /usr/share/couchbox/ui/voice-overlay/Overlay.qml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

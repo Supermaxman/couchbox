@@ -1,0 +1,9 @@
+{
+  "id": "dropout",
+  "name": "Dropout",
+  "desktop": "couchbox-dropout.desktop",
+  "kind": "native",
+  "tile": "dropout",
+  "default_order": 40,
+  "unofficial": true
+}

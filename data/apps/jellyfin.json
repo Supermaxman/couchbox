@@ -1,0 +1,12 @@
+{
+  "id": "jellyfin",
+  "name": "Jellyfin",
+  "desktop": "couchbox-jellyfin.desktop",
+  "kind": "native",
+  "tile": "jellyfin",
+  "requires": [
+    "media.jellyfin.url"
+  ],
+  "default_order": 20,
+  "settings_page": "apps/jellyfin"
+}

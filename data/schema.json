@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "pages": {
+    "network": "Network",
+    "home": "Home screen",
+    "apps": "Apps and media",
+    "voice": "Voice and assistant",
+    "remote": "Remote and TV",
+    "display": "Display and sound",
+    "time": "Date, time and location",
+    "access": "Remote access",
+    "security": "Security",
+    "updates": "Updates",
+    "system": "System"
+  },
+  "settings": {
+    "network.hostname": {"type": "string", "default": "couchbox", "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$", "page": "network", "label": "Device name", "help": "Its name on your network, in AirPlay and in the TV's source list."},
+    "network.wifi_country": {"type": "string", "default": "", "pattern": "^([A-Z]{2})?$", "page": "network", "label": "Wi-Fi country", "help": "Two-letter country code for Wi-Fi channels. Empty: from the time zone."},
+
+    "home.layout": {"type": "list", "items": "string", "default": [], "page": "home", "label": "Order", "help": "App ids in home-row order. Apps not listed follow in their default order."},
+    "home.hidden": {"type": "list", "items": "string", "default": [], "page": "home", "label": "Hidden apps"},
+    "home.names": {"type": "object", "default": {}, "page": "home", "label": "Renamed apps"},
+    "home.web_apps": {"type": "list", "items": "object", "default": [], "page": "home", "label": "Websites", "help": "Each: {id, name, url}."},
+    "home.clock": {"type": "enum", "values": ["auto", "12h", "24h"], "default": "auto", "page": "home", "label": "Clock"},
+    "home.weather": {"type": "bool", "default": true, "page": "home", "label": "Weather", "help": "Shown when a location is set. Uses Open-Meteo."},
+    "appearance.theme": {"type": "enum", "values": ["graphite", "neon", "amber", "sakura", "matrix"], "default": "graphite", "page": "home", "label": "Theme", "restart": "session"},
+    "appearance.scale": {"type": "number", "min": 1.0, "max": 2.0, "default": 1.5, "page": "display", "label": "Interface size", "restart": "session"},
+
+    "media.jellyfin.url": {"type": "url", "default": "", "page": "apps", "label": "Jellyfin server"},
+    "media.jellyfin.client": {"type": "enum", "values": ["native", "web"], "default": "native", "page": "apps", "label": "Jellyfin player", "help": "Native plays HEVC on the Pi's hardware decoder."},
+    "media.seerr.url": {"type": "url", "default": "", "page": "apps", "label": "Seerr server"},
+    "apps.disabled": {"type": "list", "items": "string", "default": [], "page": "apps", "label": "Turned-off apps"},
+    "apps.youtube.captions": {"type": "string", "default": "en", "pattern": "^([a-z]{2}(-[A-Z]{2})?)?$", "page": "apps", "label": "YouTube captions", "help": "Language turned on for every video. Empty: off."},
+    "apps.player.captions": {"type": "bool", "default": true, "page": "apps", "label": "Subtitles on by default"},
+    "apps.twitch.chat": {"type": "enum", "values": ["overlay", "side", "off"], "default": "overlay", "page": "apps", "label": "Twitch chat"},
+    "apps.twitch.skip_ads": {"type": "bool", "default": false, "page": "apps", "label": "Skip Twitch ads (experimental)", "help": "Drops ad segments from live streams. Unofficial."},
+    "apps.airplay.enabled": {"type": "bool", "default": true, "page": "apps", "label": "AirPlay", "restart": "service:couchbox-airplay"},
+    "apps.airplay.name": {"type": "string", "default": "", "max_len": 40, "page": "apps", "label": "AirPlay name", "help": "Empty: the device name.", "restart": "service:couchbox-airplay"},
+    "apps.airplay.pin": {"type": "string", "default": "", "pattern": "^([0-9]{4})?$", "page": "apps", "label": "AirPlay PIN", "restart": "service:couchbox-airplay"},
+    "apps.fcast.enabled": {"type": "bool", "default": true, "page": "apps", "label": "FCast receiver"},
+    "apps.idle_minutes": {"type": "int", "min": 10, "max": 1440, "default": 60, "page": "system", "label": "Close unused apps after (minutes)"},
+    "apps.web_cache_mb": {"type": "int", "min": 64, "max": 4096, "default": 256, "page": "system", "label": "Web app cache (MB)"},
+
+    "voice.mode": {"type": "enum", "values": ["off", "dictation", "assistant"], "default": "off", "page": "voice", "label": "Mic button", "restart": "service:couchbox-voice"},
+    "voice.stt.url": {"type": "url", "default": "", "page": "voice", "label": "Speech-to-text server", "help": "OpenAI-compatible, e.g. https://host/v1", "restart": "service:couchbox-voice"},
+    "voice.stt.model": {"type": "string", "default": "whisper-1", "max_len": 200, "page": "voice", "label": "Speech-to-text model", "restart": "service:couchbox-voice"},
+    "voice.llm.url": {"type": "url", "default": "", "page": "voice", "label": "Assistant model server", "help": "OpenAI-compatible with tool calling.", "restart": "service:couchbox-voice"},
+    "voice.llm.model": {"type": "string", "default": "", "max_len": 200, "page": "voice", "label": "Assistant model", "restart": "service:couchbox-voice"},
+    "voice.notes": {"type": "text", "default": "", "max_len": 8000, "page": "voice", "label": "Household notes", "help": "Added to the assistant's instructions: nicknames, preferences."},
+    "voice.language": {"type": "string", "default": "en", "pattern": "^[a-z]{2}$", "page": "voice", "label": "Speech language"},
+
+    "tv.cec.enabled": {"type": "bool", "default": true, "page": "remote", "label": "Control the TV (HDMI-CEC)"},
+    "tv.cec.device": {"type": "string", "default": "auto", "pattern": "^(auto|/dev/cec[0-9])$", "page": "remote", "label": "CEC device"},
+    "tv.cec.name": {"type": "string", "default": "", "max_len": 14, "page": "remote", "label": "Name on the TV", "help": "Empty: the device name."},
+    "tv.power_on_with_box": {"type": "bool", "default": true, "page": "remote", "label": "Turn the TV on with the box"},
+    "tv.standby_with_box": {"type": "bool", "default": true, "page": "remote", "label": "Power button puts the TV in standby"},
+    "tv.volume": {"type": "enum", "values": ["tv", "box"], "default": "tv", "page": "remote", "label": "Volume buttons control", "restart": "service:couchbox-input"},
+    "tv.inputs": {"type": "list", "items": "string", "default": ["1.0.0.0", "2.0.0.0", "3.0.0.0"], "page": "remote", "label": "TV inputs to cycle"},
+    "input.keymap": {"type": "string", "default": "default", "pattern": "^[a-z0-9-]+$", "page": "remote", "label": "Key map", "restart": "service:couchbox-input"},
+
+    "display.mode": {"type": "string", "default": "1920x1080@60", "pattern": "^[0-9]{3,4}x[0-9]{3,4}@[0-9]{2,3}$", "page": "display", "label": "Resolution", "restart": "display"},
+    "display.outputs": {"type": "list", "items": "string", "default": ["HDMI-A-1", "HDMI-A-2"], "page": "display", "label": "HDMI ports"},
+    "audio.output": {"type": "string", "default": "auto", "page": "display", "label": "Sound output"},
+
+    "time.timezone": {"type": "string", "default": "Etc/UTC", "pattern": "^[A-Za-z0-9_+/-]{1,60}$", "page": "time", "label": "Time zone"},
+    "location.name": {"type": "string", "default": "", "max_len": 80, "page": "time", "label": "Location"},
+    "location.lat": {"type": "number", "min": -90, "max": 90, "default": 0, "page": "time", "label": "Latitude"},
+    "location.lon": {"type": "number", "min": -180, "max": 180, "default": 0, "page": "time", "label": "Longitude"},
+    "location.units": {"type": "enum", "values": ["auto", "imperial", "metric"], "default": "auto", "page": "time", "label": "Units"},
+
+    "tailscale.enabled": {"type": "bool", "default": false, "page": "access", "label": "Tailscale"},
+    "tailscale.tags": {"type": "string", "default": "", "pattern": "^(tag:[a-z0-9-]+(,tag:[a-z0-9-]+)*)?$", "page": "access", "label": "Tailscale tags"},
+    "tailscale.serve_phone_page": {"type": "bool", "default": true, "page": "access", "label": "Phone page over HTTPS"},
+    "ssh.enabled": {"type": "bool", "default": false, "page": "access", "label": "SSH (keys only)"},
+    "ssh.github_user": {"type": "string", "default": "", "pattern": "^([A-Za-z0-9-]{1,39})?$", "page": "access", "label": "GitHub user for SSH keys"},
+    "phone.enabled": {"type": "bool", "default": true, "page": "access", "label": "Phone remote and typing", "restart": "service:couchbox-phone"},
+
+    "updates.mode": {"type": "enum", "values": ["automatic", "manual"], "default": "automatic", "page": "updates", "label": "Updates"},
+    "updates.channel": {"type": "enum", "values": ["stable", "beta"], "default": "stable", "page": "updates", "label": "Channel"},
+    "updates.window": {"type": "string", "default": "02:00-06:00", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$", "page": "updates", "label": "Install hours"},
+    "updates.os": {"type": "enum", "values": ["security", "all", "off"], "default": "security", "page": "updates", "label": "Ubuntu updates"},
+    "updates.source": {"type": "string", "default": "Supermaxman/couchbox", "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", "page": "updates", "label": "Release source"},
+
+    "system.swap_gb": {"type": "int", "min": 0, "max": 32, "default": 0, "page": "system", "label": "Swap (GB)", "help": "0: automatic (8 on NVMe, 2 on SD)."},
+    "system.logs_mb": {"type": "int", "min": 50, "max": 2000, "default": 200, "page": "system", "label": "Log space (MB)"}
+  },
+  "secrets": {
+    "media.seerr.api_key": {"page": "apps", "label": "Seerr API key", "help": "Only for voice requests."},
+    "voice.stt.api_key": {"page": "voice", "label": "Speech-to-text API key"},
+    "voice.llm.api_key": {"page": "voice", "label": "Assistant API key"},
+    "tailscale.auth_key": {"page": "access", "label": "Tailscale auth key"},
+    "phone.token": {"page": "access", "label": "Phone pairing code"}
+  }
+}

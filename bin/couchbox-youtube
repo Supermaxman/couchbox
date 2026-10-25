@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# couchbox-youtube: make YouTube (VacuumTube) ask for H.264 video only (its "h264ify" setting).
+# The Pi 5 has no hardware decoder for YouTube's usual VP9/AV1, so those are decoded on
+# the CPU (~3 cores at 1080p, hot, choppy); H.264 is far cheaper to decode in software.
+#   sudo couchbox-youtube        (restarts YouTube only if the setting changes)
+set -euo pipefail
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+user=$COUCHBOX_TV_USER
+home=$(getent passwd "$user" | cut -d: -f6)
+conf=$(find "$home/.var/app/rocks.shy.VacuumTube/config" -name config.json -path '*/config.json' 2>/dev/null | head -1)
+if [[ -z $conf ]]; then
+  echo "YouTube hasn't been opened yet; open it once, then re-run: sudo couchbox-youtube"; exit 0
+fi
+want='.h264ify == true and .h264ify_disable_vp9 == true and .h264ify_disable_av1 == true and .h264ify_disable_webm == true'
+if jq -e "$want" "$conf" >/dev/null; then echo "YouTube already uses H.264 only."; exit 0; fi
+
+running=0
+if pgrep -u "$user" -f '/app/bin/vacuumtube/vacuumtube' >/dev/null; then
+  running=1
+  pkill -u "$user" -f '/app/bin/vacuumtube/vacuumtube' || true   # it rewrites its config, so close it first
+  for _ in $(seq 20); do pgrep -u "$user" -f '/app/bin/vacuumtube/vacuumtube' >/dev/null || break; sleep 0.5; done
+fi
+tmp=$(mktemp)
+jq '.h264ify = true | .h264ify_disable_webm = true | .h264ify_disable_vp8 = true
+    | .h264ify_disable_vp9 = true | .h264ify_disable_av1 = true' "$conf" > "$tmp"
+install -o "$user" -g "$user" -m 600 "$tmp" "$conf"; rm -f "$tmp"
+echo "YouTube now uses H.264 only."
+if (( running )); then
+  systemd-run --user -M "$user@" --quiet --collect flatpak run rocks.shy.VacuumTube
+  echo "Reopened YouTube."
+fi

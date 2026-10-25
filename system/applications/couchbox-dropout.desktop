@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Dropout
+Comment=Dropout as a TV app (shows, episodes, search, player for the remote)
+Icon=applications-multimedia
+Exec=couchbox-streaming
+StartupWMClass=couchbox-streaming
+Categories=AudioVideo;Video;

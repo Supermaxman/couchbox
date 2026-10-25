@@ -1,0 +1,438 @@
+#!/usr/bin/python3
+"""couchbox-phone: type on the TV from a phone.
+
+Serves a small page on port 8791 (home network and tailnet only). Phones pair by scanning the
+QR code on the TV: its address carries a token (#t=..., kept by the page; Settings → Remote
+access → New pairing code signs phones out). Without the token the page can't send anything. Text sent from it goes
+into whatever field is selected on the TV: web apps, YouTube and Jellyfin through DevTools
+(any characters), anything else (the home screen, our TV apps) as key presses (US keyboard).
+The page also has the remote's buttons: arrows, OK, Back, Home, Play/Pause.
+
+The page's Enter (and "Type + Enter") is the keypad Enter key, so our TV apps' keyboard
+pop-up can tell "done typing" from the remote's OK (Return). Its address as a QR code, for
+the pop-up to show: /run/couchbox/phone/phone.png and phone.url. They use https://<tailnet name>
+(tailscale serve proxies 443 to this port, with a real certificate; set up by couchbox-update),
+else http://couchbox.local:8791. Not plain "couchbox": the home router's DNS can hold a stale address.
+
+  couchbox-phone                 run the server (systemd: couchbox-phone.service)
+  couchbox-phone "some text"     type it on the TV now
+"""
+import hmac
+import ipaddress
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from evdev import UInput, ecodes as e
+
+from couchbox import secrets, settings  # noqa: E402
+from couchbox.voice import cdp, tools  # noqa: E402
+
+PORT = 8791
+LAST_KEY = "/run/couchbox/last-key"      # couchbox-memory: someone is using the TV
+PHONE_DIR = "/run/couchbox/phone"           # phone.url, phone.png (systemd RuntimeDirectory)
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+# US layout: character -> (key, shift)
+CHARS = {c: (getattr(e, f"KEY_{c.upper()}"), c.isupper()) for c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}
+CHARS.update({str(d): (getattr(e, f"KEY_{d}"), False) for d in range(10)})
+for c, k in zip(")!@#$%^&*(", "0123456789"):
+    CHARS[c] = (getattr(e, f"KEY_{k}"), True)
+for plain, shifted, key in [("-", "_", e.KEY_MINUS), ("=", "+", e.KEY_EQUAL), ("[", "{", e.KEY_LEFTBRACE),
+                            ("]", "}", e.KEY_RIGHTBRACE), ("\\", "|", e.KEY_BACKSLASH), (";", ":", e.KEY_SEMICOLON),
+                            ("'", '"', e.KEY_APOSTROPHE), ("`", "~", e.KEY_GRAVE), (",", "<", e.KEY_COMMA),
+                            (".", ">", e.KEY_DOT), ("/", "?", e.KEY_SLASH)]:
+    CHARS[plain], CHARS[shifted] = (key, False), (key, True)
+CHARS[" "], CHARS["\t"], CHARS["\n"] = (e.KEY_SPACE, False), (e.KEY_TAB, False), (e.KEY_KPENTER, False)
+
+KEYS = {"up": e.KEY_UP, "down": e.KEY_DOWN, "left": e.KEY_LEFT, "right": e.KEY_RIGHT, "ok": e.KEY_ENTER,
+        "enter": e.KEY_KPENTER, "back": e.KEY_ESC, "home": e.KEY_HOMEPAGE, "play": e.KEY_PLAYPAUSE,
+        "tab": e.KEY_TAB, "backspace": e.KEY_BACKSPACE, "menu": e.KEY_MENU}
+
+ui = UInput({e.EV_KEY: sorted({k for k, _ in CHARS.values()} | set(KEYS.values()) |
+                              {e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_A})}, name="couchbox-phone")
+
+
+def used():
+    try:
+        open(LAST_KEY, "a").close()
+        os.utime(LAST_KEY)
+    except OSError:
+        pass
+
+
+def tap(key, shift=False, ctrl=False):
+    mods = [m for m, on in ((e.KEY_LEFTSHIFT, shift), (e.KEY_LEFTCTRL, ctrl)) if on]
+    for m in mods:
+        ui.write(e.EV_KEY, m, 1)
+    ui.write(e.EV_KEY, key, 1)
+    ui.syn()
+    ui.write(e.EV_KEY, key, 0)
+    for m in mods:
+        ui.write(e.EV_KEY, m, 0)
+    ui.syn()
+    time.sleep(0.012)
+
+
+def type_text(text):
+    """Type into the selected field on the TV. Returns how it was typed."""
+    used()
+    kind, _ = tools.typing_target()
+    if kind == "youtube":                      # YouTube's search screen has no real text box
+        tools.youtube("search", query=text)
+        return "searched"
+    _, page = tools.foreground(focused=True)   # else a non-web app (Seerr app...): type as a keyboard
+    if page:
+        try:
+            cdp.send(page, "Input.insertText", {"text": text})
+            return "typed"
+        except Exception:
+            pass
+    missing = sorted({c for c in text if c not in CHARS})
+    for c in text:
+        if c in CHARS:
+            tap(*CHARS[c])
+    return "typed" + (f" (couldn't type {''.join(missing)})" if missing else "")
+
+
+def press(name):
+    used()
+    if name == "clear":                       # empty the selected field: select all, delete
+        tap(e.KEY_A, ctrl=True)
+        tap(e.KEY_BACKSPACE)
+    elif name in KEYS:
+        tap(KEYS[name])
+    else:
+        return f"unknown key {name}"
+    return "ok"
+
+
+PAGE = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1222">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TV remote">
+<title>TV remote</title>
+<script>
+  // pairing: the TV's QR code opens this page with #t=<token>; keep it, and tidy the address bar
+  (() => { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/);
+           if (m) { try { localStorage.setItem("couchbox-token", m[1]); } catch (e) {} history.replaceState(null, "", location.pathname); } })();
+  window.TOKEN = (() => { try { return localStorage.getItem("couchbox-token") || ""; } catch (e) { return ""; } })();
+</script>
+<style>
+  :root { color-scheme: dark; --bg: #0e1222; --card: #181e3c; --card2: #222a52; --line: #2c3566;
+          --text: #eef0ff; --dim: #9aa3d0; --accent: #8f7cf8; --accent2: #b3a6ff; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); }
+  body { color: var(--text); font: 16px/1.3 -apple-system, system-ui, sans-serif; -webkit-user-select: none; user-select: none;
+         padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+                  max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  main { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+           border-radius: 14px; padding: 0; min-height: 52px; touch-action: manipulation; cursor: pointer;
+           display: flex; align-items: center; justify-content: center; gap: 6px; transition: transform .06s, background .06s; }
+  button:active, button.down { background: var(--card2); transform: scale(0.96); }
+  svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .field { position: relative; }
+  .field input { width: 100%; font: inherit; font-size: 20px; color: var(--text); background: var(--card);
+                 border: 1.5px solid var(--line); border-radius: 16px; padding: 15px 56px 15px 16px; outline: none;
+                 -webkit-user-select: text; user-select: text; }
+  .field input:focus { border-color: var(--accent); }
+  .field input::placeholder { color: var(--dim); }
+  .eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-height: 44px; width: 44px;
+         background: none; border: none; color: var(--dim); }
+  .eye:active { transform: translateY(-50%) scale(0.92); background: none; }
+  .eye.on { color: var(--accent); }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .grid4 button { min-height: 48px; font-size: 15px; color: var(--dim); }
+  .primary { background: var(--accent); border-color: var(--accent); color: #0e1222; font-weight: 650; }
+  .primary:active { background: var(--accent2); }
+  #msg { color: var(--dim); font-size: 14px; min-height: 18px; text-align: center; transition: opacity .3s; }
+  .remote { margin-top: 6px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .dpad { position: relative; width: min(76vw, 290px); aspect-ratio: 1; border-radius: 50%;
+          background: radial-gradient(circle at 50% 40%, #1f2650, var(--card)); border: 1px solid var(--line);
+          box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .dpad button { position: absolute; background: none; border: none; color: var(--dim); min-height: 0; border-radius: 0; }
+  .dpad button:active, .dpad button.down { background: none; color: var(--text); transform: none; }
+  .dpad .up, .dpad .down { left: 30%; width: 40%; height: 30%; }
+  .dpad .left, .dpad .right { top: 30%; height: 40%; width: 30%; }
+  .dpad .up { top: 0; } .dpad .down { bottom: 0; } .dpad .left { left: 0; } .dpad .right { right: 0; }
+  .dpad svg { width: 30px; height: 30px; stroke-width: 2.6; }
+  .dpad .ok { left: 30%; top: 30%; width: 40%; height: 40%; border-radius: 50%; background: var(--card2);
+              border: 1px solid var(--line); color: var(--text); font-weight: 650; font-size: 18px; letter-spacing: .04em; }
+  .dpad .ok:active, .dpad .ok.down { background: var(--accent); color: #0e1222; transform: scale(0.95); }
+  .keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; width: 100%; max-width: 340px; }
+  .keys div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+  .keys button { width: 58px; height: 58px; min-height: 0; border-radius: 50%; }
+</style></head><body><main>
+<div class="field">
+  <input id="t" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+         enterkeyhint="send" placeholder="Text for the selected box">
+  <button class="eye" id="eye" aria-label="Hide what I type"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+</div>
+<div class="grid2">
+  <button onclick="send(false)">Type</button>
+  <button class="primary" onclick="send(true)">Type + Enter</button>
+</div>
+<div class="grid4">
+  <button data-key="backspace" data-repeat aria-label="Backspace"><svg viewBox="0 0 24 24"><path d="M21 5H8l-6 7 6 7h13a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M17 9l-6 6M11 9l6 6"/></svg></button>
+  <button data-key="clear">Clear</button>
+  <button data-key="tab">Tab</button>
+  <button data-key="enter">Enter</button>
+</div>
+<div id="msg"></div>
+<div class="remote">
+  <div class="dpad">
+    <button class="up" data-key="up" data-repeat aria-label="Up"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button class="left" data-key="left" data-repeat aria-label="Left"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <button class="ok" data-key="ok">OK</button>
+    <button class="right" data-key="right" data-repeat aria-label="Right"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+    <button class="down" data-key="down" data-repeat aria-label="Down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  </div>
+  <div class="keys">
+    <div><button data-key="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>Back</div>
+    <div><button data-key="home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg></button>Home</div>
+    <div><button data-key="menu" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>Menu</div>
+    <div><button data-key="play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path d="M4 5l9 7-9 7z" fill="currentColor"/><path d="M16 5v14M20 5v14"/></svg></button>Play</div>
+  </div>
+</div>
+</main>
+<script>
+const t = document.getElementById("t"), msg = document.getElementById("msg"), eye = document.getElementById("eye");
+let msgTimer;
+eye.onclick = () => { const hide = t.type === "text"; t.type = hide ? "password" : "text"; eye.classList.toggle("on", hide); t.focus(); };
+t.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); send(true); } });
+function say(text) {
+  msg.textContent = text; msg.style.opacity = 1;
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { msg.style.opacity = 0; }, 2500);
+}
+if (!window.TOKEN) say("Scan the QR code on the TV to pair this phone.");
+async function post(path, body, quiet) {
+  if (!window.TOKEN) { say("Scan the QR code on the TV to pair this phone."); return; }
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-Couchbox-Token": window.TOKEN},
+                                 body: JSON.stringify(body)});
+    if (r.status === 401) { say("This phone isn't paired any more. Scan the code on the TV."); return; }
+    const res = (await r.json()).result;
+    if (!quiet || res !== "Sent.") say(res);
+  } catch (err) { say("The TV isn't answering."); }
+}
+function send(enter) {
+  if (!t.value && !enter) return;
+  post("/type", {text: t.value, enter});
+  t.value = "";
+}
+// remote keys: tap sends one press; holding an arrow or backspace repeats
+for (const b of document.querySelectorAll("[data-key]")) {
+  let delay, rep;
+  const stop = () => { clearTimeout(delay); clearInterval(rep); b.classList.remove("down"); };
+  b.addEventListener("pointerdown", ev => {
+    ev.preventDefault();
+    b.classList.add("down");
+    if (navigator.vibrate) navigator.vibrate(8);
+    post("/key", {key: b.dataset.key}, true);
+    if (b.hasAttribute("data-repeat"))
+      delay = setTimeout(() => { rep = setInterval(() => post("/key", {key: b.dataset.key}, true), 110); }, 420);
+  });
+  for (const e of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(e, stop);
+  b.addEventListener("contextmenu", ev => ev.preventDefault());
+}
+</script></body></html>
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    def allowed(self):
+        ip = ipaddress.ip_address(self.client_address[0])
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if ip.is_private or ip.is_loopback or ip in TAILNET:
+            return True
+        self.send_error(403)
+        return False
+
+    def reply(self, code, body, ctype="application/json"):
+        data = body.encode() if isinstance(body, str) else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.allowed():
+            self.reply(200, PAGE, "text/html; charset=utf-8")
+
+    def paired(self):
+        """The phone's token, or our own programs on this box (voice dictation)."""
+        ip = ipaddress.ip_address(self.client_address[0])
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if ip.is_loopback and self.headers.get("X-Couchbox") == "1" and not self.headers.get("X-Forwarded-For"):
+            return True
+        token = secrets.get("phone.token")
+        given = self.headers.get("X-Couchbox-Token", "")
+        if token and given and hmac.compare_digest(token, given):
+            return True
+        self.reply(401, {"result": "Not paired."})
+        return False
+
+    def do_POST(self):
+        if not self.allowed() or not self.paired():
+            return
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            if self.path == "/type":
+                result = type_text(str(body.get("text", ""))) if body.get("text") else "ok"
+                if body.get("enter") and result != "searched":
+                    press("enter")
+            elif self.path == "/key":
+                result = press(str(body.get("key", "")))
+            else:
+                return self.reply(404, {"result": "not found"})
+            print(f"{self.client_address[0]} {self.path} {result}", flush=True)   # never log the text
+            self.reply(200, {"result": "Sent." if result in ("ok", "typed") else "Searched YouTube." if result == "searched" else result})
+        except Exception as err:
+            self.reply(500, {"result": f"Error: {err}"})
+
+    def log_message(self, *args):
+        pass
+
+
+def phone_base():
+    """The address phones should use: https on the tailnet name (when Tailscale serves the
+    page), else this box's mDNS name."""
+    s = settings.load()
+    if s["tailscale.enabled"] and s["tailscale.serve_phone_page"]:
+        try:
+            st = json.loads(subprocess.run(["tailscale", "status", "--self", "--json"], capture_output=True,
+                                           text=True, timeout=10).stdout)
+            name = (st.get("Self") or {}).get("DNSName", "").rstrip(".")
+            if name and st.get("BackendState") == "Running":
+                return f"https://{name}"
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    return f"http://{s['network.hostname'] or socket.gethostname()}.local:{PORT}"
+
+
+def phone_url():
+    return f"{phone_base()}/#t={secrets.ensure_token()}"
+
+
+def write_phone_qr():
+    """Keep /run/couchbox/phone/phone.{url,png} pointing at this page, for the TV apps to show."""
+    last = None
+    while True:
+        try:
+            url = phone_url()
+            if url != last:
+                png = subprocess.run(["qrencode", "-t", "PNG", "-s", "12", "-m", "2", "-o", "-", url],
+                                     capture_output=True, check=True).stdout
+                for name, data in (("phone.png", png), ("phone.url", url.encode())):
+                    tmp = os.path.join(PHONE_DIR, f".{name}")
+                    with open(tmp, "wb") as f:
+                        f.write(data)
+                    os.chmod(tmp, 0o644)
+                    os.replace(tmp, os.path.join(PHONE_DIR, name))
+                print(f"phone page: {url.split('#', 1)[0]}", flush=True)   # never log the token
+                last = url
+        except (OSError, subprocess.CalledProcessError) as err:
+            print(f"phone QR: {err}", flush=True)
+        time.sleep(60)
+
+
+# The typing pop-up for YouTube, Jellyfin and the web apps: while a text box or a search screen
+# is open, a card with the phone page's QR code (and the mic hint) shows in the corner. It's put
+# into each page over DevTools (and again after the page reloads).
+HINT_JS = r"""(() => {
+  const KEY = "__KEY__";
+  if (window.__couchboxHint === KEY) return;
+  const old = document.getElementById("couchbox-hint-host");
+  if (old) old.remove();
+  window.__couchboxHint = KEY;
+  const host = document.createElement("div");
+  host.id = "couchbox-hint-host";
+  host.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;display:none;right:2vw;";
+  const root = host.attachShadow({mode: "open"});
+  const box = document.createElement("div");
+  box.style.cssText = "display:flex;align-items:center;gap:1.2vw;padding:1vw 1.4vw 1vw 1vw;background:rgba(17,24,39,.95);" +
+    "border:1px solid #374151;border-radius:1vw;box-shadow:0 .5vw 2vw rgba(0,0,0,.5);font-family:Inter,Roboto,sans-serif;color:#fff;";
+  const qr = document.createElement("img");
+  qr.src = "data:image/png;base64,__PNG__";
+  qr.style.cssText = "width:8vw;height:8vw;background:#fff;padding:.4vw;border-radius:.6vw;image-rendering:pixelated;";
+  const col = document.createElement("div");
+  const line = (text, css) => { const d = document.createElement("div"); d.textContent = text; d.style.cssText = css; return d; };
+  col.append(line("Type on your phone", "font-size:1.35vw;font-weight:600;"),
+             line("__HOST__", "font-size:1vw;color:#9ca3af;margin-top:.3vw;"),
+             line("or press the mic button and say it", "font-size:1vw;color:#d1d5db;margin-top:.7vw;"));
+  box.append(qr, col);
+  root.append(box);
+  const editable = el => !!el && (el.isContentEditable || el.tagName === "TEXTAREA" ||
+      el.tagName === "INPUT" && /^(text|search|email|url|tel|password|)$/i.test(el.getAttribute("type") || ""));
+  const check = () => {
+    if (!host.isConnected && document.documentElement) document.documentElement.appendChild(host);
+    const yt = !!window._yttv;
+    const show = yt ? /^#\/search/.test(location.hash) : editable(document.activeElement) || /^#!?\/search/.test(location.hash);
+    host.style.display = show ? "block" : "none";
+    host.style.top = yt ? "2vw" : "";
+    host.style.bottom = yt ? "" : "2vw";
+  };
+  setInterval(check, 600);
+  document.addEventListener("focusin", check, true);
+  document.addEventListener("focusout", () => setTimeout(check, 50), true);
+  window.addEventListener("hashchange", check);
+  check();
+})()"""
+
+
+def hints():
+    """Keep the typing pop-up in every YouTube, Jellyfin and web app page."""
+    import base64
+    while True:
+        try:
+            url = open(os.path.join(PHONE_DIR, "phone.url")).read().strip()
+            png = base64.b64encode(open(os.path.join(PHONE_DIR, "phone.png"), "rb").read()).decode()
+            js = (HINT_JS.replace("__KEY__", str(abs(hash(url))) + "-1").replace("__PNG__", png)
+                  .replace("__HOST__", url.split("://", 1)[-1].split("/#", 1)[0]))
+            for port in (cdp.YOUTUBE_PORT, cdp.WEB_PORT, cdp.JELLYFIN_PORT):
+                for page in cdp.pages(port):
+                    try:
+                        cdp.evaluate(page, js, timeout=3)
+                    except Exception:
+                        pass
+        except OSError:
+            pass
+        time.sleep(2)
+
+
+class Server(ThreadingHTTPServer):
+    address_family = socket.AF_INET6      # "::" also takes IPv4 (as ::ffff:a.b.c.d)
+    daemon_threads = True
+
+
+def main():
+    if len(sys.argv) > 1:
+        if sys.argv[1].startswith("-"):
+            sys.exit(__doc__)
+        time.sleep(0.5)                       # let the desktop pick up the new keyboard
+        print(type_text(" ".join(sys.argv[1:])))
+        return
+    if not settings.get("phone.enabled"):
+        print("couchbox-phone: turned off in Settings", flush=True)
+        while True:
+            time.sleep(3600)
+    print(f"couchbox-phone: http://<this box>:{PORT}", flush=True)
+    threading.Thread(target=write_phone_qr, daemon=True).start()
+    threading.Thread(target=hints, daemon=True).start()
+    Server(("::", PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

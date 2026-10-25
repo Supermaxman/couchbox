@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <!-- couchbox wallpaper: synthwave night, neon grid, cat silhouette. @KEYS@ are filled from a preset. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="@BG_TOP@"/>
+      <stop offset="0.62" stop-color="@BG_HORIZON@"/>
+      <stop offset="0.62" stop-color="@BG_TOP@"/>
+      <stop offset="1" stop-color="@BG_TOP@"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="@SUN_TOP@"/>
+      <stop offset="1" stop-color="@SUN_BOTTOM@"/>
+    </linearGradient>
+    <radialGradient id="haze" cx="0.5" cy="0.62" r="0.55">
+      <stop offset="0" stop-color="@ACCENT2@" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="@ACCENT2@" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="floorfade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="@BG_TOP@" stop-opacity="0.85"/>
+      <stop offset="0.35" stop-color="@BG_TOP@" stop-opacity="0"/>
+    </linearGradient>
+    <!-- sun with synthwave cut lines -->
+    <mask id="suncuts">
+      <rect x="0" y="0" width="1920" height="1080" fill="#fff"/>
+      <g fill="#000">
+        <rect x="0" y="520" width="1920" height="5"/>
+        <rect x="0" y="545" width="1920" height="8"/>
+        <rect x="0" y="573" width="1920" height="11"/>
+        <rect x="0" y="604" width="1920" height="14"/>
+        <rect x="0" y="638" width="1920" height="17"/>
+      </g>
+    </mask>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="bigglow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+    <!-- neon rim around the whole cat silhouette (no inner seams) -->
+    <filter id="rim" x="-20%" y="-20%" width="140%" height="140%">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="4" result="fat"/>
+      <feFlood flood-color="@ACCENT@"/>
+      <feComposite in2="fat" operator="in" result="edge"/>
+      <feGaussianBlur in="edge" stdDeviation="14" result="halo"/>
+      <feMerge>
+        <feMergeNode in="halo"/>
+        <feMergeNode in="halo"/>
+        <feMergeNode in="edge"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- sky -->
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <rect width="1920" height="1080" fill="url(#haze)"/>
+
+  <!-- stars -->
+  <g fill="@TEXT@">
+    <circle cx="120" cy="90" r="1.6" opacity=".8"/><circle cx="260" cy="210" r="1.1" opacity=".5"/>
+    <circle cx="410" cy="60" r="1.3" opacity=".7"/><circle cx="560" cy="170" r="0.9" opacity=".5"/>
+    <circle cx="700" cy="110" r="1.8" opacity=".9"/><circle cx="860" cy="40" r="1.0" opacity=".6"/>
+    <circle cx="980" cy="200" r="1.2" opacity=".5"/><circle cx="1120" cy="80" r="1.5" opacity=".8"/>
+    <circle cx="1270" cy="150" r="1.0" opacity=".6"/><circle cx="1400" cy="50" r="1.7" opacity=".9"/>
+    <circle cx="1530" cy="230" r="1.1" opacity=".5"/><circle cx="1660" cy="120" r="1.4" opacity=".7"/>
+    <circle cx="1800" cy="60" r="1.0" opacity=".6"/><circle cx="1860" cy="260" r="1.3" opacity=".7"/>
+    <circle cx="330" cy="330" r="1.0" opacity=".4"/><circle cx="640" cy="300" r="1.2" opacity=".4"/>
+    <circle cx="1210" cy="320" r="1.0" opacity=".4"/><circle cx="1740" cy="360" r="1.2" opacity=".4"/>
+    <circle cx="60" cy="400" r="1.1" opacity=".4"/><circle cx="1500" cy="400" r="0.9" opacity=".35"/>
+  </g>
+
+  <!-- sun -->
+  <circle cx="760" cy="520" r="230" fill="@SUN_BOTTOM@" opacity=".55" filter="url(#bigglow)"/>
+  <circle cx="760" cy="520" r="210" fill="url(#sun)" mask="url(#suncuts)"/>
+
+  <!-- distant mountains -->
+  <path d="M0,670 L180,590 L300,640 L470,560 L620,640 L760,600 L930,655 L1080,585 L1240,650 L1400,570 L1560,640 L1720,595 L1920,660 L1920,670 Z"
+        fill="@BG_TOP@" stroke="@ACCENT2@" stroke-width="2" stroke-opacity=".7" filter="url(#glow)"/>
+
+  <!-- floor grid (perspective), horizon at y=670 -->
+  <g stroke="@ACCENT@" stroke-width="2" fill="none" opacity=".85" filter="url(#glow)">
+    <line x1="0" y1="670" x2="1920" y2="670"/>
+    <line x1="0" y1="684" x2="1920" y2="684"/>
+    <line x1="0" y1="703" x2="1920" y2="703"/>
+    <line x1="0" y1="730" x2="1920" y2="730"/>
+    <line x1="0" y1="768" x2="1920" y2="768"/>
+    <line x1="0" y1="822" x2="1920" y2="822"/>
+    <line x1="0" y1="900" x2="1920" y2="900"/>
+    <line x1="0" y1="1010" x2="1920" y2="1010"/>
+    <line x1="960" y1="670" x2="960" y2="1080"/>
+    <line x1="960" y1="670" x2="760" y2="1080"/><line x1="960" y1="670" x2="1160" y2="1080"/>
+    <line x1="960" y1="670" x2="540" y2="1080"/><line x1="960" y1="670" x2="1380" y2="1080"/>
+    <line x1="960" y1="670" x2="300" y2="1080"/><line x1="960" y1="670" x2="1620" y2="1080"/>
+    <line x1="960" y1="670" x2="20" y2="1080"/><line x1="960" y1="670" x2="1900" y2="1080"/>
+    <line x1="960" y1="670" x2="-320" y2="1080"/><line x1="960" y1="670" x2="2240" y2="1080"/>
+    <line x1="960" y1="670" x2="-760" y2="1080"/><line x1="960" y1="670" x2="2680" y2="1080"/>
+  </g>
+  <rect x="0" y="670" width="1920" height="410" fill="url(#floorfade)"/>
+
+  <!-- cat, sitting on the horizon, right of centre -->
+  <g transform="translate(1290,250) scale(1.05)">
+    <g fill="@SURFACE@" filter="url(#rim)">
+      <!-- ears -->
+      <path d="M92,92 L78,4 L146,64 Z"/>
+      <path d="M208,92 L222,4 L154,64 Z"/>
+      <!-- head -->
+      <ellipse cx="150" cy="118" rx="76" ry="66"/>
+      <!-- body -->
+      <path d="M112,170 C64,214 48,318 62,382 C72,424 112,436 150,436 C188,436 228,424 238,382 C252,318 236,214 188,170 Z"/>
+      <!-- tail curling round the front paws -->
+      <path d="M226,404 C300,404 330,350 300,318 C284,300 290,276 314,280" fill="none" stroke="@SURFACE@" stroke-width="26" stroke-linecap="round"/>
+    </g>
+    <!-- inner ear glow -->
+    <path d="M100,84 L91,28 L132,66 Z" fill="@ACCENT2@" opacity=".35"/>
+    <path d="M200,84 L209,28 L168,66 Z" fill="@ACCENT2@" opacity=".35"/>
+    <!-- eyes -->
+    <g filter="url(#glow)">
+      <ellipse cx="122" cy="116" rx="15" ry="10" fill="@EYES@"/>
+      <ellipse cx="178" cy="116" rx="15" ry="10" fill="@EYES@"/>
+    </g>
+    <ellipse cx="122" cy="116" rx="3" ry="9" fill="@SURFACE@"/>
+    <ellipse cx="178" cy="116" rx="3" ry="9" fill="@SURFACE@"/>
+    <!-- nose and whiskers -->
+    <path d="M143,140 L157,140 L150,149 Z" fill="@ACCENT2@" opacity=".9"/>
+    <g stroke="@ACCENT@" stroke-width="1.6" opacity=".7" stroke-linecap="round">
+      <line x1="112" y1="146" x2="52" y2="136"/><line x1="112" y1="152" x2="54" y2="156"/>
+      <line x1="188" y1="146" x2="248" y2="136"/><line x1="188" y1="152" x2="246" y2="156"/>
+    </g>
+    <!-- collar tag -->
+    <circle cx="150" cy="196" r="9" fill="@ACCENT@" filter="url(#glow)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="1860" y="1046" text-anchor="end" font-family="DejaVu Sans Mono, monospace" font-size="28"
+        letter-spacing="10" fill="@ACCENT@" opacity=".65" filter="url(#glow)">COUCHBOX</text>
+</svg>

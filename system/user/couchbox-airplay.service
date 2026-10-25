@@ -1,0 +1,15 @@
+[Unit]
+Description=Couchbox AirPlay receiver (UxPlay)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+EnvironmentFile=/etc/couchbox/couchbox.env
+ExecCondition=/bin/sh -c 'test "$COUCHBOX_APPS_AIRPLAY_ENABLED" = 1'
+# -nh: show just the name, -fs: full screen. COUCHBOX_APPS_AIRPLAY_PIN adds -pin when set.
+ExecStart=/bin/sh -c 'exec /usr/bin/uxplay -n "$COUCHBOX_AIRPLAY_NAME" -nh -fs ${COUCHBOX_APPS_AIRPLAY_PIN:+-pin $COUCHBOX_APPS_AIRPLAY_PIN}'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

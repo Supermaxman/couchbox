@@ -1,0 +1,299 @@
+#!/usr/bin/python3
+"""couchbox-memory: keep the box's 8 GB for what's being watched.
+
+Idle apps. Every app (YouTube, Jellyfin, each web app such as Dropout) is closed after
+COUCHBOX_APPS_IDLE_MINUTES (couchbox.env, default 60) without activity. An app counts as active
+while something plays in it, or while it's in front and the remote is being pressed
+(couchbox-input touches /run/couchbox/last-key). Closing: web apps close their Chromium window;
+YouTube and Jellyfin quit (SIGTERM, then SIGKILL). Their tiles start them fresh, and the
+voice assistant's resume picks up where they were.
+
+Out-of-memory order (oom_score_adj, re-applied every check), killed first to last:
+  900  apps in the background
+  200  the rest of the TV session (Plasma helpers, launcher)
+  100  the app in front or playing
+ -500  home screen, voice indicator
+ -900  KWin, Xwayland, PipeWire audio
+  (couchbox-input and couchbox-voice set theirs in their units; system services stay at 0.)
+Swap: an 8 GB swap file on the SSD (couchbox-swap) gives the kernel room before it has to kill.
+
+  couchbox-memory                 run (systemd: couchbox-memory.service), checking every 30 s
+  couchbox-memory --status        each app's state and idle time, memory and swap
+  couchbox-memory --close NAME    close one app now, as an idle timeout would (youtube, jellyfin, dropout, ...)
+"""
+import json
+import os
+import pwd
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+
+from couchbox.voice import cdp  # noqa: E402
+
+CONF = "/etc/couchbox/couchbox.env"
+LAST_KEY = "/run/couchbox/last-key"
+STATE = "/run/couchbox/memory/state.json"
+CHECK_SECONDS = 30
+
+OOM_BACKGROUND, OOM_SESSION, OOM_ACTIVE = 900, 200, 100
+OOM_CORE = {"kwin_wayland": -900, "kwin_wayland_wr": -900, "Xwayland": -900, "pipewire": -900,
+            "pipewire-pulse": -900, "wireplumber": -900, "plasmashell": -500, "qml6": -500}
+
+PROBE_JS = ("[document.hasFocus(), [...document.querySelectorAll('video, audio')]"
+            ".some(v => !v.paused && !v.ended)]")
+JF_PROBE_JS = """(async () => {
+  // Jellyfin Desktop plays in mpv, outside the page: ask the TV's own session
+  let playing = false;
+  try { const a = window.ApiClient, s = a && (await a.getSessions({deviceId: a.deviceId()}))[0];
+        playing = !!(s && s.NowPlayingItem && !(s.PlayState || {}).IsPaused); } catch (e) {}
+  return [document.hasFocus(), playing];
+})()"""
+
+
+def conf():
+    """Settings as COUCHBOX_* environment names (see couchbox.settings.env)."""
+    from couchbox import settings
+    return settings.env()
+
+
+def web_names():
+    """{host: app name} of the web apps in /etc/couchbox/apps.tsv."""
+    out = {}
+    for line in open("/etc/couchbox/apps.tsv"):
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 3 and not f[0].startswith("#"):
+            host = f[2].split("//", 1)[-1].split("/")[0]
+            out[host] = f[1]
+    return out
+
+
+def web_name(url, names):
+    host = url.split("//", 1)[-1].split("/")[0]
+    for h, n in names.items():
+        base = h.split(".", 1)[1] if h.count(".") > 1 else h      # watch.dropout.tv -> dropout.tv
+        if host == h or host.endswith("." + base) or host == base:
+            return n
+    return host
+
+
+# ------------------------------------------------------------------ processes
+
+def procs():
+    """[(pid, ppid, comm, uid)] of every process."""
+    out = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            st = open(f"/proc/{d}/stat").read()
+            comm = st[st.index("(") + 1:st.rindex(")")]
+            ppid = int(st[st.rindex(")") + 2:].split()[1])
+            out.append((int(d), ppid, comm, os.stat(f"/proc/{d}").st_uid))
+        except (OSError, ValueError, IndexError):
+            pass
+    return out
+
+
+def descendants(root, plist):
+    kids, out, todo = {}, [], [root]
+    for pid, ppid, _, _ in plist:
+        kids.setdefault(ppid, []).append(pid)
+    while todo:
+        p = todo.pop()
+        out.append(p)
+        todo += kids.get(p, [])
+    return out
+
+
+def app_procs(uid, plist):
+    """{"YouTube": (main pid, [pids]), "Jellyfin": ..., "web": (None, [pids])} of the TV user's apps."""
+    comm = {p: c for p, _, c, _ in plist}
+    mine = [(p, pp, c) for p, pp, c, u in plist if u == uid]
+    out = {}
+    yt = [(p, pp) for p, pp, c in mine if c == "vacuumtube"]
+    if yt:
+        main = next((p for p, pp in yt if comm.get(pp) != "vacuumtube"), yt[0][0])
+        out["YouTube"] = (main, [p for p, _ in yt])
+    jf = next((p for p, _, c in mine if c == "jellyfin-deskto"), None)
+    if jf:
+        out["Jellyfin"] = (jf, descendants(jf, plist))
+    web = [p for p, _, c in mine if c.startswith("chrome")]
+    if web:
+        out["web"] = (None, web)
+    return out
+
+
+def set_oom(pid, value):
+    try:
+        with open(f"/proc/{pid}/oom_score_adj", "r+") as f:
+            if int(f.read()) != value:
+                f.seek(0)
+                f.write(str(value))
+    except (OSError, ValueError):
+        pass
+
+
+def stop(pid, name, log):
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    for _ in range(100):
+        time.sleep(0.1)
+        if not os.path.exists(f"/proc/{pid}"):
+            return
+    log(f"{name} didn't quit; killing it")
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+# ------------------------------------------------------------------ apps
+
+def probe():
+    """{app key: {name, focus, playing, page}} of the apps open now."""
+    names, out = web_names(), {}
+    for port, name, js in ((cdp.YOUTUBE_PORT, "YouTube", PROBE_JS), (cdp.JELLYFIN_PORT, "Jellyfin", JF_PROBE_JS)):
+        pages = cdp.pages(port)
+        if pages:
+            focus = playing = False
+            for p in pages:
+                try:
+                    f, pl = cdp.evaluate(p, js, timeout=5)
+                    focus, playing = focus or f, playing or pl
+                except Exception:
+                    pass
+            out[name] = {"name": name, "focus": focus, "playing": playing}
+    for p in cdp.pages(cdp.WEB_PORT):
+        try:
+            focus, playing = cdp.evaluate(p, PROBE_JS, timeout=5)
+        except Exception:
+            focus = playing = False
+        out["web:" + p["id"]] = {"name": web_name(p["url"], names), "focus": focus, "playing": playing, "page": p["id"]}
+    return out
+
+
+def close(key, app, main_pids, log):
+    if key.startswith("web:"):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{cdp.WEB_PORT}/json/close/{app['page']}", timeout=5).read()
+        except OSError as err:
+            log(f"couldn't close {app['name']}: {err}")
+    elif main_pids.get(key):
+        stop(main_pids[key], app["name"], log)
+
+
+class Memory:
+    def __init__(self):
+        c = conf()
+        self.idle = int(c.get("COUCHBOX_APPS_IDLE_MINUTES") or 60) * 60
+        self.uid = pwd.getpwnam(c.get("COUCHBOX_TV_USER") or "tv").pw_uid
+        self.last_active = {}       # app key -> time it was last active
+        self.last_key = self.key_time()
+
+    @staticmethod
+    def key_time():
+        try:
+            return os.stat(LAST_KEY).st_mtime
+        except OSError:
+            return 0.0
+
+    def log(self, msg):
+        print(msg, flush=True)
+
+    def check(self):
+        now = time.time()
+        key = self.key_time()
+        pressed, self.last_key = key > self.last_key, key
+        apps = probe()
+        for k in list(self.last_active):
+            if k not in apps:
+                del self.last_active[k]
+        for k, a in apps.items():
+            if k not in self.last_active or a["playing"] or (a["focus"] and pressed):
+                self.last_active[k] = now
+            a["idle"] = int(now - self.last_active[k])
+
+        plist = procs()
+        groups = app_procs(self.uid, plist)
+        mains = {n: g[0] for n, g in groups.items()}
+        for k, a in apps.items():
+            if a["idle"] > self.idle:
+                self.log(f"closing {a['name']}: idle {a['idle'] // 60} min")
+                close(k, a, mains, self.log)
+                self.last_active.pop(k, None)
+                a["closed"] = True
+
+        # out-of-memory order
+        active = {("web" if k.startswith("web:") else k) for k, a in apps.items()
+                  if not a.get("closed") and (a["focus"] or a["playing"])}
+        in_apps = set()
+        for name, (_, pids) in groups.items():
+            value = OOM_ACTIVE if name in active else OOM_BACKGROUND
+            for p in pids:
+                set_oom(p, value)
+                in_apps.add(p)
+        for pid, _, comm, uid in plist:
+            if uid == self.uid and pid not in in_apps:
+                set_oom(pid, OOM_CORE.get(comm, OOM_SESSION))
+
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE + ".tmp", "w") as f:
+            json.dump({"t": now, "idle_limit": self.idle, "apps": apps}, f)
+        os.replace(STATE + ".tmp", STATE)
+
+    def run(self):
+        self.log(f"couchbox-memory: closing apps idle for {self.idle // 60} min; checking every {CHECK_SECONDS} s")
+        while True:
+            try:
+                self.check()
+            except Exception as err:      # never stop: log and try again next time
+                self.log(f"check failed: {err!r}")
+            time.sleep(CHECK_SECONDS)
+
+
+def status():
+    try:
+        s = json.load(open(STATE))
+    except OSError:
+        sys.exit("couchbox-memory isn't running (sudo systemctl status couchbox-memory)")
+    print(f"apps (closed after {s['idle_limit'] // 60} min idle; checked {int(time.time() - s['t'])} s ago):")
+    for a in s["apps"].values():
+        what = "playing" if a["playing"] else "in front" if a["focus"] else "background"
+        print(f"  {a['name']:<12} {what:<10} idle {a['idle'] // 60} min" + ("  (closed)" if a.get("closed") else ""))
+    if not s["apps"]:
+        print("  none open")
+    print()
+    subprocess.run(["free", "-h"])
+
+
+def close_now(name):
+    plist = procs()
+    mains = {n: g[0] for n, g in app_procs(pwd.getpwnam(conf().get("COUCHBOX_TV_USER") or "tv").pw_uid, plist).items()}
+    hits = [(k, a) for k, a in probe().items() if a["name"].lower() == name.lower()]
+    if not hits:
+        sys.exit(f"{name} isn't open")
+    for k, a in hits:
+        close(k, a, mains, print)
+        print(f"closed {a['name']}")
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        Memory().run()
+    elif args[0] == "--status":
+        status()
+    elif args[0] == "--close" and len(args) == 2:
+        if os.geteuid() != 0:
+            os.execvp("sudo", ["sudo", sys.argv[0]] + args)
+        close_now(args[1])
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

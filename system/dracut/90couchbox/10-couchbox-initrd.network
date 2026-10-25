@@ -1,0 +1,6 @@
+# initrd only: DHCP on Ethernet and Wi-Fi; whichever comes up first reaches Tang.
+[Match]
+Name=eth0 wlan0
+
+[Network]
+DHCP=ipv4

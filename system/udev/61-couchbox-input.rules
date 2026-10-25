@@ -1,0 +1,6 @@
+# The remotes couchbox-input grabs (input.toml: the Fire TV remote, the TV remote over CEC) are
+# hidden from the desktop (KWin/libinput); it gets their keys only through couchbox-input's
+# virtual keyboard. Otherwise KWin can see a press just before couchbox-input grabs the device
+# (at a reconnect or restart), never see the release, and ignore that key from then on.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="0171|1949", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="vc4-hdmi-[0-9]", ENV{LIBINPUT_IGNORE_DEVICE}="1"

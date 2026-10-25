@@ -1,0 +1,8 @@
+[Unit]
+Description=Couchbox updates: install the available update now (Settings → Updates → Install)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-updater install
+TimeoutStartSec=2h

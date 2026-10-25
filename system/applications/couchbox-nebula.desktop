@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Nebula
+Comment=Nebula as a TV app (shows, episodes, search, player for the remote)
+Icon=applications-multimedia
+Exec=couchbox-nebula
+StartupWMClass=couchbox-nebula
+Categories=AudioVideo;Video;

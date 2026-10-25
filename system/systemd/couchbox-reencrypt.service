@@ -1,0 +1,9 @@
+[Unit]
+Description=Couchbox disk encryption: re-encrypt the disk with a new key (Settings → Security)
+Documentation=https://github.com/Supermaxman/couchbox/blob/main/docs/design/encryption.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -c 'from couchbox import encryption; encryption.reencrypt()'
+Nice=19
+IOSchedulingClass=idle

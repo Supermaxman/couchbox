@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# couchbox-jellyfin-debug: copy Jellyfin Desktop's settings and latest log to a file the admin
+# user can read over SSH (/tmp/couchbox-jellyfin-debug.txt).   sudo couchbox-jellyfin-debug
+set -uo pipefail
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+dir=$(getent passwd "$COUCHBOX_TV_USER" | cut -d: -f6)/.local/share/jellyfin-desktop
+out=/tmp/couchbox-jellyfin-debug.txt
+{
+  echo "== $(date -Is)"; find "$dir" -maxdepth 4 -not -path '*/QtWebEngine/*' 2>&1 | head -60
+  # Jellyfin Desktop 2.x keeps settings and logs per profile: profiles/<id>/
+  while IFS= read -r f; do
+    echo "== $f"; sed -E 's/("?(AccessToken|Password|token)"?\s*[:=]\s*"?)[^",]+/\1<hidden>/I' "$f"
+  done < <(find "$dir" -maxdepth 4 -type f \( -name '*.conf' -o -name '*.json' -o -name '*.ini' \) -not -path '*/QtWebEngine/*')
+  log=$(find "$dir" -path '*logs*' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+  [[ -n $log ]] && { echo "== $log"; cat "$log"; }
+} > "$out" 2>&1
+chmod 644 "$out"
+echo "Written to $out"

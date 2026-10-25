@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""couchbox-pause-all: pause whatever is playing on the TV (the remote's Home button runs it).
+
+Players that speak MPRIS (YouTube, the web apps, our Dropout / 2nd Try apps, Jellyfin) get
+Pause on the TV user's session bus; phones' players through KDE Connect are left alone. Then,
+as a fallback, every audio/video element in the YouTube, Jellyfin and web app pages is paused
+over DevTools.
+"""
+import re
+import subprocess
+import sys
+
+from couchbox.voice import cdp, tools  # noqa: E402
+
+PAUSE_JS = "(() => { let n = 0; for (const m of document.querySelectorAll('video, audio')) if (!m.paused) { m.pause(); n++; } return n; })()"
+
+
+def mpris():
+    pw, env = tools.tv_env()
+    gd = ["runuser", "-u", pw.pw_name, "--", "env", f"DBUS_SESSION_BUS_ADDRESS={env['DBUS_SESSION_BUS_ADDRESS']}", "gdbus", "call",
+          "--session", "--timeout", "2"]
+    out = subprocess.run(gd + ["--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus",
+                               "--method", "org.freedesktop.DBus.ListNames"], capture_output=True, text=True).stdout
+    paused = []
+    for name in re.findall(r"'(org\.mpris\.MediaPlayer2\.[^']+)'", out):
+        if "kdeconnect" in name.lower():
+            continue
+        r = subprocess.run(gd + ["--dest", name, "--object-path", "/org/mpris/MediaPlayer2",
+                                 "--method", "org.mpris.MediaPlayer2.Player.Pause"], capture_output=True, text=True)
+        if r.returncode == 0:
+            paused.append(name.split(".", 3)[-1])
+    return paused
+
+
+def pages():
+    n = 0
+    for port in (cdp.YOUTUBE_PORT, cdp.WEB_PORT, cdp.JELLYFIN_PORT):
+        for page in cdp.pages(port):
+            try:
+                n += cdp.evaluate(page, PAUSE_JS, timeout=3) or 0
+            except Exception:
+                pass
+    return n
+
+
+def main():
+    players = mpris()
+    n = pages()
+    print(f"paused: MPRIS {', '.join(players) or 'none'}; {n} page media element(s)", flush=True)
+
+
+if __name__ == "__main__":
+    main()

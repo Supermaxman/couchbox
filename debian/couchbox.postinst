@@ -1,0 +1,65 @@
+#!/bin/sh
+# Couchbox: users, groups and generated files. Safe to re-run; quiet in an image build (chroot).
+set -e
+
+in_chroot() { [ "${COUCHBOX_IMAGE_BUILD:-0}" = 1 ] || systemd-detect-virt --chroot >/dev/null 2>&1; }
+
+case "$1" in
+configure)
+    getent group couchbox >/dev/null || addgroup --system --quiet couchbox
+    if ! id tv >/dev/null 2>&1; then
+        useradd --create-home --shell /bin/bash --comment "Couchbox TV session" tv
+    fi
+    usermod -aG couchbox,audio,video,render,input tv 2>/dev/null || usermod -aG couchbox,audio,video,render tv
+    # SSH logs in here (keys only, off until Settings turns SSH on)
+    if ! id admin >/dev/null 2>&1; then
+        useradd --create-home --shell /bin/bash --comment "Couchbox admin (SSH keys only)" admin
+        passwd --lock admin >/dev/null
+    fi
+    usermod -aG sudo admin
+    echo 'admin ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/90-couchbox-admin
+    chmod 440 /etc/sudoers.d/90-couchbox-admin
+    install -d -m 755 /etc/couchbox /etc/couchbox/luks /var/lib/couchbox /var/lib/couchbox/state /var/lib/couchbox/home
+    install -d -m 700 /var/lib/couchbox/secrets /var/lib/couchbox/updates
+    chmod 700 /etc/couchbox/luks
+    python3 -c 'from couchbox import settings; settings.write_env()'
+    install -d /etc/ssh/sshd_config.d
+    cat > /etc/ssh/sshd_config.d/00-couchbox.conf <<'X'
+# Couchbox: SSH is keys only (Settings → Remote access). 00- sorts first; sshd keeps the first value.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+X
+    # NetworkManager runs networking, so Settings can change Wi-Fi
+    if [ -d /etc/netplan ]; then
+        printf 'network:\n  version: 2\n  renderer: NetworkManager\n' > /etc/netplan/90-couchbox-networkmanager.yaml
+        chmod 600 /etc/netplan/90-couchbox-networkmanager.yaml
+    fi
+    install -d /etc/cloud/cloud.cfg.d
+    echo 'network: {config: disabled}' > /etc/cloud/cloud.cfg.d/99-couchbox-no-network.cfg
+    systemctl set-default graphical.target >/dev/null 2>&1 || true
+    systemctl enable sddm.service NetworkManager.service >/dev/null 2>&1 || true
+    systemctl disable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+    # SSH starts only when Settings turns it on
+    if ! grep -q '"ssh.enabled": true' /etc/couchbox/settings.json 2>/dev/null; then
+        systemctl disable ssh.service ssh.socket >/dev/null 2>&1 || true
+    fi
+    flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1 || true
+    /usr/lib/couchbox/bin/couchbox-session-setup || true
+    /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
+    if ! in_chroot; then
+        systemd-tmpfiles --create couchbox.conf >/dev/null 2>&1 || true
+        udevadm control --reload >/dev/null 2>&1 || true
+        sysctl --system -q >/dev/null 2>&1 || true
+    fi
+    ;;
+triggered)
+    # Plasma Bigscreen was upgraded: lay the Couchbox home screen over the new version (or
+    # fall back to its own home screen if this version isn't tested yet)
+    /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
+    ;;
+esac
+
+#DEBHELPER#
+exit 0

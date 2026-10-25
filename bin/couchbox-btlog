@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# couchbox-btlog: always-on Bluetooth capture (btmon), for debugging the remote: what a button
+# really sent, whether it sent anything at all. Rolls over every 6 hours, keeps 2 days.
+#   couchbox-btlog                 the capture (systemd: couchbox-btlog.service)
+#   sudo couchbox-btlog --keys [N] remote input reports of the last N minutes (default 30),
+#                             one line each: time, GATT handle, data
+#   sudo couchbox-btlog --dump [N] everything btmon decoded in the last N minutes
+# Raw captures: /var/log/couchbox/bluetooth/*.btsnoop (open with btmon -r, or Wireshark).
+set -euo pipefail
+DIR=/var/log/couchbox/bluetooth
+KEEP_MIN=$((48 * 60))
+
+decode() {  # decode <minutes>: btmon text of the captures touched in the last N minutes
+  local f
+  for f in $(find "$DIR" -name '*.btsnoop' -mmin "-$1" | sort); do
+    btmon -T -r "$f" 2>/dev/null
+  done | awk -v since="$(date -d "-$1 min" '+%Y-%m-%d %H:%M:%S')" '
+    match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+$/) { t = substr($0, RSTART, 19) }
+    t >= since'
+}
+
+case ${1:-} in
+  --keys)
+    decode "${2:-30}" | awk '
+      match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+$/) { t = substr($0, RSTART + 11, 12) }
+      /ATT: Handle Value Notification/ { n = 1; next }
+      n && /Handle: 0x/ { h = $2; next }
+      n && /^ +([0-9a-f]{2} )+/ { printf "%s  %s  %s\n", t, h, substr($0, 1, 57); n = 0 }'
+    ;;
+  --dump)
+    decode "${2:-30}"
+    ;;
+  "")
+    install -d -m 700 "$DIR"
+    while true; do
+      find "$DIR" -name '*.btsnoop' -mmin "+$KEEP_MIN" -delete
+      timeout 6h btmon -w "$DIR/$(date +%Y%m%d-%H%M%S).btsnoop" >/dev/null || true
+      sleep 1
+    done
+    ;;
+  *)
+    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac

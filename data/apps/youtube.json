@@ -1,0 +1,9 @@
+{
+  "id": "youtube",
+  "name": "YouTube",
+  "desktop": "rocks.shy.VacuumTube.desktop",
+  "kind": "flatpak",
+  "tile": "youtube",
+  "default_order": 10,
+  "settings_page": "apps/youtube"
+}

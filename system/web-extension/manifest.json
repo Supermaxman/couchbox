@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "couchbox TV remote",
+  "version": "1.0",
+  "description": "Makes desktop websites usable with a TV remote: visible focus, D-pad reachable cards, OK clicks, Back goes back.",
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["remote.js"],
+    "css": ["remote.css"],
+    "run_at": "document_start",
+    "all_frames": false
+  }]
+}

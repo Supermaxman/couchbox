@@ -1,0 +1,11 @@
+[Unit]
+Description=Couchbox disk encryption: carry on after a reboot mid-way
+After=local-fs.target
+ConditionPathExists=/etc/couchbox/luks/image.key
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'python3 -c "import json,sys; from couchbox import encryption as e; d=e.root_device(); sys.exit(0 if d and \"online-reencrypt\" in json.dumps(e.luks_meta(d)) else 1)" && systemctl start --no-block couchbox-reencrypt.service || true'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+{
+  "id": "twitch-web",
+  "name": "Twitch (web)",
+  "desktop": "couchbox-web-twitch-web.desktop",
+  "kind": "web",
+  "url": "https://www.twitch.tv",
+  "icon": "applications-internet",
+  "default_order": 330,
+  "default_visible": false
+}

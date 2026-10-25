@@ -1,0 +1,197 @@
+#!/usr/bin/python3
+"""couchbox-streaming: Dropout (or 2nd Try: --site 2ndtry / couchbox-2ndtry; Nebula: --site nebula /
+couchbox-nebula; Twitch, with live chat: --site twitch / couchbox-twitch) as a TV app, built like the Seerr app (Qt QML) with libmpv for video. Dropout and
+2nd Try run on VHX (Vimeo OTT, vhx.py); Nebula has its own API (nebula.py), same screens.
+
+Browse the website's rows, open a show (seasons, episodes), search, My List, and play with
+the remote: OK pauses, Left/Right skip 10 seconds, Up/Down show the controls (subtitles, next
+episode), Back leaves the player. Progress goes back to Dropout, so Continue Watching and
+resume positions match the website and the other apps.
+
+Sign-in: copied from the TV's browser if it's signed in to Dropout, else email and password
+(keyboard pop-up or phone). The QML is in /usr/share/couchbox/ui/streaming/qml, the Python (vhx.py,
+player.py) next to it.
+
+  couchbox-streaming
+  couchbox-streaming --shot FILE [--open series:ID | search:TEXT | ...]   render once (testing)
+Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_REPORT=1 (no progress sent to Dropout), COUCHBOX_NO_MPRIS=1 (don't
+take the remote's media keys).
+"""
+import json
+import locale
+import os
+import sys
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths, settings  # noqa: E402
+
+LIB = os.environ.get("COUCHBOX_DROPOUT_LIB", str(paths.share() / "ui/streaming"))
+# The Pi's build of ffmpeg (HEVC hardware decoding), as Jellyfin Desktop uses: libmpv picks it
+# up from LD_LIBRARY_PATH, which only counts at start, so start again with it.
+RPI_FFMPEG = "/opt/couchbox/ffmpeg-rpi/lib"    # couchbox-media
+if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PATH", ""):
+    os.environ["LD_LIBRARY_PATH"] = RPI_FFMPEG + (":" + os.environ["LD_LIBRARY_PATH"] if os.environ.get("LD_LIBRARY_PATH") else "")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))
+
+# libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+
+from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox.services import vhx  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to vhx.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+    event = Signal(str, str)                          # from the back end: chat messages, ...
+
+    def __init__(self, site):
+        super().__init__()
+        if vhx.SITES[site].get("backend") == "nebula":      # not VHX: its own API, same calls
+            from couchbox.services import nebula
+            self.v = nebula.Nebula(site)
+        elif vhx.SITES[site].get("backend") == "twitch":
+            from couchbox.services import twitch
+            self.v = twitch.Twitch(site, skip_ads=settings.get("apps.twitch.skip_ads"))
+            self.v.on_event = lambda name, data: self.event.emit(name, data)
+        else:
+            self.v = vhx.Vhx(site)
+        self.pool = ThreadPoolExecutor(max_workers=6)
+
+    def run(self, op, a):
+        v = self.v
+        ops = {
+            "status": lambda: v.status(),
+            "import": lambda: {"imported": v.import_browser(), **v.status()},
+            "login": lambda: v.login(a["email"], a["password"]),
+            "profile": lambda: v.pick_profile(a["index"]),
+            "signout": lambda: (v.sign_out(), {"ok": True})[1],
+            "browse": lambda: {"rows": v.browse()},
+            "featured": lambda: {"items": v.featured()},
+            "items": lambda: v.items(a["href"], a.get("page", 1)),
+            "watching": lambda: v.watching(a.get("page", 1)),
+            "mylist": lambda: v.my_list(a.get("page", 1)),
+            "collection": lambda: v.collection(a["id"]),
+            "collectionItems": lambda: v.collection_items(a["id"], a.get("page", 1)),
+            "allSeries": lambda: v.all_series(),
+            "deviceStart": lambda: v.device_start(),
+            "devicePoll": lambda: v.device_poll(),
+            "chatJoin": lambda: v.chat_join(a["login"], a.get("channelId", "")),
+            "chatPart": lambda: v.chat_part(),
+            "chatSend": lambda: v.chat_send(a["text"]),
+            "vodComments": lambda: v.vod_comments(a["id"], a.get("offset", 0), a.get("login", "")),
+            "streamInfo": lambda: v.stream_info(a["login"]),
+            "search": lambda: v.search(a["q"], a.get("page", 1)),
+            "video": lambda: v.video(a["id"]),
+            "playback": lambda: v.playback(a["id"]),
+            "watchlist": lambda: v.watchlist(a["op"], a["kind"], a["id"]),
+            "onWatchlist": lambda: {"on": v.on_watchlist(a["id"])},
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except vhx.SignInNeeded:
+                out = {"error": f"Sign in to {self.v.cfg['name']}.", "signin": True}
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+    @Slot(str, str, str, float, float, str, str)
+    def report(self, name, vid, cid, timecode, duration, session, subtitle):
+        if os.environ.get("COUCHBOX_NO_REPORT") == "1":          # tests: leave the account's progress alone
+            return
+        threading.Thread(target=self.v.event, args=(name, vid, cid, timecode, duration, session, subtitle),
+                         daemon=True).start()
+
+
+class Shooter(QObject):
+    """--shot: lets the QML save the whole window to a PNG."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        """--keys: a remote key press, as couchbox-input sends it."""
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape, "play": Qt.Key_MediaTogglePlayPause}.get(name)
+        if key is None:
+            return
+        # to the window, like a real key: it delivers to the focused item and passes
+        # unhandled keys up to its parents
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+        f = self.window.activeFocusItem()
+        print(f"key {name} -> focus {type(f).__name__} {f.objectName() if f else ''}", flush=True)
+
+
+def main():
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
+    site = os.environ.get("COUCHBOX_VHX_SITE", "dropout")
+    if "--site" in sys.argv:
+        site = sys.argv[sys.argv.index("--site") + 1]
+    cfg = vhx.SITES[site]
+    app.setOrganizationName("couchbox")              # remembered choices: ~/.config/couchbox/couchbox-<site>.conf
+    app.setApplicationName(f"couchbox-{site}")
+    app.setApplicationDisplayName(cfg["name"])
+    app.setDesktopFileName(f"couchbox-{site}")              # Wayland app id: matches couchbox-<site>.desktop
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        from couchbox import player
+        qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")
+    else:                                            # no GPU off screen: a stand-in for the video
+        os.environ["COUCHBOX_NO_VIDEO"] = "1"
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    if os.environ.get("COUCHBOX_NO_VIDEO"):
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    backend = Backend(site)
+    shooter = Shooter()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
+    ctx.setContextProperty("site", dict(cfg, key=site))
+    st = settings.load()                             # defaults for the player's own remembered choices
+    ctx.setContextProperty("defaults", {"subtitles": st["apps.player.captions"], "chatMode": st["apps.twitch.chat"]})
+    mpris = None
+    if not os.environ.get("COUCHBOX_NO_VIDEO") and not os.environ.get("COUCHBOX_NO_MPRIS"):   # media keys arrive over MPRIS
+        try:
+            from couchbox import mpris as mpris_mod
+            mpris = mpris_mod.Mpris(f"couchbox_{site}", cfg["name"], f"couchbox-{site}")
+        except Exception as err:
+            print(f"MPRIS not available: {err}", flush=True)
+    ctx.setContextProperty("mpris", mpris)
+    engine.load(QUrl.fromLocalFile(os.environ.get("COUCHBOX_DROPOUT_QML", os.path.join(LIB, "qml", "Main.qml"))))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)                                   # don't wait for requests in flight
+
+
+if __name__ == "__main__":
+    main()

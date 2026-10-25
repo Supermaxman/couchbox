@@ -1,0 +1,24 @@
+#!/bin/sh
+# couchbox-apps: install the Flatpak apps Couchbox uses, when they're missing (the image
+# leaves them out to stay small; couchbox-apps.service runs this once the network is up).
+# Progress is in the journal and in /run/couchbox/apps.json for the setup wizard.
+set -eu
+APPS="rocks.shy.VacuumTube org.chromium.Chromium org.fcast.Receiver"
+. /etc/couchbox/couchbox.env 2>/dev/null || true
+[ "${COUCHBOX_MEDIA_JELLYFIN_CLIENT:-native}" = web ] || [ -x /opt/couchbox/jellyfin-desktop/bin/jellyfin-desktop ] \
+  || APPS="$APPS org.jellyfin.JellyfinDesktop"
+status() { mkdir -p /run/couchbox; printf '{"state": "%s", "app": "%s", "done": %s, "total": %s}\n' "$1" "$2" "$3" "$4" > /run/couchbox/apps.json; }
+flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+total=$(echo $APPS | wc -w); n=0
+for app in $APPS; do
+  status installing "$app" "$n" "$total"
+  flatpak info --system "$app" >/dev/null 2>&1 || flatpak install --system --noninteractive -y flathub "$app"
+  n=$((n + 1))
+done
+status done "" "$n" "$total"
+# Chromium policies: no password manager, autofill or translate pop-ups (the remote can't close them)
+pol="/var/lib/flatpak/extension/org.chromium.Chromium.Policy.system-policies/$(uname -m)/1/policies/managed"
+mkdir -p "$pol"
+install -m 644 /usr/share/couchbox/chromium/policies.json "$pol/couchbox.json"
+/usr/bin/couchbox home rebuild >/dev/null || true
+mkdir -p /var/lib/couchbox/state && date -Is > /var/lib/couchbox/state/apps.done

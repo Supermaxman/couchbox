@@ -1,0 +1,10 @@
+{
+  "id": "2ndtry-web",
+  "name": "2nd Try (web)",
+  "desktop": "couchbox-web-2ndtry-web.desktop",
+  "kind": "web",
+  "url": "https://watch.2ndtry.tv",
+  "icon": "applications-internet",
+  "default_order": 310,
+  "default_visible": false
+}

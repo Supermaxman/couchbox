@@ -1,0 +1,17 @@
+# Joins the home Wi-Fi in the initrd so Clevis can fetch the disk key from Tang.
+# Stops before switch-root; the real system's NetworkManager takes over from there.
+[Unit]
+Description=Couchbox: Wi-Fi for disk unlock
+DefaultDependencies=no
+BindsTo=sys-subsystem-net-devices-wlan0.device
+After=sys-subsystem-net-devices-wlan0.device
+Before=network-pre.target systemd-networkd.service
+Wants=network-pre.target
+Conflicts=initrd-switch-root.target shutdown.target
+Before=initrd-switch-root.target shutdown.target
+
+[Service]
+ExecStart=/usr/sbin/wpa_supplicant -i wlan0 -c /etc/wpa_supplicant/couchbox-initrd.conf
+
+[Install]
+WantedBy=sys-subsystem-net-devices-wlan0.device

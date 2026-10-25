@@ -1,0 +1,5 @@
+couchbox (0.1.0) unstable; urgency=medium
+
+  * First preview: settings service, Settings app, setup wizard, updater, image.
+
+ -- Couchbox Authors <couchbox@users.noreply.github.com>  Sat, 24 Oct 2026 12:00:00 +0000

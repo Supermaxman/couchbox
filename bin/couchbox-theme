@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# couchbox-theme: colour the TV interface from a preset: wallpaper + Plasma colour scheme + Inter font.
+#   sudo couchbox-theme            re-apply the current preset (COUCHBOX_APPEARANCE_THEME in /etc/couchbox/couchbox.env, else graphite)
+#   sudo couchbox-theme neon       switch preset (remembered across reboots; neon/amber/matrix/sakura are the neon cat)
+#   couchbox-theme --list          show presets
+# Presets live in /usr/share/couchbox/theme/presets/*.conf: copy one, change the colours,
+# and run it by name. The theme is also re-applied at every TV login.
+set -euo pipefail
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+THEME_DIR=/usr/share/couchbox/theme
+# shellcheck source=/dev/null
+[[ -f /etc/couchbox/theme ]] && . /etc/couchbox/theme   # COUCHBOX_APPEARANCE_THEME=<last chosen preset>
+
+if [[ ${1:-} == --list ]]; then
+  for f in "$THEME_DIR"/presets/*.conf; do n=$(basename "$f" .conf); echo "$n$([[ $n == "${COUCHBOX_APPEARANCE_THEME:-graphite}" ]] && echo '  (current)')"; done
+  exit 0
+fi
+[[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo couchbox-theme [preset]"; exit 1; }
+preset=${1:-${COUCHBOX_APPEARANCE_THEME:-graphite}}
+conf=$THEME_DIR/presets/$preset.conf
+[[ -f $conf ]] || { echo "No preset '$preset'. Presets: $(cd "$THEME_DIR/presets" && printf '%s ' *.conf | sed 's/\.conf//g')"; exit 1; }
+
+need=()
+command -v rsvg-convert >/dev/null || need+=(librsvg2-bin)
+fc-list -q Inter || need+=(fonts-inter)
+(( ${#need[@]} == 0 )) || apt-get -o DPkg::Lock::Timeout=600 install -y -qq "${need[@]}" >/dev/null
+
+user=$COUCHBOX_TV_USER
+home=$(getent passwd "$user" | cut -d: -f6)
+uid=$(id -u "$user")
+set -a
+# shellcheck disable=SC1090
+. "$conf"
+set +a
+scheme="Couch${preset^}"
+
+rgb() { printf '%d,%d,%d' "0x${1:1:2}" "0x${1:3:2}" "0x${1:5:2}"; }
+fill() {  # fill <template>: replace @KEY@ and @KEY_RGB@ with the preset's colours
+  local s; s=$(cat "$1")
+  for k in BG_TOP BG_HORIZON SURFACE SURFACE_ALT TEXT TEXT_DIM ACCENT ACCENT2 SUN_TOP SUN_BOTTOM EYES; do
+    s=${s//@${k}_RGB@/$(rgb "${!k}")}
+    s=${s//@${k}@/${!k}}
+  done
+  s=${s//@NAME@/$NAME}
+  s=${s//@SCHEME@/$scheme}
+  printf '%s\n' "$s"
+}
+as_tv() { runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" QT_QPA_PLATFORM=offscreen \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@"; }
+
+wall_dir=$home/.local/share/wallpapers/couchbox
+scheme_dir=$home/.local/share/color-schemes
+as_tv mkdir -p "$wall_dir" "$scheme_dir" "$home/.config/autostart"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+fill "$THEME_DIR/${WALLPAPER:-wallpaper.svg.in}" > "$tmp/wall.svg"
+rsvg-convert -w 1920 -h 1080 "$tmp/wall.svg" -o "$tmp/wall.png"
+fill "$THEME_DIR/couchbox.colors.in" > "$tmp/scheme.colors"
+install -o "$user" -g "$user" -m 644 "$tmp/wall.png" "$wall_dir/couchbox-$preset.png"
+install -o "$user" -g "$user" -m 644 "$tmp/scheme.colors" "$scheme_dir/$scheme.colors"
+wall=$wall_dir/couchbox-$preset.png
+
+# Re-applied at every TV login, so the theme sticks even if Plasma resets something.
+as_tv tee "$home/.config/autostart/couchbox-theme.desktop" >/dev/null <<EOF
+[Desktop Entry]
+Type=Application
+Name=couchbox theme
+Exec=sh -c 'sleep 3; plasma-apply-colorscheme $scheme; plasma-apply-wallpaperimage "$wall"'
+X-KDE-autostart-phase=2
+EOF
+echo "COUCHBOX_APPEARANCE_THEME=$preset" > /etc/couchbox/theme
+
+# Inter for the whole TV interface (the home screen uses it too)
+for key in font menuFont toolBarFont; do
+  as_tv kwriteconfig6 --file kdeglobals --group General --key "$key" "Inter,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
+done
+as_tv kwriteconfig6 --file kdeglobals --group General --key smallestReadableFont "Inter,8,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
+
+if pgrep -u "$user" -x plasmashell >/dev/null; then
+  as_tv plasma-apply-colorscheme "$scheme" 2>/dev/null || true
+  as_tv plasma-apply-wallpaperimage "$wall" || true
+  echo "Applied '$preset' to the running TV session."
+else
+  echo "Installed '$preset'; it applies at the next TV login."
+fi

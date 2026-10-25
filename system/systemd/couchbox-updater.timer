@@ -1,0 +1,11 @@
+[Unit]
+Description=Couchbox updates: every 6 hours (and soon after boot)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

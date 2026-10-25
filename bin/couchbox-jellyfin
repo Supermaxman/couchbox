@@ -1,0 +1,29 @@
+#!/bin/sh
+# couchbox-jellyfin: open Jellyfin on the TV.
+# With phase 9 installed: native Jellyfin Desktop using Raspberry Pi's FFmpeg, so HEVC plays
+# on the Pi 5's hardware decoder (direct play, no work for the server). Otherwise: the
+# Jellyfin web app (the server converts video to H.264).
+app=/opt/couchbox/jellyfin-desktop/bin/jellyfin-desktop
+if [ -x "$app" ]; then
+  # Already running (e.g. minimised by going Home): a second copy just exits without
+  # showing the first, so bring the existing window back, full screen, with a KWin script.
+  if pgrep -u "$(id -u)" -f "^$app" >/dev/null; then
+    js=$(mktemp --suffix=.js)
+    echo 'for (const w of workspace.windowList()) if (w.resourceClass == "org.jellyfin.JellyfinDesktop") { w.minimized = false; w.fullScreen = true; workspace.activeWindow = w; }' >"$js"
+    name=couchbox-jellyfin-$$
+    kwin() { gdbus call --session --dest org.kde.KWin "$@"; }
+    id=$(kwin --object-path /Scripting --method org.kde.kwin.Scripting.loadScript "$js" "$name" | grep -o '[0-9]\+' | tail -1)
+    [ -n "$id" ] && kwin --object-path "/Scripting/Script$id" --method org.kde.kwin.Script.run >/dev/null
+    sleep 0.3
+    kwin --object-path /Scripting --method org.kde.kwin.Scripting.unloadScript "$name" >/dev/null
+    rm -f "$js"
+    exit 0
+  fi
+  # DevTools on 127.0.0.1:9224 so couchbox-voice can drive it (search, play) as text
+  QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9224
+  export QTWEBENGINE_REMOTE_DEBUGGING
+  LD_LIBRARY_PATH=/opt/couchbox/ffmpeg-rpi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+  export LD_LIBRARY_PATH
+  exec "$app" --fullscreen --tv "$@"
+fi
+exec sh -c "$(sed -n 's/^Exec=//p' /usr/local/share/applications/couchbox-web-jellyfin.desktop)"

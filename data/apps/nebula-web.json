@@ -1,0 +1,10 @@
+{
+  "id": "nebula-web",
+  "name": "Nebula (web)",
+  "desktop": "couchbox-web-nebula-web.desktop",
+  "kind": "web",
+  "url": "https://nebula.tv",
+  "icon": "applications-internet",
+  "default_order": 320,
+  "default_visible": false
+}

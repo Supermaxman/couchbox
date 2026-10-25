@@ -1,0 +1,16 @@
+singleton D 1.0 D.qml
+Card 1.0 Card.qml
+DButton 1.0 DButton.qml
+DeviceSignInPage 1.0 DeviceSignInPage.qml
+EpisodeCard 1.0 EpisodeCard.qml
+GridPage 1.0 GridPage.qml
+Hero 1.0 Hero.qml
+HomePage 1.0 HomePage.qml
+Logo 1.0 Logo.qml
+PlayerPage 1.0 PlayerPage.qml
+ProfilePage 1.0 ProfilePage.qml
+SearchPage 1.0 SearchPage.qml
+SeriesPage 1.0 SeriesPage.qml
+Shelf 1.0 Shelf.qml
+SignInPage 1.0 SignInPage.qml
+VPage 1.0 VPage.qml

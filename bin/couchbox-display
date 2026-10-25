@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# couchbox-display: put the TV output in COUCHBOX_DISPLAY_MODE at COUCHBOX_APPEARANCE_SCALE (UI size) from /etc/couchbox/couchbox.env.
+# Runs at every TV login (autostart). As root it applies to the running TV session too:
+#   sudo couchbox-display
+set -uo pipefail
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+if [[ $EUID -eq 0 ]]; then
+  uid=$(id -u "$COUCHBOX_TV_USER")
+  exec runuser -u "$COUCHBOX_TV_USER" -- env XDG_RUNTIME_DIR="/run/user/$uid" WAYLAND_DISPLAY=wayland-0 \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$0"
+fi
+for o in $COUCHBOX_DISPLAY_OUTPUTS; do
+  kscreen-doctor "output.$o.mode.$COUCHBOX_DISPLAY_MODE" "output.$o.scale.${COUCHBOX_APPEARANCE_SCALE:-1}" >/dev/null 2>&1 \
+    && echo "$o: $COUCHBOX_DISPLAY_MODE at scale ${COUCHBOX_APPEARANCE_SCALE:-1}"
+done
+true

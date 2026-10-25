@@ -1,0 +1,14 @@
+[Unit]
+Description=Couchbox first boot: preseed (couchbox.toml on the boot partition), host keys, defaults
+ConditionPathExists=!/var/lib/couchbox/state/firstboot.done
+After=local-fs.target
+Before=couchboxd.service sddm.service ssh.service
+Wants=couchboxd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

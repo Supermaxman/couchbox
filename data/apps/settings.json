@@ -1,0 +1,10 @@
+{
+  "id": "settings",
+  "name": "Settings",
+  "desktop": "couchbox-settings.desktop",
+  "kind": "system",
+  "tile": "settings",
+  "icon": "preferences-system",
+  "default_order": 1000,
+  "hideable": false
+}

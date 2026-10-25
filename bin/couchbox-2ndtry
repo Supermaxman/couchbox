@@ -1,0 +1,3 @@
+#!/bin/sh
+# Couchbox: the 2ndtry TV app (couchbox-streaming --site 2ndtry)
+exec /usr/lib/couchbox/bin/couchbox-streaming --site 2ndtry "$@"

@@ -1,0 +1,7 @@
+/* couchbox: a focus ring you can see from the couch (sites often hide it) */
+:focus-visible, [data-couchbox-nav]:focus {
+  outline: 4px solid #8f7cf8 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 7px rgba(143, 124, 248, 0.35) !important;
+  border-radius: 6px;
+}

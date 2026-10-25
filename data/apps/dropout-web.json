@@ -1,0 +1,10 @@
+{
+  "id": "dropout-web",
+  "name": "Dropout (web)",
+  "desktop": "couchbox-web-dropout-web.desktop",
+  "kind": "web",
+  "url": "https://watch.dropout.tv",
+  "icon": "applications-internet",
+  "default_order": 300,
+  "default_visible": false
+}

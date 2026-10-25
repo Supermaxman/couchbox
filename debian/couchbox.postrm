@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+if [ "$1" = purge ]; then
+    rm -rf /etc/couchbox /var/lib/couchbox /usr/local/share/plasma/plasmoids/org.kde.bigscreen.homescreen
+    rm -f /usr/local/share/applications/couchbox-web-*.desktop /etc/sudoers.d/90-couchbox-admin \
+          /etc/ssh/sshd_config.d/00-couchbox.conf /etc/netplan/90-couchbox-networkmanager.yaml \
+          /etc/cloud/cloud.cfg.d/99-couchbox-no-network.cfg
+    # never touched: the disk's LUKS keyslots, the tv and admin users' homes
+fi
+#DEBHELPER#
+exit 0

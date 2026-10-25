@@ -1,0 +1,145 @@
+#!/usr/bin/python3
+"""couchbox-firstboot: the box's first start (couchbox-firstboot.service, once).
+
+- new SSH host keys (the image has none)
+- the preseed: couchbox.toml on the boot partition (see docs/design/first-boot.md#preseed),
+  applied as settings, Wi-Fi and secrets; its passwords and keys are then erased from it
+- things that need the network (SSH keys from GitHub, Tailscale sign-in, the weather
+  location) are left for couchboxd as "pending" and done once the box is online
+"""
+import json
+import logging
+import os
+import re
+import subprocess
+import sys
+import tomllib
+import uuid
+from pathlib import Path
+
+from couchbox import paths, secrets, settings
+
+log = logging.getLogger("couchbox-firstboot")
+SECRET_KEYS = {("wifi", "password"), ("tailscale", "auth_key"), ("voice", "llm_api_key"), ("voice", "stt_api_key"), ("seerr", "api_key")}
+
+
+def preseed_file() -> Path:
+    return paths.boot_firmware() / "couchbox.toml"
+
+
+def wifi_keyfile(ssid: str, password: str, hidden: bool = False) -> None:
+    con = "couchbox-" + re.sub(r"[^A-Za-z0-9_-]", "_", ssid)
+    lines = ["[connection]", f"id={con}", f"uuid={uuid.uuid4()}", "type=wifi", "autoconnect=true", "",
+             "[wifi]", "mode=infrastructure", f"ssid={ssid}", f"hidden={'true' if hidden else 'false'}", ""]
+    if password:
+        lines += ["[wifi-security]", "key-mgmt=wpa-psk", f"psk={password}", ""]
+    lines += ["[ipv4]", "method=auto", "", "[ipv6]", "method=auto", ""]
+    f = paths.root() / f"etc/NetworkManager/system-connections/{con}.nmconnection"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write("\n".join(lines))
+
+
+def apply_preseed(p: dict) -> list[dict]:
+    """Settings and secrets from the preseed; returns the network-needing jobs."""
+    changes, pending = {}, []
+    if p.get("hostname"):
+        changes["network.hostname"] = p["hostname"]
+    if p.get("timezone"):
+        changes["time.timezone"] = p["timezone"]
+    loc = p.get("location") or {}
+    if loc.get("name"):
+        changes["location.name"] = loc["name"]
+        if "lat" in loc and "lon" in loc:
+            changes.update({"location.lat": loc["lat"], "location.lon": loc["lon"]})
+        else:
+            pending.append({"job": "geocode", "name": loc["name"]})
+    for key in ("mode", "channel"):
+        if (p.get("updates") or {}).get(key):
+            changes[f"updates.{key}"] = p["updates"][key]
+    media = p.get("media") or {}
+    if media.get("jellyfin_url"):
+        changes["media.jellyfin.url"] = media["jellyfin_url"]
+    if media.get("seerr_url"):
+        changes["media.seerr.url"] = media["seerr_url"]
+    voice = p.get("voice") or {}
+    for k in ("mode", "language"):
+        if voice.get(k):
+            changes[f"voice.{k}"] = voice[k]
+    for k in ("stt_url", "stt_model", "llm_url", "llm_model"):
+        if voice.get(k):
+            changes["voice." + k.replace("_", ".", 1)] = voice[k]
+    ssh = p.get("ssh") or {}
+    if ssh.get("github_user"):
+        changes["ssh.enabled"] = True
+        pending.append({"job": "ssh_github", "user": ssh["github_user"]})
+    ts = p.get("tailscale") or {}
+    if ts.get("auth_key"):
+        secrets.put("tailscale.auth_key", ts["auth_key"])
+        changes["tailscale.enabled"] = True
+        pending.append({"job": "tailscale_up"})
+    if ts.get("tags"):
+        changes["tailscale.tags"] = ts["tags"]
+    for name, sec, key in (("voice.llm.api_key", "voice", "llm_api_key"), ("voice.stt.api_key", "voice", "stt_api_key"),
+                           ("media.seerr.api_key", "seerr", "api_key")):
+        if (p.get(sec) or {}).get(key):
+            secrets.put(name, p[sec][key])
+    wifi = p.get("wifi") or {}
+    if wifi.get("ssid"):
+        wifi_keyfile(wifi["ssid"], wifi.get("password", ""), bool(wifi.get("hidden")))
+    if wifi.get("country"):
+        changes["network.wifi_country"] = wifi["country"]
+    good = {}
+    for k, v in changes.items():   # one bad value mustn't lose the rest
+        try:
+            good[k] = settings.validate(k, v)
+        except settings.SettingsError as e:
+            log.warning("preseed: %s", e)
+    if good:
+        settings.update(good)
+    if (p.get("skip") or {}).get("wizard"):
+        st = paths.state() / "state/setup.json"
+        st.parent.mkdir(parents=True, exist_ok=True)
+        st.write_text(json.dumps({"done": True, "step": 99, "completed": ["preseed"]}) + "\n")
+    return pending
+
+
+def scrub(text: str) -> str:
+    """The preseed with its passwords and keys blanked (kept so you can see what was used)."""
+    out, section = [], ""
+    for line in text.splitlines():
+        m = re.match(r"^\s*\[([A-Za-z0-9_.-]+)\]\s*$", line)
+        if m:
+            section = m.group(1)
+        k = re.match(r"^\s*([A-Za-z0-9_]+)\s*=", line)
+        if k and (section, k.group(1)) in SECRET_KEYS:
+            line = f'{k.group(1)} = ""   # erased after first boot'
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="couchbox-firstboot: %(message)s")
+    subprocess.run(["ssh-keygen", "-A"], check=False)
+    pending = []
+    f = preseed_file()
+    if f.exists():
+        text = f.read_text()
+        try:
+            pending = apply_preseed(tomllib.loads(text))
+            log.info("applied %s", f)
+        except (tomllib.TOMLDecodeError, ValueError) as e:
+            log.error("%s: %s (ignored)", f, e)
+        f.write_text(scrub(text))
+    st = paths.state() / "state"
+    st.mkdir(parents=True, exist_ok=True)
+    if pending:
+        (st / "pending.json").write_text(json.dumps(pending) + "\n")
+    settings.write_env()
+    (st / "firstboot.done").write_text("done\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
