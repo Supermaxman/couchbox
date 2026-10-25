@@ -282,15 +282,15 @@ PY
     say "Boot image: unlock with Tang (Wi-Fi or Ethernet), through the Pi's test boot"
     printf '# Couchbox (from mtv): root is LUKS2; the console asks for the passphrase\nadd_dracutmodules+=" crypt systemd-cryptsetup "\n' \
       > /etc/dracut.conf.d/90-couchbox-crypt.conf
-    if [[ $REHEARSAL == 1 ]]; then  # a container: the copy's kernel, and say which board
-      export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0" COUCHBOX_KVER
-      COUCHBOX_KVER=$(ls /usr/lib/modules | sort -V | tail -1)
-    fi
+    rehearsal_env
     python3 -c 'from couchbox import encryption; encryption.rebuild_initrd(network=True)' 2>&1 | tail -5 | tee -a "$LOG"
-    verify_initrd "$FW/new/initrd.img" || {
+    if [[ ! -f $FW/new/initrd.img ]]; then  # say why: run flash-kernel again where its output shows
+      flash-kernel "${COUCHBOX_KVER:-$(uname -r)}" 2>&1 | tail -15 | tee -a "$LOG" || true
+    fi
+    if ! verify_initrd "$FW/new/initrd.img"; then
       piboot-try --reset-new >/dev/null 2>&1 || rm -rf "$FW/new"
-      die "The new boot image is missing parts (above): it was removed, the box keeps booting the old one. Nothing else to undo for boot; see $LOG."
-    }
+      keep_mtv_boot
+    fi
   fi
 
   say "Starting Couchbox"
@@ -342,6 +342,22 @@ shadow_initrd() {
   ok "built ($(du -h "$img" | cut -f1))"
   # names the conversion gives these files
   verify_initrd "$img" "$FW/current/cmdline.txt"
+}
+
+rehearsal_env() {  # a container: the copy's kernel, the board, and flash-kernel runs anyway
+  [[ $REHEARSAL == 1 ]] || return 0
+  export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0" FK_FORCE=yes COUCHBOX_KVER
+  COUCHBOX_KVER=$(ls /usr/lib/modules | sort -V | tail -1)
+}
+
+keep_mtv_boot() {
+  # The new boot image didn't come out right: put mtv's boot setup back, so this and every
+  # later kernel update builds the same boot image as before (it reads /etc/mtv/initrd-wpa.conf,
+  # which stays). Couchbox itself runs the same either way.
+  tar -xpf "$BK/mtv-files.tar" -P /usr/lib/dracut/modules.d/90mtv-wifi \
+    /etc/dracut.conf.d/90-mtv-crypt.conf /etc/dracut.conf.d/91-mtv-tang.conf 2>/dev/null || true
+  rm -f /etc/dracut.conf.d/90-couchbox-crypt.conf /etc/dracut.conf.d/91-couchbox-unlock.conf
+  warn "kept mtv's boot setup (the new boot image wasn't right, see above): the box boots and unlocks exactly as before"
 }
 
 verify_initrd() {  # verify_initrd IMG CMDLINE: the new boot image must unlock the disk the way the old one did
@@ -402,9 +418,10 @@ rollback() {
   udevadm control --reload 2>/dev/null || true
   if luks_dev >/dev/null; then
     say "Boot image back to mtv's (through the test boot)"
-    local kver; kver=$(uname -r)
-    dracut --force --kver "$kver" 2>&1 | tail -2 | tee -a "$LOG"
-    flash-kernel "$kver" 2>&1 | tail -2 | tee -a "$LOG" || true
+    rehearsal_env
+    local kver=${COUCHBOX_KVER:-$(uname -r)}
+    # (the image the box boots now still unlocks: a failure here leaves that one in place)
+    { dracut --force --kver "$kver" && flash-kernel "$kver"; } 2>&1 | tail -3 | tee -a "$LOG" || warn "boot image not rebuilt: the current one stays"
     grep -q 'rd.neednet=1' "$FW/new/cmdline.txt" 2>/dev/null || sed -i '1s/$/ rd.neednet=1/' "$FW/new/cmdline.txt"
   fi
   [[ -x /usr/local/bin/mtv-home ]] && /usr/local/bin/mtv-home --refresh >/dev/null 2>&1 || true

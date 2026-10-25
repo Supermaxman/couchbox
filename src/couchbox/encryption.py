@@ -287,7 +287,9 @@ def rebuild_initrd(network: bool) -> None:
         conf.unlink(missing_ok=True)
     kver = os.environ.get("COUCHBOX_KVER") or os.uname().release  # (a rehearsal in a container sets it)
     sh(["dracut", "--force", "--kver", kver], timeout=900)
-    sh(["flash-kernel", kver], check=False, timeout=600)
+    fk = sh(["flash-kernel", kver], check=False, timeout=600)
+    if fk.returncode != 0:  # the new boot image isn't installed: say so (the old one still boots)
+        log.warning("flash-kernel %s: %s", kver, (fk.stderr or fk.stdout).strip()[-500:])
     fw = paths.boot_firmware() / "new/cmdline.txt"
     if network and fw.exists() and "rd.neednet=1" not in fw.read_text():
         fw.write_text(fw.read_text().rstrip("\n") + " rd.neednet=1\n")
