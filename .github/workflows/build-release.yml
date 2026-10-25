@@ -83,6 +83,7 @@ jobs:
         run: |
           sed "s|__ALLOWED_SIGNERS__|$(cat system/keys/allowed_signers)|" installer/install.sh > dist/install.sh
           python3 image/imager-json.py "${TAG#v}" dist > dist/rpi-imager.json
+          rm -f dist/*.extract.*
       - name: release notes
         env: {GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}"}
         run: gh release view "$TAG" --json body -q .body > notes.md || true

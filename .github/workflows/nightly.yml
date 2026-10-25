@@ -28,7 +28,16 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true; df -h /
       - name: build the image
         run: sudo image/build-image.sh "nightly-$(date +%Y%m%d)" dist out
-      - name: boot test
-        run: sudo image/test-image.sh out/couchbox-*-rpi5.img.xz
       - uses: actions/upload-artifact@v4
         with: {name: image, path: "out/*.img.xz*", retention-days: 7, compression-level: 0}
+
+  boot-test:
+    needs: image
+    runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: image, path: out}
+      - name: boot the image in a container
+        run: sudo image/test-image.sh out/couchbox-*-rpi5.img.xz

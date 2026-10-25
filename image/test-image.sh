@@ -8,7 +8,7 @@ IMG=$(readlink -f "$1")
 W=$(mktemp -d /tmp/couchbox-test.XXXX)
 cleanup() { set +e; machinectl terminate cbtest 2>/dev/null; sleep 2; umount -l "$W/root/boot/firmware" "$W/root" 2>/dev/null; [[ -n ${LOOP:-} ]] && losetup -d "$LOOP"; rm -rf "$W"; }
 trap cleanup EXIT
-command -v systemd-nspawn >/dev/null || apt-get install -y -qq systemd-container >/dev/null
+command -v systemd-nspawn >/dev/null || { apt-get update -qq && apt-get install -y -qq systemd-container >/dev/null; }
 for i in $(seq 0 31); do [[ -e /dev/loop$i ]] || mknod -m 660 "/dev/loop$i" b 7 "$i"; done
 xz -dc -T0 "$IMG" > "$W/disk.img"
 LOOP=$(losetup -f -P --show "$W/disk.img")
