@@ -22,7 +22,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" couchbox-dev sh -c '
             set -e; cp -r /src /tmp/b; cd /tmp/b; rm -rf .git build
-            ci/set-version.sh "$(python3 -c "import re;print(re.search(r\"__version__ = .(.*?).$\", open(\"src/couchbox/__init__.py\").read(), re.M).group(1))")-nightly.$(date +%Y%m%d)"
+            ci/set-version.sh "$(ci/version.sh)-nightly.$(date +%Y%m%d)"
             dpkg-buildpackage -us -uc -b && mkdir -p /src/dist && cp ../couchbox_*.deb /src/dist/'
       - name: free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true; df -h /

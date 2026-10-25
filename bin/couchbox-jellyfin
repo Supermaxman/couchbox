@@ -1,10 +1,12 @@
 #!/bin/sh
 # couchbox-jellyfin: open Jellyfin on the TV.
-# With phase 9 installed: native Jellyfin Desktop using Raspberry Pi's FFmpeg, so HEVC plays
-# on the Pi 5's hardware decoder (direct play, no work for the server). Otherwise: the
-# Jellyfin web app (the server converts video to H.264).
+# With couchbox-media installed (and Settings → Apps → Jellyfin player: native): Jellyfin
+# Desktop using Raspberry Pi's FFmpeg, so HEVC plays on the Pi 5's hardware decoder (direct
+# play, no work for the server). Otherwise the Jellyfin web app at the server set in Settings
+# (the server converts video to H.264).
+. /etc/couchbox/couchbox.env 2>/dev/null || true
 app=/opt/couchbox/jellyfin-desktop/bin/jellyfin-desktop
-if [ -x "$app" ]; then
+if [ -x "$app" ] && [ "${COUCHBOX_MEDIA_JELLYFIN_CLIENT:-native}" = native ]; then
   # Already running (e.g. minimised by going Home): a second copy just exits without
   # showing the first, so bring the existing window back, full screen, with a KWin script.
   if pgrep -u "$(id -u)" -f "^$app" >/dev/null; then
@@ -26,4 +28,8 @@ if [ -x "$app" ]; then
   export LD_LIBRARY_PATH
   exec "$app" --fullscreen --tv "$@"
 fi
-exec sh -c "$(sed -n 's/^Exec=//p' /usr/local/share/applications/couchbox-web-jellyfin.desktop)"
+url=${COUCHBOX_MEDIA_JELLYFIN_URL:-}
+[ -n "$url" ] || { echo "Set the Jellyfin server in Settings → Apps and media." >&2; exec /usr/lib/couchbox/bin/couchbox-settings; }
+exec flatpak run org.chromium.Chromium --app="$url" --start-fullscreen --class=couchbox-web-jellyfin --ozone-platform-hint=auto \
+  --password-store=basic --autoplay-policy=no-user-gesture-required --no-default-browser-check --no-first-run \
+  --remote-debugging-port=9223 --enable-spatial-navigation --load-extension="$HOME/.local/share/couchbox/web-extension"

@@ -1,0 +1,34 @@
+name: Media build
+
+# couchbox-media (Raspberry Pi FFmpeg + Jellyfin Desktop), built natively on arm64 in
+# Ubuntu 26.10. Slow (about an hour), so only when the recipes change, weekly (Ubuntu's
+# FFmpeg version may move), or by hand. build-release.yml takes the latest successful one.
+on:
+  push:
+    branches: [main]
+    paths: ["media/**", ".github/workflows/media.yml"]
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  media:
+    runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 180
+    container: ubuntu:26.10
+    steps:
+      - uses: actions/checkout@v4
+      - name: FFmpeg (Raspberry Pi fork)
+        run: mkdir -p /out && bash media/build-ffmpeg.sh
+      - name: Jellyfin Desktop
+        run: bash media/build-jellyfin.sh
+      - name: package
+        run: |
+          v=$(ci/version.sh)
+          bash media/package.sh "$v" /out
+          mkdir -p dist && cp /out/couchbox-media* dist/
+      - uses: actions/upload-artifact@v4
+        with: {name: couchbox-media, path: dist/*, retention-days: 90}

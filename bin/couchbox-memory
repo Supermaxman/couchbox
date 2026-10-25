@@ -59,13 +59,15 @@ def conf():
 
 
 def web_names():
-    """{host: app name} of the web apps in /etc/couchbox/apps.tsv."""
+    """{host: app name} of the web apps (the apps registry: built-in and the user's websites)."""
+    from couchbox import apps, settings
+    s = settings.load()
     out = {}
-    for line in open("/etc/couchbox/apps.tsv"):
-        f = line.rstrip("\n").split("\t")
-        if len(f) >= 3 and not f[0].startswith("#"):
-            host = f[2].split("//", 1)[-1].split("/")[0]
-            out[host] = f[1]
+    for a in apps.all_apps(s):
+        if a.kind == "web" and a.url:
+            out[a.url.split("//", 1)[-1].split("/")[0]] = a.name
+    if s["media.jellyfin.url"]:
+        out[s["media.jellyfin.url"].split("//", 1)[-1].split("/")[0]] = "Jellyfin"
     return out
 
 

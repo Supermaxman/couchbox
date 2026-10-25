@@ -18,3 +18,6 @@ find "$home/.var/app" -type d \( -name Cache -o -name 'Code Cache' -o -name GPUC
   -prune -exec sh -c 'rm -rf "$1"/*' _ {} \;
 after=$(du -sm "$home/.var/app" | cut -f1)
 echo "app data: ${before} MB -> ${after} MB"
+
+# YouTube: H.264 only (cheap to decode on the Pi), once it has been opened
+/usr/lib/couchbox/bin/couchbox-youtube >/dev/null 2>&1 || true

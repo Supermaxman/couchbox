@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs inside an ubuntu:<same release as the Pi> container (see hevc/build.sh).
-# Builds, into /out (FFmpeg is cross-built on a PC instead: hevc/build-ffmpeg.sh):
+# Runs inside an ubuntu:26.10 arm64 container (media.yml, or by hand on any arm64 machine).
+# Builds, into /out:
 #   jellyfin-desktop.tar.gz  Jellyfin Desktop built natively against Ubuntu's Qt 6 + libmpv,
 #                            with "Hardware decoding" trying the Pi decoder (drm) first.
 #   jellyfin-deps.txt        Ubuntu packages it needs at run time.
@@ -15,7 +15,7 @@ log() { printf '\n=== %s\n' "$*"; }
 log "Build dependencies"
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-  build-essential ca-certificates git pkg-config cmake ninja-build python3 file \
+  build-essential ca-certificates git xz-utils pkg-config cmake ninja-build python3 file \
   qt6-base-dev qt6-base-private-dev qt6-declarative-dev qt6-webengine-dev qt6-webchannel-dev \
   qt6-wayland-dev libmpv-dev libcec-dev libsdl2-dev libgl-dev libegl-dev \
   libx11-dev libxrandr-dev >/dev/null
@@ -61,8 +61,8 @@ ninja -C build install >/dev/null
 install -Dm644 resources/images/icon.svg "$JD/share/icons/hicolor/scalable/apps/couchbox-jellyfin.svg"
 
 log "Runtime packages"
-deps=$(find "$JD" -type f -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print \
-  | xargs -r ldd 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\// {print $3}' | grep -v '^/opt/couchbox/' | sort -u \
+deps=$(find "$JD" -type f -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print0 \
+  | xargs -0 -r ldd 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\// {print $3}' | grep -v '^/opt/couchbox/' | sort -u \
   | xargs -r -n1 sh -c 'dpkg -S "$(readlink -f "$1")" 2>/dev/null || dpkg -S "$1" 2>/dev/null' _ \
   | cut -d: -f1 | sort -u)
 printf '%s\n' $deps qml6-module-qtwebengine qml6-module-qtwebchannel qml6-module-qtquick-controls \
@@ -72,4 +72,5 @@ wc -l < /out/jellyfin-deps.txt
 
 log "Packing"
 tar -C / -czf /out/jellyfin-desktop.tar.gz "${JD#/}"
+(cd "$src" && git ls-files --recurse-submodules | tar -cJf /out/jellyfin-desktop-source.tar.xz --transform "s,^,jellyfin-desktop-$JD_TAG/," -T -)
 ls -lh /out
