@@ -53,6 +53,13 @@ X
     if ! grep -q '"ssh.enabled": true' /etc/couchbox/settings.json 2>/dev/null; then
         systemctl disable ssh.service ssh.socket >/dev/null 2>&1 || true
     fi
+    # Video memory (CMA): the HEVC decoder, the screen and every open app share it. Ubuntu's
+    # 64 MB runs out with YouTube, a web app and a video open; 512 MB, as on LibreELEC.
+    # Takes effect at the next boot.
+    cfg=/boot/firmware/config.txt
+    if [ -f "$cfg" ] && grep -qx 'dtoverlay=vc4-kms-v3d' "$cfg"; then
+        sed -i 's/^dtoverlay=vc4-kms-v3d$/dtoverlay=vc4-kms-v3d,cma-512/' "$cfg"
+    fi
     flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1 || true
     /usr/lib/couchbox/bin/couchbox-session-setup || true
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true

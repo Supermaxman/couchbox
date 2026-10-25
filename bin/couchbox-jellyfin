@@ -21,6 +21,30 @@ if [ -x "$app" ] && [ "${COUCHBOX_MEDIA_JELLYFIN_CLIENT:-native}" = native ]; th
     rm -f "$js"
     exit 0
   fi
+  # Player settings measured on the Pi (dropped frames over 30 s of 4K HEVC):
+  # - hardwareDecoding "enabled" (hwdec drm, no copy): "copy" dropped 715 of 900 frames
+  # - mpv's fast scalers: the default high-quality ones still dropped 622 of 900
+  # - Dolby Vision profile 5 and 10-bit H.264 go through the server (force_transcode_*)
+  # - its CEC off: Jellyfin's libCEC took over the HDMI-CEC adapter and broke couchbox-tv
+  # - an IPC socket for couchbox-jellyfin-stats
+  oc="input-ipc-server=$XDG_RUNTIME_DIR/mpv-jellyfin.sock
+scale=bilinear
+dscale=bilinear
+cscale=bilinear
+dither-depth=no
+correct-downscaling=no
+linear-downscaling=no
+sigmoid-upscaling=no
+deband=no
+hdr-compute-peak=no"
+  for conf in "$HOME"/.local/share/jellyfin-desktop/*.conf "$HOME"/.local/share/jellyfin-desktop/*/*.conf; do
+    [ -f "$conf" ] || continue
+    case $conf in *jellyfin-desktop.conf) ;; *) continue ;; esac
+    tmp=$(mktemp)
+    jq --arg oc "$oc" '.sections.video.hardwareDecoding = "enabled" | .sections.video.force_transcode_dovi = true
+      | .sections.video.force_transcode_hi10p = true | .sections.cec.enable = false | .sections.other.other_conf = $oc' \
+      "$conf" > "$tmp" && mv "$tmp" "$conf"
+  done
   # DevTools on 127.0.0.1:9224 so couchbox-voice can drive it (search, play) as text
   QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9224
   export QTWEBENGINE_REMOTE_DEBUGGING
