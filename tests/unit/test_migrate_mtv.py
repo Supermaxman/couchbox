@@ -33,7 +33,7 @@ def test_import(tmp_path):
     )
     (tmp_path / "theme").write_text("MTV_THEME=amber\n")
     s, secrets = migrate_mtv.read(str(tmp_path))
-    assert s["appearance.theme"] == "amber"
+    assert s["appearance.theme"] == "amber" and s["apps.twitch.skip_ads"] is True
     assert s["network.hostname"] == "livingroom" and s["time.timezone"] == "Europe/Berlin"
     assert s["location.name"] == "Berlin" and s["location.lat"] == 52.52
     assert s["home.layout"] == ["youtube", "twitch"]

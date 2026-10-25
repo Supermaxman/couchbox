@@ -67,9 +67,18 @@ MTV_PATHS=(
 # sshd_config.d/00-mtv-hardening.conf (same rules as Couchbox's, stricter ciphers).
 
 luks_dev() {
+  if [[ $REHEARSAL == 1 ]]; then  # a copy of the box: its crypttab stands in for the disk
+    grep -q '^root[[:space:]]' /etc/crypttab 2>/dev/null && echo /dev/rehearsal && return 0
+    return 1
+  fi
   local src; src=$(findmnt -no SOURCE /)
   [[ $src == /dev/mapper/* ]] || return 1
   cryptsetup status "${src#/dev/mapper/}" | awk '/device:/ {print $2}'
+}
+
+tang_urls() {  # the Tang servers bound to the disk, one per line
+  if [[ $REHEARSAL == 1 ]]; then cat /etc/mtv/tang.url 2>/dev/null; return 0; fi
+  clevis luks list -d "$1" 2>/dev/null | grep -o '"url":"[^"]*"' | cut -d'"' -f4 || true
 }
 
 # ------------------------------------------------------------------ the release
@@ -112,7 +121,7 @@ check() {
   local dev tang=""
   if dev=$(luks_dev); then
     ok "root is LUKS ($dev)"
-    tang=$(clevis luks list -d "$dev" 2>/dev/null | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    tang=$(tang_urls "$dev" | head -1)
     [[ -n $tang ]] && ok "network unlock bound: $tang" || fail "no Clevis/Tang binding on $dev"
     [[ -f /etc/mtv/initrd-wpa.conf ]] && ok "Wi-Fi for unlock at boot (/etc/mtv/initrd-wpa.conf)" || warn "no initrd Wi-Fi config: unlock at boot would need Ethernet"
     if [[ -n $tang ]]; then
@@ -121,7 +130,7 @@ check() {
       else fail "Tang server $tang doesn't answer: the converted box couldn't unlock by itself"; fi
     fi
     if [[ $REHEARSAL == 0 ]]; then
-      grep -q 'tryboot_a_b=1' "$FW/config.txt" 2>/dev/null && ok "Pi test boot (tryboot) on" || fail "no tryboot_a_b=1 in $FW/config.txt: the new boot image couldn't be tested first"
+      grep -qs 'tryboot_a_b=1' "$FW/autoboot.txt" "$FW/config.txt" && ok "Pi test boot (tryboot) on" || fail "no tryboot_a_b=1 in $FW/autoboot.txt or config.txt: the new boot image couldn't be tested first"
       if [[ -d $FW/new ]] && [[ $(cat "$FW/new/state" 2>/dev/null) == unknown ]]; then
         fail "a new boot image is already waiting to be tested ($FW/new): reboot once first"
       else ok "no untested boot image pending"; fi
@@ -151,6 +160,11 @@ check() {
   local inst rem; inst=$(echo "$sim" | grep -c '^Inst ' || true); rem=$(echo "$sim" | grep '^Remv ' | awk '{print $2}' | tr '\n' ' ' || true)
   ok "apt would install $inst packages"
   [[ -z $rem ]] && ok "apt would remove nothing" || fail "apt would remove: $rem"
+
+  if luks_dev >/dev/null; then
+    say "The new boot image, built aside (/var/tmp) and checked; /boot isn't touched"
+    shadow_initrd || true
+  fi
 
   say "What carries over (couchbox import-mtv)"
   PYTHONPATH=$PYLIB python3 - <<'PY' | tee -a "$LOG"
@@ -228,7 +242,7 @@ PY
   local dev tang
   if dev=$(luks_dev); then
     [[ -f /etc/mtv/initrd-wpa.conf ]] && install -m 600 /etc/mtv/initrd-wpa.conf /etc/couchbox/luks/initrd-wpa.conf
-    tang=$(clevis luks list -d "$dev" 2>/dev/null | grep -o '"url":"[^"]*"' | cut -d'"' -f4 | python3 -c 'import json,sys; print(json.dumps({"urls": sys.stdin.read().split()}))')
+    tang=$(tang_urls "$dev" | python3 -c 'import json,sys; print(json.dumps({"urls": sys.stdin.read().split()}))')
     echo "$tang" > /etc/couchbox/luks/tang.json
     ok "disk unlock: $tang, Wi-Fi at boot: $([[ -f /etc/couchbox/luks/initrd-wpa.conf ]] && echo yes || echo no)"
   fi
@@ -268,8 +282,9 @@ PY
     say "Boot image: unlock with Tang (Wi-Fi or Ethernet), through the Pi's test boot"
     printf '# Couchbox (from mtv): root is LUKS2; the console asks for the passphrase\nadd_dracutmodules+=" crypt systemd-cryptsetup "\n' \
       > /etc/dracut.conf.d/90-couchbox-crypt.conf
-    if [[ $REHEARSAL == 1 ]]; then
-      export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0"
+    if [[ $REHEARSAL == 1 ]]; then  # a container: the copy's kernel, and say which board
+      export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0" COUCHBOX_KVER
+      COUCHBOX_KVER=$(ls /usr/lib/modules | sort -V | tail -1)
     fi
     python3 -c 'from couchbox import encryption; encryption.rebuild_initrd(network=True)' 2>&1 | tail -5 | tee -a "$LOG"
     verify_initrd "$FW/new/initrd.img" || {
@@ -306,8 +321,31 @@ To undo everything:  sudo $0 --rollback $BK
 X
 }
 
-verify_initrd() {  # the new boot image must unlock the disk the way the old one did
-  local img=$1 have miss=0
+shadow_initrd() {
+  # What --apply will build: this system's dracut and host-only detection, with Couchbox's
+  # unlock module in place of mtv's, from the .deb (reading mtv's initrd Wi-Fi config for now)
+  local base=$REL/dracut conf=$REL/dracut.conf.d img=$REL/initrd.img kver
+  kver=$(uname -r)
+  [[ $REHEARSAL == 1 ]] && kver=$(ls /usr/lib/modules | sort -V | tail -1)
+  rm -rf "$base" "$conf"; cp -a /usr/lib/dracut "$base"; mkdir -p "$conf"
+  rm -rf "$base/modules.d/90mtv-wifi"
+  cp -a "$REL/x/usr/lib/dracut/modules.d/90couchbox" "$base/modules.d/"
+  sed -i 's|/etc/couchbox/luks/initrd-wpa.conf|/etc/mtv/initrd-wpa.conf|g' "$base/modules.d/90couchbox/module-setup.sh"
+  cp /etc/dracut.conf.d/*.conf "$conf/" 2>/dev/null || true
+  rm -f "$conf/90-mtv-crypt.conf" "$conf/91-mtv-tang.conf"
+  printf 'add_dracutmodules+=" crypt systemd-cryptsetup "\n' > "$conf/90-couchbox-crypt.conf"
+  printf 'add_dracutmodules+=" clevis clevis-pin-tang clevis-pin-sss systemd-networkd%s "\n' \
+    "$([[ -f /etc/mtv/initrd-wpa.conf ]] && echo ' couchbox')" > "$conf/91-couchbox-unlock.conf"
+  if ! dracutbasedir=$base ionice -c3 nice -n19 dracut --quiet --force --confdir "$conf" --kver "$kver" "$img" >"$REL/dracut.log" 2>&1; then
+    fail "dracut couldn't build it: $(tail -3 "$REL/dracut.log")"; return 1
+  fi
+  ok "built ($(du -h "$img" | cut -f1))"
+  # names the conversion gives these files
+  verify_initrd "$img" "$FW/current/cmdline.txt"
+}
+
+verify_initrd() {  # verify_initrd IMG CMDLINE: the new boot image must unlock the disk the way the old one did
+  local img=$1 cmdline=${2:-$(dirname "$1")/cmdline.txt} have miss=0
   [[ -f $img ]] || { fail "no new boot image at $img"; return 1; }
   have=$(lsinitrd "$img" 2>/dev/null)
   local need=(
@@ -316,7 +354,10 @@ verify_initrd() {  # the new boot image must unlock the disk the way the old one
     "couchbox-initrd-wifi.service" "etc/systemd/network/10-couchbox-initrd.network"
     "brcmfmac43455-sdio.raspberrypi,5-model-b" "brcmfmac.ko" "systemd-networkd" "usr/bin/jose" "usr/bin/curl"
   )
-  [[ -f /etc/couchbox/luks/initrd-wpa.conf ]] || need=("${need[@]:0:4}" "systemd-networkd" "usr/bin/jose" "usr/bin/curl")
+  [[ -f /etc/couchbox/luks/initrd-wpa.conf || -f /etc/mtv/initrd-wpa.conf ]] || need=("${need[@]:0:4}" "systemd-networkd" "usr/bin/jose" "usr/bin/curl")
+  if [[ $REHEARSAL == 1 ]]; then  # a container can't detect the disk: no host-only crypttab
+    local keep=() n0; for n0 in "${need[@]}"; do [[ $n0 == etc/crypttab ]] || keep+=("$n0"); done; need=("${keep[@]}")
+  fi
   local n
   for n in "${need[@]}"; do
     if grep -qF -- "$n" <<<"$have"; then ok "boot image has $n"; else fail "boot image is missing $n"; miss=1; fi
@@ -324,13 +365,17 @@ verify_initrd() {  # the new boot image must unlock the disk the way the old one
   # everything the old image had, under Couchbox's names, should be in the new one too
   local old="$FW/current/initrd.img"
   if [[ -f $old ]]; then
-    comm -23 <(lsinitrd "$old" 2>/dev/null | awk '{print $NF}' | sed 's/mtv-initrd/couchbox-initrd/; s/mtv-any/couchbox-any/' | grep -v mtv | sort -u) \
-             <(awk '{print $NF}' <<<"$have" | sort -u) > /var/log/couchbox-convert-initrd.diff || true
+    # file entries only: the name follows the date and time (or year) column
+    names() { sed -nE 's/^[-dlcbps][-rwxsStT]{9} .* [0-9]{1,2} +([0-9]{2}:[0-9]{2}|[0-9]{4}) (.+)$/\2/p' | sed 's/ -> .*//'; }
+    comm -23 <(lsinitrd "$old" 2>/dev/null | names | sed 's/mtv-initrd/couchbox-initrd/; s/mtv-any/couchbox-any/' | grep -v mtv | sort -u) \
+             <(names <<<"$have" | sort -u) > /var/log/couchbox-convert-initrd.diff || true
     local nd; nd=$(wc -l < /var/log/couchbox-convert-initrd.diff)
     (( nd == 0 )) && ok "the new boot image has every file the old one had" \
       || warn "$nd file(s) of the old boot image aren't in the new one: /var/log/couchbox-convert-initrd.diff"
   fi
-  grep -q 'rd.neednet=1' "$(dirname "$img")/cmdline.txt" 2>/dev/null && ok "boot command line asks for the network" || { fail "rd.neednet=1 missing from the new cmdline.txt"; miss=1; }
+  if [[ $REHEARSAL == 0 ]]; then
+    grep -q 'rd.neednet=1' "$cmdline" 2>/dev/null && ok "boot command line asks for the network" || { fail "rd.neednet=1 missing from $cmdline"; miss=1; }
+  fi
   return $miss
 }
 

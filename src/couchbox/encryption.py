@@ -285,7 +285,7 @@ def rebuild_initrd(network: bool) -> None:
         conf.write_text(f'# Couchbox: unlock root with Tang over Ethernet or Wi-Fi\nadd_dracutmodules+=" {mods} "\n')
     else:
         conf.unlink(missing_ok=True)
-    kver = os.uname().release
+    kver = os.environ.get("COUCHBOX_KVER") or os.uname().release  # (a rehearsal in a container sets it)
     sh(["dracut", "--force", "--kver", kver], timeout=900)
     sh(["flash-kernel", kver], check=False, timeout=600)
     fw = paths.boot_firmware() / "new/cmdline.txt"

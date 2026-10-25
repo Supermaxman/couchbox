@@ -79,7 +79,45 @@ The prototype is a private repository with about 17,000 lines across 183 files. 
 
 ## Moving the prototype box over (M9)
 
-1. `couchbox import-mtv` reads `/etc/mtv/mtv.conf`, `/etc/mtv/secrets/*`, `home.tsv` and `apps.tsv`, and writes Couchbox settings and secrets. Its tests use a scrubbed sample.
-2. Install with `install.sh`. The box is already LUKS2 + Tang, so it shows up as "Encrypted (set up before Couchbox)".
-3. App logins stay where they are (`~tv`). The native apps' data directory moves from `~tv/.local/share/mtv` to `~tv/.local/share/couchbox` by a one-time migration.
-4. Archive the private repo.
+In place, with `installer/convert-mtv.sh`. It's published with each release, carrying the signing key.
+
+**Modes:**
+- `--check`: a preflight that changes nothing.
+- `--apply`: the conversion.
+- `--rollback BACKUP`: puts mtv back.
+
+**What `--apply` does, in order:**
+1. **Preflight.** It checks:
+   - Ubuntu 26.10 arm64 and `/etc/mtv`;
+   - the LUKS root and its Clevis/Tang binding, that the Tang server answers, and the initrd Wi-Fi config;
+   - the Pi's test boot (`tryboot_a_b=1`, no untested image pending);
+   - SSH and Tailscale, free space on `/` and the boot partition;
+   - the release's signature, and that an apt dry run removes nothing.
+
+   It then shows what `import-mtv` will carry over and which sign-ins come along.
+2. **Backup.** Every file mtv installed is saved to `/var/backups/couchbox-convert/<time>`: the units, `/usr/local` programs, udev, sddm, logind and journald configs, its dracut module and configs, the TV user's units and autostart. The list of enabled units and the current boot image are saved too.
+3. **Settings before the package.** `import-mtv` writes `settings.json` and the secrets, the setup wizard and first boot are marked done, and the disk-unlock config moves to `/etc/couchbox/luks/` (initrd Wi-Fi and Tang URL). The package therefore never sees "SSH off" or "Tailscale off".
+4. **Stop mtv.** Its units are stopped and disabled, and its files moved into the backup.
+5. **Install** the release's `.deb`s.
+6. **Sign-ins.**
+   - The streaming apps' sessions are copied: `~tv/.local/share/mtv-<site>` → `couchbox-<site>`, and `~tv/.config/mtv/mtv-<site>.conf` → `~tv/.config/couchbox/couchbox-<site>.conf`.
+   - Already in place: YouTube (VacuumTube), the web apps (the Chromium Flatpak profile), Jellyfin Desktop (`~/.local/share/jellyfin-desktop`), Bluetooth pairings, Wi-Fi and Tailscale.
+7. **Boot image.**
+   - dracut is rebuilt with `crypt systemd-cryptsetup` plus Couchbox's unlock modules: `clevis clevis-pin-tang clevis-pin-sss systemd-networkd couchbox`, the last being the Wi-Fi port of mtv's `90mtv-wifi`.
+   - `flash-kernel` puts it in `/boot/firmware/new` for the test boot.
+   - It's checked file by file: the Clevis/Tang tools, `jose` and `curl`, `systemd-cryptsetup`, crypttab, `wpa_supplicant` and its config, the Pi 5 Wi-Fi firmware and driver, the network config, and `rd.neednet=1`. Every other file of the old image must be there too.
+   - If anything is missing, the new image is discarded and the box keeps booting the old one.
+8. **Start Couchbox** (services, home screen, TV session), then run `couchbox doctor` and confirm SSH and Tailscale are still on.
+
+**Afterwards.** Reboot at a quiet time. The Pi tries the new boot image once (piboot-try). If that boot fails or hangs, power-cycling boots the old image, which unlocks the same way.
+
+**Not carried over:**
+- The phone page needs pairing once (Settings → Remote access): mtv's had no pairing code.
+- `/opt/mtv` (the old Jellyfin build) stays until it's deleted by hand.
+
+**Rehearsal.** The conversion is rehearsed on a copy of the box's root filesystem before it runs for real:
+- an emulated arm64 container on a throwaway overlay;
+- convert → reboot → rollback → reboot;
+- checked at every stage, down to every mtv file being restored byte for byte.
+
+Then archive the private repo.

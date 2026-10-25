@@ -68,6 +68,8 @@ X
     fi
     flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1 || true
     /usr/lib/couchbox/bin/couchbox-session-setup || true
+    # the theme (wallpaper, colours, font) and its re-apply at every TV login
+    /usr/lib/couchbox/bin/couchbox-theme >/dev/null 2>&1 || true
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
     if ! in_chroot; then
         systemd-tmpfiles --create couchbox.conf >/dev/null 2>&1 || true

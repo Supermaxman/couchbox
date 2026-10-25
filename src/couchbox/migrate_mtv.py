@@ -78,6 +78,7 @@ def read(path: str = "/etc/mtv") -> tuple[dict[str, Any], dict[str, str]]:
     if c.get("MTV_LLM_URL") and c.get("MTV_STT_URL"):
         s["voice.mode"] = "assistant"
     s["tailscale.enabled"] = True  # the prototype always ran it
+    s["apps.twitch.skip_ads"] = True  # ... and always filtered Twitch's ads
     s["ssh.enabled"] = True
 
     layout = []
