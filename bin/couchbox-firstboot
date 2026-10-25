@@ -121,7 +121,8 @@ def scrub(text: str) -> str:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="couchbox-firstboot: %(message)s")
-    subprocess.run(["ssh-keygen", "-A"], check=False)
+    if os.geteuid() == 0 and not os.environ.get("COUCHBOX_ROOT"):
+        subprocess.run(["ssh-keygen", "-A"], check=False)
     pending = []
     f = preseed_file()
     if f.exists():
