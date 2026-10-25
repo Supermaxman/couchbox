@@ -63,11 +63,15 @@ if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -
   ok "Wi-Fi from Imager goes to NetworkManager"
 else echo "!! Imager Wi-Fi not handed to NetworkManager"; systemctl -M cbtest status couchbox-netplan.service --no-pager | tail -10 || true; FAIL=1; fi
 run /usr/bin/couchbox config set voice.mode dictation >/dev/null && run /usr/bin/couchbox config get voice.mode | grep -qx dictation && ok "settings through couchboxd"
-for u in couchboxd couchbox-phone couchbox-memory couchbox-firstboot couchbox-input; do
+for u in couchboxd couchbox-phone couchbox-memory couchbox-firstboot; do
   s=$(systemctl -M cbtest is-active "$u.service" || true)
   if [[ $s == active ]]; then ok "$u: active"
   else echo "!! $u: $s"; systemctl -M cbtest status "$u.service" --no-pager | tail -15 || true; journalctl -M cbtest -u "$u.service" --no-pager | tail -20 || true; FAIL=1; fi
 done
+# couchbox-input: a container has no /dev/uinput, but the key map must load before that
+if journalctl -M cbtest -u couchbox-input.service --no-pager 2>/dev/null | grep -q -E "input.toml|unknown key|has no match"; then
+  echo "!! couchbox-input: key map problem"; journalctl -M cbtest -u couchbox-input.service --no-pager | tail -15; FAIL=1
+else ok "couchbox-input: key map loads (no /dev/uinput in a container)"; fi
 run /usr/bin/couchbox doctor --container || FAIL=1
 echo "failed units:"; systemctl -M cbtest list-units --failed --no-pager --plain | head -20 || true
 [[ -z ${FAIL:-} ]] || { echo "image test: FAILED"; exit 1; }
