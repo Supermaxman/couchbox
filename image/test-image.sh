@@ -12,7 +12,7 @@ command -v systemd-nspawn >/dev/null || apt-get install -y -qq systemd-container
 for i in $(seq 0 31); do [[ -e /dev/loop$i ]] || mknod -m 660 "/dev/loop$i" b 7 "$i"; done
 xz -dc -T0 "$IMG" > "$W/disk.img"
 LOOP=$(losetup -f -P --show "$W/disk.img")
-mkdir -p "$W/root" && mount "${LOOP}p2" "$W/root" && mount "${LOOP}p1" "$W/root/boot/firmware"
+mkdir -p "$W/root" && mount "${LOOP}p2" "$W/root" && mkdir -p "$W/root/boot/firmware" && mount "${LOOP}p1" "$W/root/boot/firmware"
 ok() { printf '\033[32mok\033[0m %s\n' "$*"; }
 
 # nothing private, no leftover keys

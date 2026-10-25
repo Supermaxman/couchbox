@@ -55,6 +55,7 @@ resize2fs "$ROOTP" >/dev/null
 step "Chroot"
 mkdir -p "$R"
 mount "$ROOTP" "$R"
+mkdir -p "$R/boot/firmware"         # systemd makes mount points at boot; the image may not have it
 mount "$BOOT" "$R/boot/firmware"
 for m in dev dev/pts proc sys run; do mount --bind "/$m" "$R/$m"; done
 cp --remove-destination /etc/resolv.conf "$R/etc/resolv.conf"
