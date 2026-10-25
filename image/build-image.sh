@@ -88,9 +88,10 @@ in_root apt-get -qq update
 in_root sh -c 'apt-get install -y -qq --no-install-recommends /tmp/debs/*.deb tailscale openssh-server rpi-eeprom raspi-utils-core >/dev/null'
 in_root systemctl disable tailscaled.service ssh.service ssh.socket 2>/dev/null || true
 # Not needed on a Pi 5 TV box: firmware for other hardware (the Pi's Wi-Fi/Bluetooth firmware
-# is in linux-firmware-raspi), every locale prebuilt, cloud SDKs. Each removal is simulated
+# is in linux-firmware-raspi, plus the Broadcom files it points at in -broadcom-wireless),
+# every locale prebuilt, cloud SDKs. Each removal is simulated
 # first and skipped if it would take the kernel, Couchbox or Plasma with it.
-mapfile -t extra < <(in_root dpkg-query -W -f '${Package}\n' | grep -E '^(linux-firmware($|-)|firmware-sof-signed$|locales-all$|python3-(boto3|botocore|s3transfer)$)' | grep -vx 'linux-firmware-raspi')
+mapfile -t extra < <(in_root dpkg-query -W -f '${Package}\n' | grep -E '^(linux-firmware($|-)|firmware-sof-signed$|locales-all$|python3-(boto3|botocore|s3transfer)$)' | grep -vxE 'linux-firmware-(raspi|broadcom-wireless)')
 for p in "${extra[@]}"; do
   if in_root apt-get -s purge "$p" 2>/dev/null | grep -qE '^Remv (linux-(image|raspi|modules)|couchbox|plasma|kwin|sddm|linux-firmware-raspi|cloud-init)'; then
     echo "keeping $p (needed)"

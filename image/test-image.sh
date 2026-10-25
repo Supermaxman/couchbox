@@ -19,6 +19,10 @@ ok() { printf '\033[32mok\033[0m %s\n' "$*"; }
 ! ls "$W/root/etc/ssh/ssh_host_"* 2>/dev/null
 [[ ! -s $W/root/etc/machine-id ]]
 ok "no host keys, empty machine-id"
+for f in brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin.zst brcm/brcmfmac43455-sdio.clm_blob.zst brcm/BCM4345C0.raspberrypi,5-model-b.hcd.zst; do
+  [[ -e $W/root/usr/lib/firmware/$f ]] || { echo "!! missing firmware $f"; exit 1; }
+done
+ok "Pi 5 Wi-Fi and Bluetooth firmware present"
 # a preseed like a user would write
 cat > "$W/root/boot/firmware/couchbox.toml" <<'X'
 hostname = "testbox"
