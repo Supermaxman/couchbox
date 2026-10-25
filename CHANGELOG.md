@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/Supermaxman/couchbox/compare/v0.4.3...v0.4.4) (2026-10-25)
+
+
+### Fixed
+
+* **voice:** pass loadScript's signature explicitly so KWin picks the (ss) overload ([#14](https://github.com/Supermaxman/couchbox/issues/14)) ([0cc9ed8](https://github.com/Supermaxman/couchbox/commit/0cc9ed80f514f626a932392acaba8caff33b776d))
+
 ## [0.4.3](https://github.com/Supermaxman/couchbox/compare/v0.4.2...v0.4.3) (2026-10-25)
 
 
