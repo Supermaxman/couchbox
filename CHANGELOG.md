@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2](https://github.com/Supermaxman/couchbox/compare/v0.4.1...v0.4.2) (2026-10-25)
+
+
+### Fixed
+
+* **install:** a boot image that can't be built keeps mtv's boot setup and the conversion carries on ([dd90fcb](https://github.com/Supermaxman/couchbox/commit/dd90fcbba8298c872c457548c1ffa6558c2afe14))
+* **install:** rehearsals on an EFI host let flash-kernel run ([17c8782](https://github.com/Supermaxman/couchbox/commit/17c87826b1a643c52c7608c466f66c85a5309a95))
+
 ## [0.4.1](https://github.com/Supermaxman/couchbox/compare/v0.4.0...v0.4.1) (2026-10-25)
 
 
