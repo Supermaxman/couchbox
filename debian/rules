@@ -14,7 +14,7 @@ override_dh_installsystemd:
 	dh_installsystemd \
 	  couchboxd.service couchbox-input.service couchbox-cec.service couchbox-phone.service \
 	  couchbox-memory.service couchbox-voice.service couchbox-firstboot.service couchbox-apps.service \
-	  couchbox-reencrypt-resume.service couchbox-cloudinit-off.service couchbox-updater.timer couchbox-clean-caches.timer couchbox-flatpak-update.timer
+	  couchbox-reencrypt-resume.service couchbox-cloudinit-off.service couchbox-netplan.service couchbox-updater.timer couchbox-clean-caches.timer couchbox-flatpak-update.timer
 	dh_installsystemd --no-enable --no-start couchbox-updater.service couchbox-updater-now.service \
 	  couchbox-reencrypt.service couchbox-clean-caches.service couchbox-flatpak-update.service couchbox-btlog.service
 

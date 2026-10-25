@@ -1,0 +1,16 @@
+[Unit]
+Description=Couchbox: NetworkManager runs the Wi-Fi set in Raspberry Pi Imager (its cloud-init config asks for networkd)
+# Imager's network-config says "renderer: networkd" for Wi-Fi. That would leave wlan0 out of
+# NetworkManager, which the setup and Settings use. Dropping the line hands it to NetworkManager
+# (the default renderer, from 90-couchbox-networkmanager.yaml).
+DefaultDependencies=no
+After=local-fs.target cloud-init-local.service
+Before=network-pre.target systemd-networkd.service NetworkManager.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'f=$(grep -l "^ *renderer: *networkd *$" /etc/netplan/*.yaml 2>/dev/null) || exit 0; sed -i "/^ *renderer: *networkd *$/d" $f && netplan generate'
+
+[Install]
+WantedBy=multi-user.target

@@ -33,6 +33,20 @@ password = "test-fake-password"
 [updates]
 mode = "manual"
 X
+# what cloud-init writes from Raspberry Pi Imager's Wi-Fi settings (renderer networkd)
+cat > "$W/root/etc/netplan/50-imager-test.yaml" <<'X'
+network:
+  version: 2
+  wifis:
+    renderer: networkd
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "ImagerNet":
+          password: "test-fake-imager"
+X
+chmod 600 "$W/root/etc/netplan/50-imager-test.yaml"
 systemd-nspawn -q -D "$W/root" --boot --machine=cbtest --network-veth -E COUCHBOX_IMAGE_TEST=1 >"$W/boot.log" 2>&1 &
 for _ in $(seq 1 90); do
   sleep 2
@@ -45,6 +59,9 @@ run /usr/bin/couchbox config get network.hostname | grep -qx testbox && ok "pres
 run /usr/bin/couchbox config get updates.mode | grep -qx manual && ok "preseed applied (updates)"
 ! grep -q 'test-fake-password' "$W/root/boot/firmware/couchbox.toml" && ok "preseed password erased"
 grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/couchbox-TestNet.nmconnection" && ok "Wi-Fi from the preseed"
+if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -c 'ls /run/NetworkManager/system-connections/' | grep -q 'netplan-wlan0-ImagerNet'; then
+  ok "Wi-Fi from Imager goes to NetworkManager"
+else echo "!! Imager Wi-Fi not handed to NetworkManager"; systemctl -M cbtest status couchbox-netplan.service --no-pager | tail -10 || true; FAIL=1; fi
 run /usr/bin/couchbox config set voice.mode dictation >/dev/null && run /usr/bin/couchbox config get voice.mode | grep -qx dictation && ok "settings through couchboxd"
 for u in couchboxd couchbox-phone couchbox-memory couchbox-firstboot; do
   s=$(systemctl -M cbtest is-active "$u.service" || true)
