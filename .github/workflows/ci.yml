@@ -93,6 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans base..head, so it needs the parents
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
