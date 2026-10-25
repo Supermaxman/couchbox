@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/Supermaxman/couchbox/compare/v0.2.0...v0.3.0) (2026-10-25)
+
+
+### New
+
+* **voice:** app tools follow the home row, Dropout/2nd Try/Nebula/Twitch tools, and the app in front as context ([6487702](https://github.com/Supermaxman/couchbox/commit/64877024b6b87ff00304f5c01cf418661daafa1f))
+
+
+### Fixed
+
+* **voice:** newest episodes in one step, without a search first ([a0c96e0](https://github.com/Supermaxman/couchbox/commit/a0c96e04365eb2d15c82be3d83e93dc767c1b9a5))
+
 ## [0.2.0](https://github.com/Supermaxman/couchbox/compare/v0.1.0...v0.2.0) (2026-10-25)
 
 
