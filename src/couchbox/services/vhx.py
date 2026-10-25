@@ -212,6 +212,7 @@ def browser_cookies(domain):
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         ws_url = None
         for _ in range(40):
@@ -236,12 +237,28 @@ def browser_cookies(domain):
         return [c for c in msg.get("result", {}).get("cookies", []) if c["domain"].endswith(domain)]
     finally:
         if proc:
-            proc.terminate()
-            try:
-                proc.wait(5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            stop_browser(proc, tmp)
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def stop_browser(proc, tmp):
+    """Stop the headless browser and everything it started. flatpak hands it to bwrap, which
+    is reparented away from us, so killing proc alone leaves it running: its processes are
+    also found by this run's own profile directory."""
+    import signal
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        subprocess.run(["pkill", f"-{sig.name[3:]}", "-f", f"--user-data-dir={tmp}"], capture_output=True)
+        try:
+            proc.wait(3)
+        except subprocess.TimeoutExpired:
+            continue
+        if subprocess.run(["pgrep", "-f", f"--user-data-dir={tmp}"], capture_output=True).returncode != 0:
+            return
 
 
 class Vhx:

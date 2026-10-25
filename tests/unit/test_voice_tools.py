@@ -120,3 +120,24 @@ def test_not_running_starts_the_app(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="didn't start"):
         streaming.ensure("nebula", lambda: started.append(1))
     assert started == [1]
+
+
+def test_cookie_browser_is_stopped_even_when_it_escaped(tmp_path):
+    """flatpak's bwrap leaves our process group: the browser must still be stopped."""
+    import subprocess
+    import time
+
+    from couchbox.services import vhx
+
+    tmp = str(tmp_path / "prof")
+    proc = subprocess.Popen(
+        ["sh", "-c", f'setsid python3 -c "import time; time.sleep(300)" --user-data-dir={tmp} & sleep 300'],
+        start_new_session=True,
+    )
+    for _ in range(50):
+        if subprocess.run(["pgrep", "-f", f"--user-data-dir={tmp}"], capture_output=True).returncode == 0:
+            break
+        time.sleep(0.1)
+    vhx.stop_browser(proc, tmp)
+    assert proc.poll() is not None
+    assert subprocess.run(["pgrep", "-f", f"--user-data-dir={tmp}"], capture_output=True).returncode != 0
