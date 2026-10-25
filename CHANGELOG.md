@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/Supermaxman/couchbox/compare/v0.4.2...v0.4.3) (2026-10-25)
+
+
+### Fixed
+
+* **install:** rollback finishes when there's no new boot image to adjust ([4bafdd0](https://github.com/Supermaxman/couchbox/commit/4bafdd03f995dfe9dadbc9673b5db769f9bbfd61))
+
 ## [0.4.2](https://github.com/Supermaxman/couchbox/compare/v0.4.1...v0.4.2) (2026-10-25)
 
 
