@@ -344,9 +344,9 @@ shadow_initrd() {
   verify_initrd "$img" "$FW/current/cmdline.txt"
 }
 
-rehearsal_env() {  # a container: the copy's kernel, the board, and flash-kernel runs anyway
+rehearsal_env() {  # a container: the copy's kernel, the board, and flash-kernel runs anyway (not EFI either)
   [[ $REHEARSAL == 1 ]] || return 0
-  export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0" FK_FORCE=yes COUCHBOX_KVER
+  export FK_MACHINE="Raspberry Pi 5 Model B Rev 1.0" FK_FORCE=yes FK_IGNORE_EFI=yes COUCHBOX_KVER
   COUCHBOX_KVER=$(ls /usr/lib/modules | sort -V | tail -1)
 }
 
