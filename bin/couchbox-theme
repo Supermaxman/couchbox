@@ -10,14 +10,17 @@ set -euo pipefail
 . /etc/couchbox/couchbox.env
 THEME_DIR=/usr/share/couchbox/theme
 # shellcheck source=/dev/null
-[[ -f /etc/couchbox/theme ]] && . /etc/couchbox/theme   # COUCHBOX_APPEARANCE_THEME=<last chosen preset>
 
 if [[ ${1:-} == --list ]]; then
   for f in "$THEME_DIR"/presets/*.conf; do n=$(basename "$f" .conf); echo "$n$([[ $n == "${COUCHBOX_APPEARANCE_THEME:-graphite}" ]] && echo '  (current)')"; done
   exit 0
 fi
 [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo couchbox-theme [preset]"; exit 1; }
-preset=${1:-${COUCHBOX_APPEARANCE_THEME:-graphite}}
+# A preset named here becomes the setting (couchboxd then runs this again to apply it).
+if [[ -n ${1:-} && $1 != "${COUCHBOX_APPEARANCE_THEME:-graphite}" ]]; then
+  exec /usr/bin/couchbox config set appearance.theme "$1"
+fi
+preset=${COUCHBOX_APPEARANCE_THEME:-graphite}
 conf=$THEME_DIR/presets/$preset.conf
 [[ -f $conf ]] || { echo "No preset '$preset'. Presets: $(cd "$THEME_DIR/presets" && printf '%s ' *.conf | sed 's/\.conf//g')"; exit 1; }
 
@@ -68,7 +71,6 @@ Name=couchbox theme
 Exec=sh -c 'sleep 3; plasma-apply-colorscheme $scheme; plasma-apply-wallpaperimage "$wall"'
 X-KDE-autostart-phase=2
 EOF
-echo "COUCHBOX_APPEARANCE_THEME=$preset" > /etc/couchbox/theme
 
 # Inter for the whole TV interface (the home screen uses it too)
 for key in font menuFont toolBarFont; do

@@ -75,16 +75,27 @@ next_input() {
   echo "TV input: $next$([[ $next == "$ours" ]] && echo " (this box)")"
 }
 
+# Settings → Remote and TV → "Control the TV (HDMI-CEC)" off: leave the TV alone
+if [[ ${COUCHBOX_TV_CEC_ENABLED:-1} == 0 ]]; then
+  case ${1:-} in volume-up|volume-down|mute) ;; *) echo "HDMI-CEC control is off in Settings."; exit 0 ;; esac
+fi
+
 case ${1:-} in
   on)     register; cec --to 0 --image-view-on; claim_input ;;
-  off)    register; cec --to 0 --standby ;;
+  off)    [[ ${COUCHBOX_TV_STANDBY_WITH_BOX:-1} == 1 ]] || exit 0; register; cec --to 0 --standby ;;
   input)  register; claim_input ;;
   next-input) register; next_input ;;
   status) register; cec --to 0 --give-device-power-status ;;
   scan)   register; cec --show-topology ;;
   # Boot claims the input but never powers the TV on, so a reboot at 3 a.m.
   # (power cut, update) doesn't light up the living room.
-  boot)   register; claim_input ;;
+  # The very first boot (setup not done yet) does wake the TV, so the setup shows up.
+  boot)
+    register
+    if [[ ${COUCHBOX_TV_POWER_ON_WITH_BOX:-1} == 1 ]] && ! grep -qs '"done": true' /var/lib/couchbox/state/setup.json; then
+      cec --to 0 --image-view-on
+    fi
+    claim_input ;;
   power)
     register
     if cec --to 0 --give-device-power-status 2>/dev/null | grep -q 'pwr-state: on'; then
