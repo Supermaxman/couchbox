@@ -32,7 +32,8 @@ trap cleanup EXIT
 [[ $(uname -m) == aarch64 ]] || { echo "build on arm64"; exit 1; }
 ls "$DEBS"/couchbox_*.deb >/dev/null
 for t in xz losetup parted e2fsck resize2fs rsync cryptsetup curl; do command -v $t >/dev/null || NEED=1; done
-[[ -z ${NEED:-} ]] || apt-get install -y -qq xz-utils parted e2fsprogs rsync cryptsetup-bin curl >/dev/null
+command -v zerofree >/dev/null || NEED=1
+[[ -z ${NEED:-} ]] || apt-get install -y -qq xz-utils parted e2fsprogs rsync cryptsetup-bin curl zerofree >/dev/null
 for i in $(seq 0 31); do [[ -e /dev/loop$i ]] || mknod -m 660 "/dev/loop$i" b 7 "$i"; done
 
 step "Base: $(basename "$BASE_URL")"
@@ -64,6 +65,16 @@ mkdir -p "$R/tmp/debs" && cp "$DEBS"/*.deb "$R/tmp/debs/"
 in_root() { chroot "$R" env DEBIAN_FRONTEND=noninteractive COUCHBOX_IMAGE_BUILD=1 LANG=C.UTF-8 "$@"; }
 
 step "Packages: upgrade, drop snapd, add Tailscale's repo, install Couchbox"
+# A TV box doesn't need manuals, docs or other languages' messages (copyrights stay)
+cat > "$R/etc/dpkg/dpkg.cfg.d/90-couchbox-small" <<'X'
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/locale/*
+path-include=/usr/share/locale/en*
+path-include=/usr/share/locale/locale.alias
+X
 in_root apt-get -qq update
 in_root apt-get -y -qq -o Dpkg::Options::=--force-confold full-upgrade >/dev/null
 in_root apt-get -y -qq purge snapd lxd-installer 2>/dev/null || true
@@ -76,6 +87,14 @@ curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$tsc.tailscale-keyring.list
 in_root apt-get -qq update
 in_root sh -c 'apt-get install -y -qq --no-install-recommends /tmp/debs/*.deb tailscale openssh-server rpi-eeprom raspi-utils-core >/dev/null'
 in_root systemctl disable tailscaled.service ssh.service ssh.socket 2>/dev/null || true
+# Firmware for hardware a Pi 5 doesn't have (its Wi-Fi/Bluetooth firmware is in linux-firmware-raspi)
+if in_root dpkg -s linux-firmware >/dev/null 2>&1 && ! in_root apt-get -s purge linux-firmware | grep -qE '^Remv linux-(image|raspi|firmware-raspi)'; then
+  in_root apt-get -y -qq purge linux-firmware >/dev/null && echo "removed linux-firmware"
+fi
+find "$R/usr/share/doc" -mindepth 1 -maxdepth 2 ! -name copyright ! -type d -delete 2>/dev/null || true
+rm -rf "$R"/usr/share/man/* "$R"/usr/share/info/*
+echo "biggest packages (MB):"
+in_root dpkg-query -W -f '${Installed-Size} ${Package}\n' | sort -rn | head -25 | awk '{printf "  %6.0f %s\n", $1/1024, $2}' 
 echo "$VERSION" > "$R/etc/couchbox/image-version"
 
 step "First boot: cloud-init only for Raspberry Pi Imager's settings, no default user"
@@ -99,6 +118,7 @@ for m in boot/firmware dev/pts dev proc sys run; do umount -l "$R/$m"; done
 umount "$R"
 e2fsck -fy "$ROOTP" >/dev/null || [[ $? -le 1 ]]
 resize2fs -M "$ROOTP" >/dev/null
+zerofree "$ROOTP"                     # free blocks to zeros, so they compress to nothing
 blocks=$(dumpe2fs -h "$ROOTP" 2>/dev/null | awk -F': *' '/^Block count/ {print $2}')
 bs=$(dumpe2fs -h "$ROOTP" 2>/dev/null | awk -F': *' '/^Block size/ {print $2}')
 start=$(parted -sm "$img" unit B print | awk -F: '$1 == 2 {sub("B", "", $2); print $2}')
