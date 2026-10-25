@@ -369,9 +369,10 @@ def network_status() -> dict[str, Any]:
 
 
 @method("network.wifi_scan", write=False)
-def wifi_scan(rescan: bool = True) -> list[dict[str, Any]]:
+def wifi_scan(rescan: bool = True, bounce: bool = False) -> list[dict[str, Any]]:
+    """bounce: while the setup hotspot is up, take it down for a real scan ("Look again")."""
     if api_setup.hotspot_active():
-        return api_setup.cached_scan()
+        return api_setup.rescan() if bounce else api_setup.cached_scan()
     r = out(
         ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ", "device", "wifi", "list", "--rescan", "yes" if rescan else "no"],
         check=False,

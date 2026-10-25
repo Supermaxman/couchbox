@@ -100,6 +100,7 @@ def setup_api(runner):
     from couchbox.daemon import api_setup
 
     api_setup._hotspot.clear()
+    api_setup._creds.clear()
     api_setup._first_offline = 0
     yield api_setup
     api_setup._hotspot.clear()
@@ -139,3 +140,22 @@ def test_wifi_qr_escapes():
     from couchbox.daemon import api_setup
 
     assert api_setup.wifi_qr('a;b"c', "p:w\\") == 'WIFI:T:WPA;S:a\\;b\\"c;P:p\\:w\\\\;;'
+
+
+def test_saved_wifi_gets_longer_before_the_hotspot(setup_api, runner, monkeypatch):
+    runner.answers = {
+        ("ip", "-4", "-o", "route", "get"): (2, ""),
+        ("nmcli", "-t", "-f", "DEVICE,TYPE", "device"): (0, "wlan0:wifi\n"),
+        ("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"): (0, "couchbox-Home:802-11-wireless\nlo:loopback\n"),
+    }
+    monkeypatch.setattr(setup_api, "_first_offline", setup_api.time.time() - 60)
+    assert setup_api.setup_phone()["mode"] == "none"  # Imager's Wi-Fi may still be joining
+    monkeypatch.setattr(setup_api, "_first_offline", setup_api.time.time() - 130)
+    first = setup_api.setup_phone()
+    assert first["mode"] == "hotspot"
+    # a rescan takes it down and back up with the same name and password
+    from couchbox.daemon import api
+
+    api.wifi_scan(rescan=True, bounce=True)
+    assert setup_api.setup_phone()["wifi"] == first["wifi"]
+    assert len(runner.ran("nmcli", "device", "wifi", "hotspot")) == 2

@@ -8,9 +8,9 @@ StepPage {
     intro: "Couchbox needs the internet for apps, updates and the clock.\n\nPlugged into Ethernet? You're all set. Otherwise choose your Wi-Fi."
     property var status: ({devices: [], connectivity: ""})
     property var nets: []
-    function refresh(rescan) {
+    function refresh(rescan, bounce) {
         T.call("network.status", {}, r => p.status = r);
-        T.call("network.wifi_scan", {rescan: rescan}, r => p.nets = r, () => {});
+        T.call("network.wifi_scan", {rescan: rescan, bounce: !!bounce}, r => p.nets = r, () => {});
     }
     Component.onCompleted: refresh(true)
     Timer { interval: 8000; running: true; repeat: true; onTriggered: p.refresh(false) }
@@ -31,7 +31,7 @@ StepPage {
                     tone: n.connected ? "good" : "", act: () => p.join(n)});
         r.push(T.action("Join a hidden network", () => T.askText("Network name", "", false, ssid =>
             T.askText("Password (empty if none)", "", true, pw => T.call("network.wifi_connect", {ssid: ssid, password: pw, hidden: true}, () => refresh(false))))));
-        r.push(T.action("Look again", () => refresh(true)));
+        r.push(T.action("Look again", () => refresh(true, true)));
         if (!online) r.push(cont("Continue without internet"));
         return r;
     }
