@@ -77,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: "${{ inputs.tag }}"}
       - uses: actions/download-artifact@v4
-        with: {path: dist, merge-multiple: true}
+        with: {pattern: "{debs,media,image}", path: dist, merge-multiple: true}  # not the docker build records
       - name: installer and Raspberry Pi Imager list
         env: {TAG: "${{ inputs.tag }}"}
         run: |
