@@ -422,7 +422,9 @@ rollback() {
     local kver=${COUCHBOX_KVER:-$(uname -r)}
     # (the image the box boots now still unlocks: a failure here leaves that one in place)
     { dracut --force --kver "$kver" && flash-kernel "$kver"; } 2>&1 | tail -3 | tee -a "$LOG" || warn "boot image not rebuilt: the current one stays"
-    grep -q 'rd.neednet=1' "$FW/new/cmdline.txt" 2>/dev/null || sed -i '1s/$/ rd.neednet=1/' "$FW/new/cmdline.txt"
+    if [[ -f $FW/new/cmdline.txt ]] && ! grep -q 'rd.neednet=1' "$FW/new/cmdline.txt"; then
+      sed -i '1s/$/ rd.neednet=1/' "$FW/new/cmdline.txt"
+    fi
   fi
   [[ -x /usr/local/bin/mtv-home ]] && /usr/local/bin/mtv-home --refresh >/dev/null 2>&1 || true
   [[ $REHEARSAL == 1 ]] || systemctl restart sddm.service
