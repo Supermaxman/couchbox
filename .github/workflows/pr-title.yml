@@ -1,0 +1,18 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conventional Commit title
+        env: {TITLE: "${{ github.event.pull_request.title }}"}
+        run: |
+          echo "$TITLE" | grep -Eq '^(feat|fix|perf|docs|build|ci|chore|test|refactor|revert)(\([a-z0-9-]+\))?!?: .+' \
+            || { echo "::error::PR title must be a Conventional Commit, e.g. 'fix(settings): keep the cursor in place'"; exit 1; }

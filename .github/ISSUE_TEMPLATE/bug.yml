@@ -1,0 +1,32 @@
+name: Bug
+description: Something on the box doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Couchbox version
+      description: Settings → System, or `couchbox version`
+    validations: {required: true}
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: Pi model and RAM, storage (NVMe/SD), TV brand and model, remote
+  - type: textarea
+    id: doctor
+    attributes:
+      label: couchbox doctor
+      description: Settings → System → Run checks, or `couchbox doctor` over SSH
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`journalctl -b -u 'couchbox*' --no-pager | tail -200` (check there's nothing private in it)"
+      render: text

@@ -1,0 +1,9 @@
+name: Idea
+description: Something Couchbox should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you'd like, and why
+    validations: {required: true}
