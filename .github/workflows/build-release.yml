@@ -35,7 +35,7 @@ jobs:
             dpkg-buildpackage -us -uc -b
             lintian --fail-on error ../couchbox_*.deb
             mkdir -p /src/dist && cp ../couchbox_*.deb /src/dist/'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: {name: debs, path: dist/*.deb}
 
   media:
@@ -48,7 +48,7 @@ jobs:
           run=$(gh run list -R "$GITHUB_REPOSITORY" -w media.yml -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
           if [ -n "$run" ]; then gh run download "$run" -R "$GITHUB_REPOSITORY" -n couchbox-media -D dist || true; fi
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: {name: media, path: dist/*, if-no-files-found: ignore}
 
   image:
@@ -66,7 +66,7 @@ jobs:
         run: sudo image/build-image.sh "${TAG#v}" dist out
       - name: boot test (systemd-nspawn)
         run: sudo image/test-image.sh out/couchbox-*-rpi5.img.xz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: {name: image, path: "out/*", compression-level: 0}
 
   publish:
