@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.0](https://github.com/Supermaxman/couchbox/compare/v0.1.0...v0.2.0) (2026-10-25)
+
+
+### New
+
+* **setup:** install to the SSD from a USB stick, and the phone as the remote from the first screen ([c43f5d6](https://github.com/Supermaxman/couchbox/commit/c43f5d6dce97f3984a19fc46870e2a319261a5a1))
+
+
+### Fixed
+
+* **network:** Wi-Fi set in Raspberry Pi Imager is run by NetworkManager ([3f6f098](https://github.com/Supermaxman/couchbox/commit/3f6f0980961e0f685b87264a07e31464bb0cfe36))
+* **setup:** don't open the setup Wi-Fi while a saved network may still be joining ([da67886](https://github.com/Supermaxman/couchbox/commit/da67886ab6b6d9b4641e2f6211681af4b347c89d))
+
+
+### Docs
+
+* step-by-step install guide (USB stick, TV, phone or remote) and the fresh-hardware run sheet ([f0b450c](https://github.com/Supermaxman/couchbox/commit/f0b450c2d6e5033b480609da0d1175dfad2340b1))
+* when the setup Wi-Fi opens ([fe56fc0](https://github.com/Supermaxman/couchbox/commit/fe56fc0c467b000542711511ac0b3f2071f0c076))
+
 ## 0.1.0 (2026-10-25)
 
 
