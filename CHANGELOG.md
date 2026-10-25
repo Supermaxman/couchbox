@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/Supermaxman/couchbox/compare/v0.3.0...v0.4.0) (2026-10-25)
+
+
+### New
+
+* **install:** convert the mtv prototype in place (installer/convert-mtv.sh); keep SSH and Tailscale when installing over them ([58dd612](https://github.com/Supermaxman/couchbox/commit/58dd6122fb0ec3872bb763603a32db24c01db7c0))
+
+
+### Fixed
+
+* **apps:** stop the sign-in import's headless browser for real ([6e6aa84](https://github.com/Supermaxman/couchbox/commit/6e6aa841eeaf7856720ce75cda14a7aab81bb429))
+* **input:** use the shipped key map when the household has none ([490792f](https://github.com/Supermaxman/couchbox/commit/490792f79a5c33686b53306197b6dd33b9030052))
+* **install:** convert-mtv preflight builds and checks the new boot image aside; theme on install ([7c7457a](https://github.com/Supermaxman/couchbox/commit/7c7457aa456c4ca809747e50039ffcbf982b7187))
+
 ## [0.3.0](https://github.com/Supermaxman/couchbox/compare/v0.2.0...v0.3.0) (2026-10-25)
 
 
