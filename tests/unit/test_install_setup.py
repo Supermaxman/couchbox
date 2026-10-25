@@ -130,7 +130,7 @@ def test_offline_opens_a_hotspot_after_a_grace_period(setup_api, runner, monkeyp
     assert api.wifi_scan() == setup_api.cached_scan()
     assert not runner.ran("nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ")
     # Ethernet comes up: the hotspot goes
-    runner.answers[("ip", "-4", "-o", "route", "get")] = (0, "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.9\n")
+    runner.answers[("ip", "-4", "-o", "route", "get")] = (0, "1.1.1.1 via 192.168.50.1 dev eth0 src 192.168.50.9\n")
     assert setup_api.setup_phone()["mode"] == "lan"
     assert not setup_api.hotspot_active() and runner.ran("nmcli", "connection", "delete", "id", "couchbox-setup")
 
