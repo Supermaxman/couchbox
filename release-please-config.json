@@ -4,7 +4,6 @@
     ".": {
       "release-type": "simple",
       "package-name": "couchbox",
-      "release-as": "0.1.0",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
