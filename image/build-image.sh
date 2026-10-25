@@ -87,14 +87,22 @@ curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$tsc.tailscale-keyring.list
 in_root apt-get -qq update
 in_root sh -c 'apt-get install -y -qq --no-install-recommends /tmp/debs/*.deb tailscale openssh-server rpi-eeprom raspi-utils-core >/dev/null'
 in_root systemctl disable tailscaled.service ssh.service ssh.socket 2>/dev/null || true
-# Firmware for hardware a Pi 5 doesn't have (its Wi-Fi/Bluetooth firmware is in linux-firmware-raspi)
-if in_root dpkg -s linux-firmware >/dev/null 2>&1 && ! in_root apt-get -s purge linux-firmware | grep -qE '^Remv linux-(image|raspi|firmware-raspi)'; then
-  in_root apt-get -y -qq purge linux-firmware >/dev/null && echo "removed linux-firmware"
-fi
+# Not needed on a Pi 5 TV box: firmware for other hardware (the Pi's Wi-Fi/Bluetooth firmware
+# is in linux-firmware-raspi), every locale prebuilt, cloud SDKs. Each removal is simulated
+# first and skipped if it would take the kernel, Couchbox or Plasma with it.
+mapfile -t extra < <(in_root dpkg-query -W -f '${Package}\n' | grep -E '^(linux-firmware($|-)|firmware-sof-signed$|locales-all$|python3-(boto3|botocore|s3transfer)$)' | grep -vx 'linux-firmware-raspi')
+for p in "${extra[@]}"; do
+  if in_root apt-get -s purge "$p" 2>/dev/null | grep -qE '^Remv (linux-(image|raspi|modules)|couchbox|plasma|kwin|sddm|linux-firmware-raspi|cloud-init)'; then
+    echo "keeping $p (needed)"
+  else
+    in_root apt-get -y -qq purge "$p" >/dev/null 2>&1 && echo "removed $p"
+  fi
+done
+in_root sh -c 'grep -q "^en_US.UTF-8" /etc/locale.gen 2>/dev/null || echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen; locale-gen >/dev/null 2>&1 || true' 
 find "$R/usr/share/doc" -mindepth 1 -maxdepth 2 ! -name copyright ! -type d -delete 2>/dev/null || true
 rm -rf "$R"/usr/share/man/* "$R"/usr/share/info/*
 echo "biggest packages (MB):"
-in_root dpkg-query -W -f '${Installed-Size} ${Package}\n' | sort -rn | head -25 | awk '{printf "  %6.0f %s\n", $1/1024, $2}' 
+in_root dpkg-query -W -f '${Installed-Size} ${Package}\n' | sort -rn | awk 'NR <= 25 {printf "  %6.0f %s\n", $1/1024, $2}' || true
 echo "$VERSION" > "$R/etc/couchbox/image-version"
 
 step "First boot: cloud-init only for Raspberry Pi Imager's settings, no default user"
