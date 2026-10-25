@@ -34,7 +34,7 @@ def _deliver(topic: str, data: Any) -> None:
 
 
 def publish(topic: str, data: Any = None) -> None:
-    if _loop is None:
+    if _loop is None or _loop.is_closed():
         return
     try:
         running = asyncio.get_running_loop()

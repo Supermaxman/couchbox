@@ -29,6 +29,35 @@ ANSWERS = {
         "-o",
         "addr",
     ): "1: lo    inet 127.0.0.1/8 scope host lo\n3: wlan0    inet 192.168.1.42/24 brd 192.168.1.255 scope global wlan0\n",
+    ("ip", "-4", "-o", "route", "get"): "1.1.1.1 via 192.168.1.1 dev wlan0 src 192.168.1.42 uid 0\n",
+    # the setup wizard's view: running from a USB stick, an SSD to install to
+    ("findmnt", "-n", "-o", "SOURCE", "/"): "/dev/sda2\n",
+    ("lsblk", "-n", "-d", "-o", "PKNAME"): "sda\n",
+    ("lsblk", "-J"): json.dumps(
+        {
+            "blockdevices": [
+                {
+                    "name": "sda",
+                    "path": "/dev/sda",
+                    "type": "disk",
+                    "size": 32 * 10**9,
+                    "model": "USB Stick",
+                    "tran": "usb",
+                    "mountpoints": [None],
+                    "children": [{"name": "sda2", "mountpoints": ["/"]}],
+                },
+                {
+                    "name": "nvme0n1",
+                    "path": "/dev/nvme0n1",
+                    "type": "disk",
+                    "size": 256 * 10**9,
+                    "model": "PM9C1a",
+                    "tran": "nvme",
+                    "mountpoints": [None],
+                },
+            ]
+        }
+    ),
     ("timedatectl", "show"): "Timezone=America/Chicago\nNTPSynchronized=yes\n",
     ("timedatectl", "list-timezones"): "\n".join(
         [

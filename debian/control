@@ -18,7 +18,7 @@ Depends: ${misc:Depends}, ${python3:Depends},
  qml6-module-qtquick-shapes, qml6-module-qtquick-effects, qml6-module-qtcore, qml6-module-org-kde-layershell, qml-qt6, qml6-module-org-kde-plasma-plasma5support,
  plasma-bigscreen, kwin-wayland, sddm, kscreen, plasma-nm, plasma-pa, bluedevil, xdg-desktop-portal-kde, libkf6config-bin,
  breeze, breeze-icon-theme, fonts-inter, fonts-noto-core, fonts-noto-color-emoji, librsvg2-bin,
- network-manager, bluez, pipewire-pulse, wireplumber, avahi-daemon, libglib2.0-bin,
+ network-manager, dnsmasq-base, rsync, dosfstools, e2fsprogs, bluez, pipewire-pulse, wireplumber, avahi-daemon, libglib2.0-bin,
  flatpak, uxplay, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav,
  mpv, ffmpeg, cec-utils, v4l-utils, libopus0, qrencode, iw, wpasupplicant, jq, curl, openssh-client,
  cryptsetup, clevis, clevis-luks, clevis-dracut, dracut, unattended-upgrades

@@ -9,7 +9,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-window \
       qml6-module-qtqml-workerscript qml6-module-qtquick-templates qml6-module-qtcore qml6-module-qtquick-shapes \
       qml6-module-qtquick-effects qml6-module-qt5compat-graphicaleffects qml6-module-org-kde-layershell qt6-declarative-dev-tools qt6-image-formats-plugins \
-      openssh-client cryptsetup-bin e2fsprogs util-linux librsvg2-bin fonts-inter fonts-noto-core fonts-noto-color-emoji \
+      openssh-client cryptsetup-bin e2fsprogs util-linux dosfstools rsync fdisk librsvg2-bin fonts-inter fonts-noto-core fonts-noto-color-emoji \
       shellcheck shfmt python3-pip qrencode devscripts debhelper dh-python lintian fakeroot build-essential jq git ca-certificates \
       xvfb libgl1 libegl1 libglx-mesa0 libgl1-mesa-dri plasma-bigscreen qml6-module-org-kde-plasma-plasma5support \
     && rm -rf /var/lib/apt/lists/* \

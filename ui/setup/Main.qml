@@ -21,24 +21,39 @@ Window {
     readonly property string shot: arg("--shot")
     onHeightChanged: T.u = height / 1080
 
-    readonly property var steps: ["Hello", "Remote", "Network", "Time", "Name", "TvButtons", "Updates", "Extras", "Apps", "Done"]
+    readonly property var steps: ["Hello", "Remote", "Install", "Network", "Time", "Name", "TvButtons", "Updates", "Extras", "Apps", "Done"]
     property int step: arg("--step") !== "" ? parseInt(arg("--step")) : 0
     property var completed: []
     property var typed: null
+    // steps that don't apply here: Install only when running from a USB stick or SD card
+    // with an SSD to copy to
+    property var skip: ["Install"]
 
     Component.onCompleted: {
         T.u = height / 1080;
         T.load();
         if (arg("--step") !== "") return;
-        T.call("setup.state", {}, st => { if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1); });
+        T.call("install.status", {}, ist => {
+            if (ist.can_install || (ist.job && ist.job.state === "running")) skip = [];
+            T.call("setup.state", {}, st => {
+                if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1);
+                while (skip.indexOf(steps[step]) >= 0 && step < steps.length - 1) step++;
+            });
+        }, () => T.call("setup.state", {}, st => { if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1); }));
         T.call("remote.pair_start", {seconds: 0}, () => {});          // look for remotes from the start
     }
     function next() {
         if (completed.indexOf(steps[step]) < 0) completed = completed.concat([steps[step]]);
-        step = Math.min(step + 1, steps.length - 1);
+        let n = Math.min(step + 1, steps.length - 1);
+        while (skip.indexOf(steps[n]) >= 0 && n < steps.length - 1) n++;
+        step = n;
         T.call("setup.save", {step: step, completed: completed}, () => {});
     }
-    function prev() { if (step > 0) step--; }
+    function prev() {
+        let n = step - 1;
+        while (n > 0 && skip.indexOf(steps[n]) >= 0) n--;
+        if (n >= 0) step = n;
+    }
     function finish() {
         T.call("remote.pair_stop", {}, () => {});
         T.call("setup.save", {step: steps.length - 1, completed: completed, done: true}, () => Qt.quit());
@@ -106,7 +121,11 @@ Window {
                 }
             }
         }
+        PhoneCard {
+            anchors { left: parent.left; leftMargin: 72 * T.u; bottom: hint.top; bottomMargin: 36 * T.u; right: parent.right; rightMargin: 72 * T.u }
+        }
         Text {
+            id: hint
             anchors { left: parent.left; leftMargin: 72 * T.u; bottom: parent.bottom; bottomMargin: 120 * T.u; right: parent.right; rightMargin: 72 * T.u }
             text: "Arrows move · OK selects · Back goes back"
             color: T.dim

@@ -5,7 +5,7 @@ import "../settings"
 StepPage {
     id: p
     title: "Your remote"
-    intro: "Have an Amazon Fire TV remote? Hold its Home button for about 10 seconds, until the light blinks. It pairs by itself.\n\nDon't reset it with Menu + Back + Left: that erases its TV buttons."
+    intro: "Have an Amazon Fire TV remote? Hold its Home button for about 10 seconds, until the light blinks. It pairs by itself.\n\nIf it's paired with a Fire TV Stick, unplug the Stick first. Don't reset it with Menu + Back + Left: that erases its TV buttons."
     property var pstate: ({state: "searching"})
     property var devices: []
     Component.onCompleted: { T.call("remote.devices", {}, r => p.devices = r, () => {}); T.call("remote.pair_start", {seconds: 0}, () => {}); }

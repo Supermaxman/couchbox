@@ -370,6 +370,8 @@ def network_status() -> dict[str, Any]:
 
 @method("network.wifi_scan", write=False)
 def wifi_scan(rescan: bool = True) -> list[dict[str, Any]]:
+    if api_setup.hotspot_active():
+        return api_setup.cached_scan()
     r = out(
         ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,FREQ", "device", "wifi", "list", "--rescan", "yes" if rescan else "no"],
         check=False,
@@ -402,6 +404,8 @@ def wifi_connect(ssid: str, password: str = "", hidden: bool = False) -> dict[st
     if any(ord(c) < 32 for c in ssid + password):
         raise UserError("Network names and passwords can't contain control characters.")
     con = f"couchbox-{re.sub(r'[^A-Za-z0-9_-]', '_', ssid)}"
+    had_hotspot = api_setup.hotspot_active()
+    api_setup.hotspot_stop()  # one radio: the setup hotspot makes way (and comes back on failure)
     sh(["nmcli", "connection", "delete", "id", con], check=False)
     # A keyfile written root-only: the password never appears on a command line.
     esc = ssid.replace("\\", "\\\\")
@@ -430,6 +434,11 @@ def wifi_connect(ssid: str, password: str = "", hidden: bool = False) -> dict[st
     r = sh(["nmcli", "--wait", "40", "connection", "up", "id", con], check=False, timeout=60)
     if r.returncode != 0:
         sh(["nmcli", "connection", "delete", "id", con], check=False)
+        if had_hotspot:
+            try:
+                api_setup.hotspot_start()
+            except UserError:
+                pass
         msg = (r.stderr or r.stdout).lower()
         if "secrets" in msg or "password" in msg or "802-1x" in msg:
             raise UserError("Wrong password, or the network refused it.")
@@ -733,9 +742,10 @@ def setup_save(step: int, completed: list[str] | None = None, done: bool = False
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(st) + "\n")
     if done:
+        api_setup.hotspot_stop()
         events.publish("setup.done")
     return st
 
 
 # ------------------------------------------------------------------ the rest lives in modules
-from . import api_display, api_encryption, api_extra, api_remote, api_updates  # noqa: E402,F401
+from . import api_display, api_encryption, api_extra, api_remote, api_setup, api_updates  # noqa: E402,F401

@@ -10,6 +10,7 @@
   couchbox wifi list | join SSID | forget SSID
   couchbox phone-url
   couchbox import-mtv [PATH]       settings from the mtv prototype (/etc/mtv)
+  couchbox install-to-disk [DEVICE] copy a USB stick / SD card system to the SSD
 
 Changes go through couchboxd when it's running (so they take effect), else straight to
 the files (root, e.g. in an image build).
@@ -198,6 +199,28 @@ def cmd_import_mtv(a) -> None:
     print("Imported.")
 
 
+def cmd_install(a) -> None:
+    st = _call("install.status")
+    if not a.device:
+        print(f"Running from: {st['booted_from'] or '?'}")
+        for t in st["targets"]:
+            print(f"  {t['path']}  {t['label']}")
+        if not st["targets"]:
+            print("No drive to install to (only offered when running from a USB stick or SD card).")
+        return
+    if input(f"Erase {a.device} and copy this system onto it? Type YES: ") != "YES":
+        sys.exit("Not installed.")
+    _call("install.start", device=a.device)
+    for ev in ipc.subscribe(["install"]):
+        d = ev["data"]
+        print(f"\r{d.get('step', '')}: {d.get('percent', 0)}%   ", end="", flush=True)
+        if d.get("state") == "failed":
+            sys.exit(f"\nFailed: {d.get('error')}")
+        if d.get("state") == "done":
+            print("\nDone. " + ("Reboot to run from it." if d.get("next") == "restart" else "Shut down, take out the SD card, power on."))
+            return
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="couchbox", description="Couchbox TV box")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -229,6 +252,8 @@ def main(argv: list[str] | None = None) -> None:
     im = sub.add_parser("import-mtv")
     im.add_argument("path", nargs="?", default="/etc/mtv")
     im.add_argument("--dry-run", action="store_true")
+    ins = sub.add_parser("install-to-disk")
+    ins.add_argument("device", nargs="?")
     a = p.parse_args(argv)
 
     if a.cmd == "version":
@@ -256,6 +281,8 @@ def main(argv: list[str] | None = None) -> None:
         print(_call("phone.pairing")["url"])
     elif a.cmd == "import-mtv":
         cmd_import_mtv(a)
+    elif a.cmd == "install-to-disk":
+        cmd_install(a)
 
 
 if __name__ == "__main__":

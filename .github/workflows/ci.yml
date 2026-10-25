@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [lint, unit, qml, encryption-loop]
+        check: [lint, unit, qml, loop-devices]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -56,9 +56,12 @@ jobs:
           name: screenshots
           path: build/shots
           if-no-files-found: ignore
-      - name: encryption on loop devices
-        if: matrix.check == 'encryption-loop'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin e2fsprogs && sudo ci/encryption-loop.sh
+      - name: encryption and install-to-SSD on loop devices
+        if: matrix.check == 'loop-devices'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin e2fsprogs dosfstools rsync
+          sudo ci/encryption-loop.sh
+          sudo ci/install-disk-loop.sh
 
   package:
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
