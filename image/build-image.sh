@@ -92,7 +92,7 @@ in_root apt-get -qq clean
 rm -rf "$R"/var/lib/apt/lists/* "$R/tmp/debs" "$R/usr/sbin/policy-rc.d" "$R"/etc/ssh/ssh_host_* "$R"/var/log/*.log "$R/root/.bash_history"
 : > "$R/etc/machine-id"; rm -f "$R/var/lib/dbus/machine-id"
 ln -sf ../run/systemd/resolve/stub-resolv.conf "$R/etc/resolv.conf"
-du -sh "$R" | sed 's/^/root filesystem: /'
+du -shx "$R" 2>/dev/null | sed "s/^/root filesystem: /" || true
 
 step "Shrink"
 for m in boot/firmware dev/pts dev proc sys run; do umount -l "$R/$m"; done
