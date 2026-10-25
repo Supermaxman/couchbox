@@ -62,11 +62,14 @@ fi
 say "Installing (Plasma Bigscreen and the rest come from Ubuntu: 1-2 GB, 10-30 minutes)"
 apt-get -o DPkg::Lock::Timeout=900 update -qq
 export DEBIAN_FRONTEND=noninteractive
+# Tailscale that's already up stays up (this may be the connection we're installing over)
+ts_was_on=0
+systemctl is-enabled tailscaled >/dev/null 2>&1 && tailscale status >/dev/null 2>&1 && ts_was_on=1
 apt-get -o DPkg::Lock::Timeout=900 install -y "$W"/couchbox*.deb tailscale
 # keep this release's packages for the updater's rollback
 install -d -m 700 "/var/lib/couchbox/updates/$version"
 cp "$W"/*.deb "$W/release.json" "/var/lib/couchbox/updates/$version/"
-systemctl disable tailscaled >/dev/null 2>&1 || true
+[[ $ts_was_on == 1 ]] || systemctl disable tailscaled >/dev/null 2>&1 || true
 
 cat <<X
 

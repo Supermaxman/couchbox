@@ -81,7 +81,7 @@ jobs:
       - name: installer and Raspberry Pi Imager list
         env: {TAG: "${{ inputs.tag }}"}
         run: |
-          sed "s|__ALLOWED_SIGNERS__|$(cat system/keys/allowed_signers)|" installer/install.sh > dist/install.sh
+          for f in install.sh convert-mtv.sh; do sed "s|__ALLOWED_SIGNERS__|$(cat system/keys/allowed_signers)|" "installer/$f" > "dist/$f"; done
           python3 image/imager-json.py "${TAG#v}" dist > dist/rpi-imager.json
           rm -f dist/*.extract.*
       - name: release notes

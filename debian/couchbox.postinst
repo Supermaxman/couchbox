@@ -26,8 +26,14 @@ configure)
     # SSH: keys only. On a system that already had SSH on (installed with install.sh over SSH),
     # it stays on, and password logins stay allowed until some account has a key.
     first_install=0; [ -z "$2" ] && first_install=1
-    if [ "$first_install" = 1 ] && ! in_chroot && systemctl is-enabled ssh.service >/dev/null 2>&1; then
+    # (Ubuntu starts sshd either as ssh.service or socket-activated by ssh.socket)
+    if [ "$first_install" = 1 ] && ! in_chroot && { systemctl is-enabled ssh.service >/dev/null 2>&1 || systemctl is-enabled ssh.socket >/dev/null 2>&1; }; then
         python3 -c 'from couchbox import settings; settings.update({"ssh.enabled": True})' || true
+    fi
+    # Tailscale already running here (installed over Tailscale SSH, or a box moving over): it stays
+    if [ "$first_install" = 1 ] && ! in_chroot && systemctl is-enabled tailscaled.service >/dev/null 2>&1 \
+        && tailscale status >/dev/null 2>&1; then
+        python3 -c 'from couchbox import settings; settings.update({"tailscale.enabled": True})' || true
     fi
     install -d /etc/ssh/sshd_config.d
     if in_chroot || ls /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys >/dev/null 2>&1; then

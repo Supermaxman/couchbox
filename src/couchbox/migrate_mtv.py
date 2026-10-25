@@ -106,6 +106,11 @@ def read(path: str = "/etc/mtv") -> tuple[dict[str, Any], dict[str, str]]:
     notes = root / "voice-notes.md"
     if notes.exists():
         s["voice.notes"] = notes.read_text()
+    theme = root / "theme"
+    if theme.exists():
+        t = parse_conf(theme.read_text()).get("MTV_THEME", "")
+        if t in ("graphite", "neon", "amber", "sakura", "matrix"):
+            s["appearance.theme"] = t
 
     secrets = {}
     for name, f in (("voice.llm.api_key", "llm-key"), ("media.seerr.api_key", "seerr-key")):
