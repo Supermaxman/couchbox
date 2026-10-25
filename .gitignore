@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+/build/
+/out/
+*.img
+*.img.xz
+*.deb
+.venv/
