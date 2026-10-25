@@ -58,9 +58,9 @@ def test_errors_are_readable(daemon):
 
 
 def test_secrets_are_write_only(daemon):
-    ipc.call("secrets.set", name="voice.llm.api_key", value="sk-secret-value")
+    ipc.call("secrets.set", name="voice.llm.api_key", value="test-fake-secret")
     assert ipc.call("secrets.status")["voice.llm.api_key"] is True
-    assert "sk-secret" not in str(ipc.call("settings.export"))
+    assert "test-fake" not in str(ipc.call("settings.export"))
     assert not any(n.startswith("secrets.get") for n in api.METHODS)
 
 

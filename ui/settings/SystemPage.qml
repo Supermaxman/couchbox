@@ -11,6 +11,11 @@ SettingsPage {
         T.call("system.doctor", {}, r => T.message(r.status === "ok" ? "Everything looks fine" : "Some checks need a look",
             r.checks.map(c => (c.status === "ok" ? "✓ " : c.status === "warn" ? "! " : "✗ ") + c.name + ": " + c.detail).join("\n"), "", ""));
     }
+    function factoryReset() {
+        T.confirm("Reset Couchbox?", "Every setting, app sign-in and saved key is erased, then the box restarts into setup. Disk encryption stays as it is.", "Reset",
+                  () => T.confirm("Really reset?", "This can't be undone.", "Reset everything",
+                                  () => T.call("system.factory_reset", {confirm: "RESET", keep_wifi: true}, () => T.toast("Resetting…"))));
+    }
     function choices(key, values, fmt) {
         return {kind: "choice", label: T.label(key), value: fmt(T.settings[key]), help: T.spec(key).help || "",
                 act: () => T.pick(T.label(key), values.map(v => ({label: fmt(v), value: v})), T.settings[key], v => T.set(key, v))};
@@ -34,9 +39,7 @@ SettingsPage {
             T.action("Restart the home screen", () => T.call("system.restart_ui", {}, () => {})),
             T.action("Restart the box", () => T.confirm("Restart now?", "It's back in about a minute.", "Restart", () => T.call("system.reboot", {}, () => {}))),
             T.action("Run the setup again", () => T.call("setup.save", {step: 0, done: false}, () => backend.launch("couchbox-setup"))),
-            T.action("Reset everything", () => T.confirm("Reset Couchbox?", "Every setting, app sign-in and saved key is erased, then the box restarts into setup. Disk encryption stays as it is.", "Reset",
-                () => T.confirm("Really reset?", "This can't be undone.", "Reset everything",
-                    () => T.call("system.factory_reset", {confirm: "RESET", keep_wifi: true}, () => T.toast("Resetting…"))))), {danger: true}),
+            T.action("Reset everything", p.factoryReset, {danger: true}),
             T.section("About Couchbox"),
             T.action("Open-source licenses", () => T.message("Open source", "Couchbox is free software under the Apache License 2.0. Parts of the home screen come from KDE Plasma Bigscreen (GPL-2.0-or-later). It runs on Ubuntu, KDE Plasma, Qt, mpv and many other projects.\n\nUnofficial apps (Dropout, 2nd Try, Nebula, Twitch) aren't made or endorsed by those services.", "", "github.com/Supermaxman/couchbox")),
         ];

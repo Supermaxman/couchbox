@@ -15,7 +15,7 @@ for app in $APPS; do
   flatpak info --system "$app" >/dev/null 2>&1 || flatpak install --system --noninteractive -y flathub "$app"
   n=$((n + 1))
 done
-status done "" "$n" "$total"
+status "done" "" "$n" "$total"
 # Chromium policies: no password manager, autofill or translate pop-ups (the remote can't close them)
 pol="/var/lib/flatpak/extension/org.chromium.Chromium.Policy.system-policies/$(uname -m)/1/policies/managed"
 mkdir -p "$pol"

@@ -9,6 +9,7 @@ FocusScope {
     property string subtitle: ""
     property var rows: []
     property bool moving: false            // the home page's reorder mode
+    property bool showHeading: true
     signal back()
     readonly property alias list: list
     function move(d) { return false; }
@@ -16,6 +17,8 @@ FocusScope {
     Text {
         id: heading
         x: T.edge; y: 56 * T.u
+        visible: page.showHeading
+        height: visible ? implicitHeight : 0
         text: page.title
         color: T.text
         font.family: T.font; font.pixelSize: 46 * T.u; font.weight: Font.Bold

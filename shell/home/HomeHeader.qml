@@ -1,4 +1,4 @@
-// couchbox: top of the TV home screen. Replaces Bigscreen's HomeHeader.qml (6.7.5): the time and
+// Couchbox: top of the TV home screen. Replaces Bigscreen's HomeHeader.qml (6.7.5): the time and
 // date on the left, Settings / Sound / Wi-Fi / Power on the right (no search, favourites editor,
 // battery or KDE Connect: the home row comes from /etc/couchbox/home.tsv).
 // Based on Bigscreen's HomeHeader.qml:
@@ -15,7 +15,6 @@ import org.kde.plasma.clock
 
 import "indicators" as Indicators
 import "couchbox" as Couch
-import "couchbox/apps.js" as Apps
 
 Controls.Control {
     id: root
@@ -31,11 +30,11 @@ Controls.Control {
         trackSeconds: false
     }
 
-    // Weather in the middle (Open-Meteo, no key; the place is COUCHBOX_WEATHER in couchbox.env)
+    // Weather in the middle (Open-Meteo, no key; the place is set in Settings → location)
     Couch.Weather {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 14
-        place: Apps.weather
+        place: Couch.HomeData.weather
     }
 
     contentItem: RowLayout {
@@ -50,7 +49,7 @@ Controls.Control {
                 Text {
                     id: time
                     // "h" is 12-hour only when the same format has AP
-                    text: Qt.formatTime(clock.dateTime, "h:mm AP").split(" ")[0]
+                    text: Couch.HomeData.clock24 ? Qt.formatTime(clock.dateTime, "HH:mm") : Qt.formatTime(clock.dateTime, "h:mm AP").split(" ")[0]
                     color: Couch.Style.text
                     font.family: Couch.Style.font
                     font.pixelSize: 56
@@ -59,6 +58,7 @@ Controls.Control {
                 }
                 Text {
                     anchors.baseline: time.baseline
+                    visible: !Couch.HomeData.clock24
                     text: Qt.formatTime(clock.dateTime, "AP")
                     color: Couch.Style.textDim
                     font.family: Couch.Style.font

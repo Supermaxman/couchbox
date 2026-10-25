@@ -1,0 +1,19 @@
+#!/usr/bin/python3
+"""couchbox-setup: the first-boot setup on the TV (remote, Wi-Fi, time zone, name, updates,
+extras). Started at login until it's been finished once (Settings → System → Run the setup
+again starts it over).
+
+  couchbox-setup [--if-needed]                    --if-needed: only when setup isn't done yet
+  couchbox-setup --demo --shot FILE --step N      render one step against a fake system (tests)
+"""
+import sys
+
+from couchbox import ipc, qtapp
+
+if "--if-needed" in sys.argv:
+    try:
+        if ipc.call("setup.state", timeout=10).get("done"):
+            sys.exit(0)
+    except ipc.IpcError:
+        pass  # no daemon yet: show setup anyway
+sys.exit(qtapp.run("couchbox-setup", "Couchbox setup", "setup/Main.qml"))

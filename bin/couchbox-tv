@@ -57,7 +57,7 @@ volume() {  # volume <ui-cmd> <wpctl args...>
 }
 claim_input() { cec --to 15 --active-source phys-addr="$(phys_of "$DEV")"; }
 next_input() {
-  local state=/run/couchbox-tv-input ours last=0 cur= next p i
+  local state=/run/couchbox/tv-input ours last=0 cur='' next p i
   ours=$(phys_of "$DEV")
   [[ -f $state ]] && read -r last cur < "$state"
   local ports=("$ours")

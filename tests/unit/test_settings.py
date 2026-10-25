@@ -112,14 +112,14 @@ def test_migrations_run_in_order(monkeypatch):
 
 
 def test_secrets_are_root_only_and_never_exported(box):
-    secrets.put("voice.llm.api_key", "sk-abcdef123456")
+    secrets.put("voice.llm.api_key", "test-fake-key-123")
     f = paths.secrets_dir() / "voice.llm.api_key"
     assert stat.S_IMODE(f.stat().st_mode) == 0o600
     assert stat.S_IMODE(paths.secrets_dir().stat().st_mode) == 0o700
-    assert secrets.get("voice.llm.api_key") == "sk-abcdef123456"
+    assert secrets.get("voice.llm.api_key") == "test-fake-key-123"
     assert secrets.status()["voice.llm.api_key"] is True
-    assert "sk-abc" not in json.dumps(settings.load())
-    assert secrets.mask("key=sk-abcdef123456") == "key=sk-…"
+    assert "test-fake" not in json.dumps(settings.load())
+    assert secrets.mask("key=test-fake-key-123") == "key=tes…"
     secrets.clear("voice.llm.api_key")
     assert secrets.get("voice.llm.api_key") == ""
 

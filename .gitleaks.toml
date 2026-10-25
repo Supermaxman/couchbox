@@ -1,0 +1,8 @@
+# gitleaks: the default rules, minus the obviously fake keys in the unit tests.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake values in tests"
+paths = ['''tests/unit/.*\.py''']
+regexes = ['''test-fake-[a-z0-9-]+''']

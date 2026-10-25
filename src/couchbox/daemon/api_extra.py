@@ -64,8 +64,13 @@ def test_stt() -> dict[str, Any]:
         raise UserError("Set the speech-to-text server first.")
     t = time.time()
     try:
-        r = requests.post(f"{s['voice.stt.url']}/audio/transcriptions", timeout=30, headers=_auth("voice.stt.api_key"),
-                          files={"file": ("test.wav", _silence_wav(), "audio/wav")}, data={"model": s["voice.stt.model"]})
+        r = requests.post(
+            f"{s['voice.stt.url']}/audio/transcriptions",
+            timeout=30,
+            headers=_auth("voice.stt.api_key"),
+            files={"file": ("test.wav", _silence_wav(), "audio/wav")},
+            data={"model": s["voice.stt.model"]},
+        )
     except requests.RequestException as e:
         raise UserError(f"No answer: {e.__class__.__name__}") from None
     if r.status_code in (401, 403):
@@ -99,9 +104,17 @@ def test_llm() -> dict[str, Any]:
     if not (s["voice.llm.url"] and s["voice.llm.model"]):
         raise UserError("Set the assistant server and model first.")
     t = time.time()
-    body = {"model": s["voice.llm.model"], "max_tokens": 400,
-            "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
-            "tools": [{"type": "function", "function": {"name": "noop", "description": "Does nothing.", "parameters": {"type": "object", "properties": {}}}}]}
+    body = {
+        "model": s["voice.llm.model"],
+        "max_tokens": 400,
+        "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {"name": "noop", "description": "Does nothing.", "parameters": {"type": "object", "properties": {}}},
+            }
+        ],
+    }
     try:
         r = requests.post(f"{s['voice.llm.url']}/chat/completions", json=body, timeout=90, headers=_auth("voice.llm.api_key"))
     except requests.RequestException as e:
@@ -129,3 +142,14 @@ def ir_program(brand: str) -> dict[str, Any]:
     if r.returncode != 0:
         raise UserError("Couldn't reach the remote. Press a button on it to wake it, then try again.")
     return {"message": "Power, Volume and Mute on the Fire TV remote now control the TV by infrared. Try them."}
+
+
+@method("apps.install_status", write=False)
+def apps_install_status() -> dict[str, Any]:
+    from couchbox import paths
+
+    try:
+        return json.loads((paths.run() / "apps.json").read_text())
+    except (OSError, ValueError):
+        done = (paths.state() / "state/apps.done").exists()
+        return {"state": "done" if done else "waiting", "app": "", "done": 0, "total": 0}

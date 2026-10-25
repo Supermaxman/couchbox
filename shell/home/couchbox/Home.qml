@@ -1,23 +1,48 @@
-// couchbox: the app row of the home screen, from /etc/couchbox/home.tsv (apps.js, written by
-// couchbox-home), always in that order. A soft glow in the focused app's colour sits behind it.
+// Couchbox: the app row of the home screen, in the order chosen in Settings (HomeData, from
+// couchboxd). Hold OK (or press Menu) on an app for its options; "Move" lifts it: Left and
+// Right carry it, OK drops it, Back puts it back. A glow in the focused app's colour sits behind.
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Window
 
 import org.kde.bigscreen as Bigscreen
 
-import "apps.js" as Apps
 
 FocusScope {
     id: root
 
     property Item navigationUp
 
+    // Moving a tile: a local copy of the row while it's carried
+    property bool moving: false
+    property var order: []
+    property int movedFrom: -1
+    function startMove() {
+        order = HomeData.apps.slice();
+        movedFrom = row.currentIndex;
+        moving = true;
+        row.forceActiveFocus();
+    }
+    function carry(d) {
+        const i = row.currentIndex, j = i + d;
+        if (j < 0 || j >= order.length || order[j].hideable === false) return;
+        const o = order.slice(); const t = o[i]; o[i] = o[j]; o[j] = t;
+        order = o;
+        row.currentIndex = j;
+    }
+    function drop(keep) {
+        const a = order[row.currentIndex];
+        moving = false;
+        if (keep && row.currentIndex !== movedFrom) tileMenu.run("couchbox home move " + a.app + " " + row.currentIndex);
+        else row.currentIndex = movedFrom;
+    }
+
     readonly property int gap: 22
     // Six tiles fill the width; fewer keep the same size, more scroll.
     readonly property real tileWidth: Math.floor((width - gap * 5) / 6)
     readonly property real tileHeight: Math.round(tileWidth * 9 / 16)
 
-    readonly property var currentApp: Apps.apps[row.currentIndex] || null
+    readonly property var currentApp: row.model[row.currentIndex] || null
 
     // Glow behind the focused tile, in its app's colour (data-couchbox-glow in the tile SVG).
     Shape {
@@ -63,7 +88,7 @@ FocusScope {
         preferredHighlightBegin: 0
         preferredHighlightEnd: width
         boundsBehavior: Flickable.StopAtBounds
-        model: Apps.apps
+        model: root.moving ? root.order : HomeData.apps
 
         delegate: AppTile {
             width: root.tileWidth
@@ -71,6 +96,9 @@ FocusScope {
             app: modelData
             current: ListView.isCurrentItem && row.activeFocus
             dimmed: row.activeFocus && !ListView.isCurrentItem
+            lifted: root.moving && ListView.isCurrentItem
+            onOptions: if (!root.moving) tileMenu.open(modelData, row)
+            onDropped: root.drop(true)
         }
 
         Keys.onUpPressed: (event) => {
@@ -80,13 +108,17 @@ FocusScope {
             }
         }
         Keys.onDownPressed: (event) => event.accepted = true
+        Keys.onEscapePressed: (event) => { if (root.moving) root.drop(false); else event.accepted = false; }
+        Keys.onBackPressed: (event) => { if (root.moving) root.drop(false); else event.accepted = false; }
         Keys.onLeftPressed: (event) => {
+            if (root.moving) return root.carry(-1);
             if (currentIndex > 0) {
                 Bigscreen.NavigationSoundEffects.playMovingSound();
                 decrementCurrentIndex();
             }
         }
         Keys.onRightPressed: (event) => {
+            if (root.moving) return root.carry(1);
             if (currentIndex < count - 1) {
                 Bigscreen.NavigationSoundEffects.playMovingSound();
                 incrementCurrentIndex();
@@ -140,5 +172,12 @@ FocusScope {
                 Behavior on width { NumberAnimation { duration: Style.duration } }
             }
         }
+    }
+
+    TileMenu {
+        id: tileMenu
+        parent: root.Window.contentItem || root
+        anchors.fill: parent
+        onMoveRequested: root.startMove()
     }
 }

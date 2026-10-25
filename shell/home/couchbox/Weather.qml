@@ -4,8 +4,9 @@ import QtQuick
 
 Row {
     id: root
-    property var place: null                  // {lat, lon, name} from couchbox.env (COUCHBOX_WEATHER)
+    property var place: null                  // {lat, lon, name, units} from HomeData (Settings → location)
     property var now: null
+    readonly property string unit: place && place.units === "imperial" ? "°F" : "°C"
     visible: !!place && !!now
     spacing: 16
 
@@ -37,10 +38,11 @@ Row {
         };
         x.open("GET", "https://api.open-meteo.com/v1/forecast?latitude=" + place.lat + "&longitude=" + place.lon +
                "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min" +
-               "&temperature_unit=fahrenheit&timezone=auto&forecast_days=1");
+               (place.units === "imperial" ? "&temperature_unit=fahrenheit" : "") + "&timezone=auto&forecast_days=1");
         x.send();
     }
     Component.onCompleted: refresh()
+    onPlaceChanged: refresh()
     Timer { interval: 15 * 60 * 1000; repeat: true; running: true; onTriggered: root.refresh() }
 
     Text {
@@ -56,7 +58,7 @@ Row {
             spacing: 10
             Text {
                 id: temp
-                text: root.now ? root.now.temp + "°F" : ""
+                text: root.now ? root.now.temp + root.unit : ""
                 color: Style.text
                 font.family: Style.font
                 font.pixelSize: 34
@@ -72,7 +74,7 @@ Row {
             }
         }
         Text {
-            text: root.now ? (root.place.name ? root.place.name + "  ·  " : "") + "H " + root.now.hi + "°F  L " + root.now.lo + "°F" : ""
+            text: root.now ? (root.place.name ? root.place.name + "  ·  " : "") + "H " + root.now.hi + root.unit + "  L " + root.now.lo + root.unit : ""
             color: Style.textDim
             font.family: Style.font
             font.pixelSize: 15

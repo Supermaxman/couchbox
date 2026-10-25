@@ -10,14 +10,19 @@ import org.kde.bigscreen as Bigscreen
 Item {
     id: tile
 
-    property var app            // {id, name, icon, tile} from apps.js
+    property var app            // {id (desktop file), app, name, icon, tile, glow, hideable} from HomeData
     property bool current: false
     property bool dimmed: false
+    property bool lifted: false         // being moved along the row
+    signal options()
+    signal dropped()
 
     readonly property real radius: Math.round(width * 0.045)
 
     z: current ? 1 : 0
-    scale: current ? 1.1 : 1
+    scale: lifted ? 1.18 : current ? 1.1 : 1
+    y: lifted ? -24 : 0
+    Behavior on y { NumberAnimation { duration: Style.duration } }
     Behavior on scale { NumberAnimation { duration: Style.duration * 1.4; easing.type: Easing.OutCubic } }
 
     function launch() {
@@ -31,9 +36,27 @@ Item {
         }
     }
 
-    Keys.onReturnPressed: launch()
-    Keys.onEnterPressed: launch()
-    Keys.onSelectPressed: launch()
+    // OK launches; held for half a second it opens the tile's options (as does Menu).
+    // While the tile is being moved, OK drops it instead.
+    property bool held: false
+    Timer { id: hold; interval: 550; onTriggered: { tile.held = true; tile.options(); } }
+    function press(event) {
+        if (event.isAutoRepeat) return;
+        if (tile.lifted) { tile.dropped(); return; }
+        tile.held = false;
+        hold.restart();
+    }
+    function release(event) {
+        if (event.isAutoRepeat || tile.lifted) return;
+        if (hold.running) { hold.stop(); launch(); }
+    }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) { press(event); event.accepted = true; }
+        else if (event.key === Qt.Key_Menu && !tile.lifted) { tile.options(); event.accepted = true; }
+    }
+    Keys.onReleased: (event) => {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) { release(event); event.accepted = true; }
+    }
 
     // Soft shadow under the focused tile
     MultiEffect {
