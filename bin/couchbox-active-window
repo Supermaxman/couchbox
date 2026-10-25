@@ -46,7 +46,8 @@ def main():
     plugin = os.path.basename(path)
     scripting = bus.get_object("org.kde.KWin", "/Scripting")
     try:
-        sid = scripting.loadScript(path, plugin, dbus_interface="org.kde.kwin.Scripting")
+        # KWin overloads loadScript (s) and (ss); introspection alone picks the wrong one
+        sid = scripting.loadScript(path, plugin, signature="ss", dbus_interface="org.kde.kwin.Scripting")
         bus.get_object("org.kde.KWin", f"/Scripting/Script{int(sid)}").run(dbus_interface="org.kde.kwin.Script")
         GLib.timeout_add(3000, loop.quit)
         loop.run()
