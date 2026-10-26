@@ -37,6 +37,10 @@ import urllib.request
 
 from evdev import InputDevice, UInput, ecodes as e, list_devices
 
+# "run:couchbox-tv power" and the like: Couchbox's helpers live next to this script
+# (/usr/lib/couchbox/bin), which isn't on the service's PATH
+os.environ["PATH"] = os.path.dirname(os.path.realpath(__file__)) + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin")
+
 def config_path():
     """The household's own map (/etc/couchbox/input.toml) if there is one, else the shipped
     map that Settings → Remote → Key map names (/usr/share/couchbox/input/<name>.toml)."""
