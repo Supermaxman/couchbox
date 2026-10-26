@@ -16,7 +16,7 @@ FocusScope {
 
     function start() {
         loading = true; problem = ""; controls = true; hide.restart();
-        if (!r.id) return;
+        if (!r.camera) return;                   // the timeline plays from a point: no review id
         F.call("recording", {camera: r.camera, start: r.start, end: r.end}, x => { if (view.visible) video.load(x.url, 0); },
                e => { problem = e; loading = false; });
         if (r.id && !r.reviewed) F.call("viewed", {ids: [r.id]});
