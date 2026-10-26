@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Supermaxman/couchbox/compare/v0.10.0...v0.10.1) (2026-10-26)
+
+
+### Fixed
+
+* **spotify:** say when Spotify refuses the Soloist key ([#53](https://github.com/Supermaxman/couchbox/issues/53)) ([845dfa6](https://github.com/Supermaxman/couchbox/commit/845dfa69a120ea65f23c3c05ad03f3c836613804))
+
 ## [0.10.0](https://github.com/Supermaxman/couchbox/compare/v0.9.1...v0.10.0) (2026-10-26)
 
 
