@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/Supermaxman/couchbox/compare/v0.5.1...v0.5.2) (2026-10-26)
+
+
+### Fixed
+
+* **frigate:** stop the crash after a few minutes of video; timeline, icons, roomier cards ([#34](https://github.com/Supermaxman/couchbox/issues/34)) ([e5fc125](https://github.com/Supermaxman/couchbox/commit/e5fc12589ca16cb1ac9c42d46353a886e8dae9f7))
+* **phone:** pair by typed code, and type slowly enough not to drop keys ([#32](https://github.com/Supermaxman/couchbox/issues/32)) ([9e39ab2](https://github.com/Supermaxman/couchbox/commit/9e39ab288d9620699a1ae78c0f99c829fc6be75e))
+
 ## [0.5.1](https://github.com/Supermaxman/couchbox/compare/v0.5.0...v0.5.1) (2026-10-26)
 
 
