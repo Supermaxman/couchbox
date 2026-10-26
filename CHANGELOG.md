@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Supermaxman/couchbox/compare/v0.6.0...v0.7.0) (2026-10-26)
+
+
+### New
+
+* **search:** Google from the couch, with a reader and assistant summaries ([#39](https://github.com/Supermaxman/couchbox/issues/39)) ([751e96a](https://github.com/Supermaxman/couchbox/commit/751e96ad748b836eb9bdc357186c7ded67046ecf))
+
 ## [0.6.0](https://github.com/Supermaxman/couchbox/compare/v0.5.3...v0.6.0) (2026-10-26)
 
 
