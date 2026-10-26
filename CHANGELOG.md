@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.6](https://github.com/Supermaxman/couchbox/compare/v0.4.5...v0.4.6) (2026-10-26)
+
+
+### Fixed
+
+* **updater:** don't let the package upgrade stop the updater's own unit ([#18](https://github.com/Supermaxman/couchbox/issues/18)) ([1cbe7f2](https://github.com/Supermaxman/couchbox/commit/1cbe7f2bfb1d22ca6768d863222c0fdec812205f))
+
 ## [0.4.5](https://github.com/Supermaxman/couchbox/compare/v0.4.4...v0.4.5) (2026-10-26)
 
 
