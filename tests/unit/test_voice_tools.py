@@ -1,6 +1,9 @@
 """The voice assistant's tools: they follow the home row, reach the streaming apps through
 their control socket, and keep the prompt cache-friendly."""
 
+import json
+import time
+
 import pytest
 
 from couchbox import appctl, settings
@@ -210,3 +213,43 @@ def test_search_tool_searches_and_reads_the_page(monkeypatch):
     assert "search" in names()
     settings.update({"home.hidden": ["search"]})
     assert "search" not in names()
+
+
+def test_maps_is_a_tool_and_reads_arrival_times():
+    assert "maps" in names()
+    settings.update({"home.hidden": ["maps"]})
+    assert "maps" not in names()
+    now = time.mktime((2030, 1, 1, 15, 0, 0, 0, 0, -1))
+    assert time.localtime(tools.arrival_time("17:00", now)).tm_hour == 17
+    assert time.localtime(tools.arrival_time("5 pm", now))[2:5] == (1, 17, 0)
+    assert time.localtime(tools.arrival_time("9:30", now))[2:5] == (2, 9, 30)  # already past today: tomorrow
+    with pytest.raises(ValueError):
+        tools.arrival_time("soon")
+
+
+def test_maps_tool_answers_and_opens_the_route(monkeypatch):
+    calls = []
+    work = {"name": "Work", "kind": "work", "lat": 1.0, "lon": 2.0}
+    route = {"duration_text": "23 min", "distance_text": "9.1 mi", "summary": "I-5 N", "traffic": "light", "arrive": time.time() + 1380}
+
+    def call(site, req, **k):
+        calls.append(req)
+        if req["op"] == "open":
+            return {"ok": True}
+        return {
+            "resolve": work,
+            "directions": {"routes": [route]},
+            "leave_by": {"leave": time.time() + 3600, "late": False, "traffic": True, "route": dict(route, arrive=time.time() + 4980)},
+        }[req["fn"]]
+
+    monkeypatch.setattr(tools.registry, "get", lambda *a: type("A", (), {"name": "Maps", "desktop": "couchbox-maps"})())
+    monkeypatch.setattr(tools.streaming, "ensure", lambda *a, **k: None)
+    monkeypatch.setattr(tools, "raise_window", lambda *a: None)
+    monkeypatch.setattr(tools.appctl, "call", call)
+    said = tools.maps_tool("eta", "work")
+    assert said.startswith("Work: 23 min by car in light traffic right now via I-5 N, 9.1 mi, arriving")
+    assert calls[-1]["op"] == "open" and calls[-1]["target"].startswith("to:")
+    assert json.loads(calls[-1]["target"][3:])["place"] == work
+    said = tools.maps_tool("leave_by", "work", when="17:00")
+    assert said.startswith("Leave by ") and "with expected traffic" in said
+    assert calls[-1]["target"].startswith("leave:")

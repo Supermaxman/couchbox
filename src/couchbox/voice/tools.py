@@ -880,6 +880,7 @@ TOOL_APP = {
     "weather": "weather",
     "search": "search",
     "spotify": "spotify",
+    "maps": "maps",
     **{t: a for t, (_, a) in streaming.SITES.items()},
 }
 
@@ -998,6 +999,21 @@ def _schemas(st=None):
                     "search: Google's results for query · read: the page in front (to summarize or answer) · open: address in query",
                 ),
                 query=q,
+            ),
+        ),
+        fn(
+            "maps",
+            "Maps: drive times, directions, when to leave. query: a saved place (work...), a place or address; origin: Home if unset.",
+            s(
+                action=act(
+                    ["eta", "directions", "leave_by", "search", "places"],
+                    "eta: how long to get to query now · directions: show the route (mode) · leave_by: when to leave to "
+                    "be at query by time · search: places matching query · places: the saved places and their drive times",
+                ),
+                query=q,
+                mode={"type": "string", "enum": ["drive", "transit", "walk", "bike"]},
+                time={"type": "string", "description": "leave_by: arrival time, 24-hour HH:MM"},
+                origin=q,
             ),
         ),
     ]
@@ -1129,6 +1145,12 @@ def status_text(name, args):
             "add_to_playlist": f"Adding it to {a.get('name') or a.get('query')}",
             "make_playlist": f"Making “{a.get('name') or a.get('query')}”",
         }.get(a.get("action"), "Spotify"),
+        "maps": lambda: {
+            "eta": f"Checking the drive to {a.get('query')}",
+            "directions": f"Directions to {a.get('query')}",
+            "leave_by": f"When to leave for {a.get('query')}",
+            "search": f"Looking for {a.get('query')}",
+        }.get(a.get("action"), "Checking your places"),
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1245,6 +1267,88 @@ def spotify_tool(args):
         return "Spotify isn't set up on this TV yet: open Spotify and follow Setup."
 
 
+def arrival_time(hhmm, now=None):
+    """'17:00' (or '5:00 pm') -> the next time it's that o'clock, as epoch seconds."""
+    m = re.match(r"\s*(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?\s*$", (hhmm or "").lower())
+    if not m:
+        raise ValueError(f"Not a time: {hhmm!r}")
+    h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+    if ap == "p" and h < 12:
+        h += 12
+    if ap == "a" and h == 12:
+        h = 0
+    now = now or time.time()
+    lt = time.localtime(now)
+    t = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, h, mi, 0, 0, 0, -1))
+    return t + 86400 if t < now - 60 else t
+
+
+def clock_text(t):
+    if settings.derived()["clock24"]:
+        return time.strftime("%H:%M", time.localtime(t))
+    return time.strftime("%I:%M %p", time.localtime(t)).lstrip("0")
+
+
+def maps_tool(action, query=None, mode=None, when=None, origin=None):
+    a = registry.get("maps")
+    streaming.ensure("maps", start=lambda: open_app(a.name, wait=False))
+    call = lambda fn, **args: appctl.call("maps", {"op": "call", "fn": fn, "args": args}, timeout=45)
+
+    def check(r):
+        if isinstance(r, dict) and r.get("error"):
+            raise RuntimeError(r["error"])
+        return r
+
+    def show(target):
+        appctl.call("maps", {"op": "open", "target": target})
+        raise_window(a.desktop, a.name)
+
+    mode = mode or "drive"
+    if action == "places":
+        places = check(call("places"))["places"]
+        etas = {e["id"]: e for e in check(call("etas"))["etas"]}
+        show("places")
+        lines = [
+            p["name"] + (f": {etas[p['id']]['duration_text']} by car now" if etas.get(p["id"], {}).get("duration_text") else "")
+            for p in places
+        ]
+        return "Saved places: " + "; ".join(lines) + "."
+    if action == "search":
+        hits = check(call("search", query=query))["results"][:5]
+        show("search:" + (query or ""))
+        if not hits:
+            return f"Nothing found for {query!r}."
+        return "Found: " + "; ".join(
+            f"{h['name']} ({h.get('address') or ''}{', ' + h['distance_text'] if h.get('distance_text') else ''})" for h in hits
+        )
+    if not query:
+        return "Where to?"
+    to = check(call("resolve", query=query))
+    frm = check(call("resolve", query=origin)) if origin else None
+    if action == "leave_by":
+        arrive = arrival_time(when)
+        r = check(call("leave_by", to=to, arrive=arrive, mode=mode, **({"from": frm} if frm else {})))
+        show("leave:" + json.dumps({"place": to, "arrive": arrive, "mode": mode}))
+        rt = r["route"]
+        how = {"drive": "drive", "transit": "trip by transit", "walk": "walk", "bike": "ride"}[mode] + (
+            " with expected traffic" if r.get("traffic") else ""
+        )
+        if r.get("late"):
+            return f"Leave now: the {rt['duration_text']} {how} gets you to {to['name']} at {clock_text(rt['arrive'])}, after {clock_text(arrive)}."
+        return f"Leave by {clock_text(r['leave'])} to reach {to['name']} by {clock_text(arrive)} ({rt['duration_text']} {how})."
+    r = check(call("directions", to=to, mode=mode, **({"from": frm} if frm else {})))
+    show("to:" + json.dumps({"place": to, "mode": mode}))
+    if not r["routes"]:
+        return f"No route to {to['name']}."
+    rt = r["routes"][0]
+    traffic = {"heavy": " in heavy traffic", "moderate": " with some traffic", "light": " in light traffic"}.get(rt.get("traffic"), "")
+    via = f" via {rt['summary']}" if rt.get("summary") else ""
+    word = {"drive": "by car", "transit": "by transit", "walk": "on foot", "bike": "by bike"}[mode]
+    return (
+        f"{to['name']}: {rt['duration_text']} {word}{traffic} right now{via}, {rt['distance_text']}, arriving {clock_text(rt['arrive'])}."
+    )
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1261,6 +1365,7 @@ def run_tool(name, args):
         "weather": lambda: weather_tool(args["action"], args.get("day"), bool(args.get("show"))),
         "search": lambda: search_tool(args["action"], args.get("query")),
         "spotify": lambda: spotify_tool(args),
+        "maps": lambda: maps_tool(args["action"], args.get("query"), args.get("mode"), args.get("time"), args.get("origin")),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)

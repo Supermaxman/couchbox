@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Maps
+Comment=Places, directions and drive times
+Icon=map-flat
+Categories=Utility;Maps;
+Exec=/usr/lib/couchbox/bin/couchbox-maps
+StartupWMClass=couchbox-maps

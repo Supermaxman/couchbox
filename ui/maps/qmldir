@@ -1,0 +1,9 @@
+singleton M 1.0 M.qml
+MButton 1.0 MButton.qml
+ActionSheet 1.0 ActionSheet.qml
+Rail 1.0 Rail.qml
+MapView 1.0 MapView.qml
+PlacesPage 1.0 PlacesPage.qml
+SearchPage 1.0 SearchPage.qml
+DirectionsPage 1.0 DirectionsPage.qml
+LeaveByPage 1.0 LeaveByPage.qml

@@ -49,7 +49,7 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
-| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
+| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Maps, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
 ### Voice assistant
@@ -65,6 +65,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `weather`: the forecast as text for the model to answer from (now, a spoken day such as "this weekend", or the fortnight), fetched by the tool itself (Open-Meteo); `show` also opens the Weather app at that day.
   - `search`: shows Google's results for a query, opens an address, or reads the page in front as text (so the assistant can summarize it or answer about it), through the Search app's control socket.
   - `spotify`: plays a song, artist, album or one of your playlists on this TV, what's playing, like, add to a playlist, and a new playlist from songs the model picks, through `couchbox-spotify --connect`'s control socket (`spotify-connect`). See [spotify.md](spotify.md).
+  - `maps`: drive time to a saved place or any place ("how long to get to work"), directions, when to leave to arrive by a time, place search; it answers in words and opens the route in the Maps app (its control socket).
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.
@@ -153,9 +154,9 @@ couchbox/
 ├─ docs/                    user guides (install, settings, troubleshooting) + design/
 ├─ src/couchbox/            Python package
 │  ├─ settings/  ipc/  daemon/  cli/  updater/  input/  cec/  voice/  phone/  memory/
-│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player)
+│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player), maps.py (Google Maps Platform with a key, else Photon + FOSSGIS OSRM + OSM tiles; places; a tile relay with a cache)
 ├─ apps/                    QML apps (each: main.py + qml/)
-│  ├─ settings/  setup/  seerr/  frigate/  weather/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
+│  ├─ settings/  setup/  seerr/  frigate/  weather/  maps/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
 │  └─ CouchKit/             shared QML module (keyboard + QR, buttons, pages)
 ├─ shell/                   Plasma Bigscreen home overrides + theme (GPL files live here)
 ├─ system/                  systemd units, udev rules, dracut module, sddm/kwin/logind snippets,
@@ -189,3 +190,16 @@ Each app has a manifest in `/usr/share/couchbox/apps/<id>.json`. The home screen
 
 - **`requires`** lists settings that must be set before the tile shows, for example `["media.jellyfin.url"]` for Jellyfin. Tiles whose requirements aren't met are hidden. Settings shows "Set up Jellyfin to show it on the home screen."
 - **User web apps** (Settings → Home screen → Add a website) become manifests in `/etc/couchbox/apps/`.
+
+## Maps: where its data comes from
+
+The Maps app (`couchbox-maps`, `services/maps.py`) works with no account and gets better with a Google key:
+
+| | No key (default) | Google Maps Platform key (Settings → Apps → Maps) |
+|---|---|---|
+| Search | [Photon](https://photon.komoot.io) (OpenStreetMap), biased to Home | Places API (New) Text Search, biased to Home |
+| Routes | FOSSGIS OSRM (`routing.openstreetmap.de`): car, bike, foot; no traffic, no transit | Routes API `computeRoutes`: traffic-aware drive times, alternatives, transit, bike, walk |
+| Map | OpenStreetMap's standard tiles, dimmed | Map Tiles API 2D roadmap tiles in a dark style |
+| Leave by | arrival minus the drive time | the traffic expected at the departure it works out (a few `computeRoutes` calls); transit by arrival time |
+
+The free services are run by volunteers for light use. Couchbox sends an identifying User-Agent, only asks for what's on screen (no pre-fetching), keeps tiles on the box for a week (150 MB at most), caches the places board's drive times for four minutes, and credits OpenStreetMap and OSRM on the map. The Google key is a root-only secret; the TV user's app gets it from couchboxd (`maps.google_key`, a write method like `phone.pairing`). Saved places and recent destinations are the TV user's (`~/.local/share/couchbox-maps/places.json`); Home starts as Settings → Time → Location (a town) until its address is set in Maps.

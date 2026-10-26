@@ -54,5 +54,18 @@ shot spotify-now-playing couchbox-spotify --open now
 shot spotify-menu couchbox-spotify --open menu
 shot spotify-add-to-playlist couchbox-spotify --open picker
 shot spotify-setup couchbox-spotify --setup --keys down,down,down,down
+# Maps with made-up places (OpenStreetMap, then as Google: traffic, transit): places and drive
+# times, search, directions (routes, the turns, the map moving), leave by, a place's actions
+shot maps-places couchbox-maps
+shot maps-place-actions couchbox-maps --keys right,ok
+shot maps-search couchbox-maps --open search:ferry
+shot maps-directions couchbox-maps --open 'to:{"place":{"name":"Ferry Building","address":"1 Ferry Building, San Francisco","lat":37.7955,"lon":-122.3937}}'
+shot maps-directions-steps couchbox-maps --open 'to:{"place":{"name":"Ferry Building","lat":37.7955,"lon":-122.3937}}' --keys down,down,down,down
+shot maps-directions-map couchbox-maps --open 'to:{"place":{"name":"Ferry Building","lat":37.7955,"lon":-122.3937}}' --keys right,ok,up
+export COUCHBOX_MAPS_DEMO_GOOGLE=1
+shot maps-google-places couchbox-maps
+shot maps-google-transit couchbox-maps --open 'to:{"place":{"name":"Airport","lat":37.6213,"lon":-122.379},"mode":"transit"}'
+shot maps-leave-by couchbox-maps --open 'leave:{"place":{"name":"Airport","address":"San Francisco International Airport","lat":37.6213,"lon":-122.379}}'
+unset COUCHBOX_MAPS_DEMO_GOOGLE
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

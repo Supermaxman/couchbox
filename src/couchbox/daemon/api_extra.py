@@ -40,6 +40,13 @@ def jellyfin_discover(seconds: float = 2.5) -> list[dict[str, str]]:
     return list(found.values())
 
 
+@method("maps.google_key")
+def maps_google_key() -> dict[str, str]:
+    """The Maps app's Google key: secrets are root's, the TV user's app asks for this one (a
+    write method, so only callers that may change settings get it)."""
+    return {"key": secrets.get("apps.maps.google_api_key")}
+
+
 def _auth(name: str) -> dict[str, str]:
     k = secrets.get(name)
     return {"Authorization": f"Bearer {k}"} if k else {}

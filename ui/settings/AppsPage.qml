@@ -31,6 +31,8 @@ SettingsPage {
             T.section("Search"),
             T.row("apps.search.ai_answer", {help: s["voice.llm.url"] ? "A short answer written by the assistant's model from Google's results, shown above them and labelled AI. Summarize and Ask work on any page either way."
                                                                    : "Needs the voice assistant's model (Settings → Voice). Then Search can also summarize pages."}),
+            T.section("Maps"),
+            T.secretRow("apps.maps.google_api_key", {help: "Optional. With a Google Maps Platform key, Maps uses Google: drive times with traffic, transit, Google's places and map. Without one it uses OpenStreetMap (no traffic or transit). Make the key in the Google Cloud console with the Routes, Places (New) and Map Tiles APIs on; typing it is easiest from the phone page."}),
             T.section("Watching"),
             T.row("apps.player.captions"),
             {kind: "choice", label: T.label("apps.youtube.captions"), value: s["apps.youtube.captions"] ? s["apps.youtube.captions"] : "Off",
