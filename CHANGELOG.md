@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/Supermaxman/couchbox/compare/v0.7.0...v0.8.0) (2026-10-26)
+
+
+### New
+
+* **maps:** a Maps app for the TV: drive times, directions and when to leave ([#41](https://github.com/Supermaxman/couchbox/issues/41)) ([fca7a56](https://github.com/Supermaxman/couchbox/commit/fca7a5620a550264992434c1633122792475123d))
+* **spotify:** a native Spotify app, played on the TV by Spotify's own player ([#44](https://github.com/Supermaxman/couchbox/issues/44)) ([e5a3a7a](https://github.com/Supermaxman/couchbox/commit/e5a3a7a91bad1f1ed7f46d6c96e2c65c72370a1f))
+
 ## [0.7.0](https://github.com/Supermaxman/couchbox/compare/v0.6.0...v0.7.0) (2026-10-26)
 
 
