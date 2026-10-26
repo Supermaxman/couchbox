@@ -172,6 +172,9 @@ class Shooter(QObject):
     @Slot(str)
     def save(self, path):
         try:
+            from couchbox import qtcheck
+
+            qtcheck.clipped(self.window)
             self.window.grabWindow().save(path)
         finally:
             if "--shot" in sys.argv:

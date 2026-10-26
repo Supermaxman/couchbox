@@ -67,6 +67,9 @@ class Shooter(QObject):
 
     @Slot(str)
     def save(self, path):
+        from couchbox import qtcheck
+
+        qtcheck.clipped(self.window)
         self.window.grabWindow().save(path)
 
     @Slot(str)

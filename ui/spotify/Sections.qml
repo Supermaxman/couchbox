@@ -31,15 +31,16 @@ FocusScope {
 
     Flickable {
         id: flick
-        anchors.fill: parent
+        readonly property real pad: 18 * S.u        // room for a focused card to grow at the left
+        anchors { fill: parent; leftMargin: -pad }
         contentHeight: col.y + col.height + 160 * S.u
         interactive: false
         clip: true
         Behavior on contentY { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Loader {
             id: headerLoader
-            x: 0; y: page.topPad
-            width: flick.width
+            x: flick.pad; y: page.topPad
+            width: flick.width - flick.pad
             sourceComponent: page.header
         }
         Connections {
@@ -50,9 +51,9 @@ FocusScope {
         }
         Column {
             id: col
-            x: 0
+            x: flick.pad
             y: (headerLoader.item ? headerLoader.y + headerLoader.height + 40 * S.u : page.topPad)
-            width: flick.width - S.edge
+            width: flick.width - flick.pad - S.edge
             spacing: 44 * S.u
             Repeater {
                 id: rep
