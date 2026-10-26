@@ -1,0 +1,269 @@
+#!/usr/bin/python3
+"""couchbox-search: Google from the couch. Search (typed with the remote's keyboard pop-up, on a
+phone, or said to the voice assistant), see Google's own results page, open one, and read it
+with the remote: the arrows move between links (js/keynav.js) and scroll,
+OK opens, Back goes back, and Up at the top of a page reaches the toolbar (Back, Forward,
+Reader, text size, and the assistant's Summarize and Ask when it's set up).
+
+The pages are the real web in Qt WebEngine (a profile of its own, so Google's cookie choice
+and any sign-in are kept). Reader shows a page's article as large native text. The Python
+side (couchbox.services.search) keeps the recent searches and asks the assistant's model,
+through couchboxd, for summaries and the optional short answer above the results
+(Settings -> Apps -> Search). The QML is in /usr/share/couchbox/ui/search.
+
+  couchbox-search [--open search:TEXT | url:ADDRESS]
+  couchbox-search --demo --shot FILE [--open ...] [--keys down,ok,...]
+                                     render once off screen (made-up pages, no network)
+Tests: COUCHBOX_MUTE=1 (pages make no sound).
+"""
+import json
+import os
+import sys
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_SEARCH_QML", str(paths.share() / "ui/search/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
+SITE = "search"
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+# Chromium in Qt WebEngine: no translate bubble, which the remote can't reach (the arrows move
+# between links with ui/search/js/keynav.js, not Chromium's spatial navigation)
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-features=Translate")
+
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox.services import search  # noqa: E402
+
+JS_DIR = os.path.join(os.path.dirname(QML), "js")
+
+
+class Backend(QObject):
+    """QML's way to search.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        self.demo = demo
+        self.history = search.History()
+        self.pool = ThreadPoolExecutor(max_workers=3)
+
+    def status(self):
+        s = settings.load()
+        return {"ai": True if self.demo else search.ai_ready(s), "aiAnswer": True if self.demo else bool(s["apps.search.ai_answer"]),
+                "history": ["eiffel tower height", "weather this weekend", "best pizza dough recipe"] if self.demo else self.history.load(),
+                "zoom": float(s["apps.search.zoom"])}
+
+    def run(self, op, a):
+        if op == "status":
+            return self.status()
+        if op == "address":
+            return {"url": search.address(a["text"]), "query": "" if search.looks_like_url(a["text"]) else a["text"].strip()}
+        if op == "remember":
+            return {"history": self.history.load() if self.demo else self.history.add(a["query"])}
+        if op == "forget":
+            return {"history": [] if self.demo else self.history.clear()}
+        if op == "zoom":
+            if not self.demo:
+                settings.update({"apps.search.zoom": round(float(a["zoom"]), 2)})
+            return {"ok": True}
+        if op == "reader":
+            return search.blocks(search.DEMO_ARTICLE if self.demo else json.loads(a["article"] or "{}"))
+        if op == "summarize":
+            if self.demo:
+                return {"text": search.DEMO_SUMMARY}
+            return {"text": search.ask_model(search.summary_messages(json.loads(a["article"] or "{}"), a.get("question", "")), max_tokens=2500)}
+        if op == "answer":
+            if self.demo:
+                return {"text": search.DEMO_ANSWER, "sources": search.DEMO_RESULTS}
+            results = json.loads(a["results"] or "[]")
+            if not results:
+                return {"text": "", "sources": []}
+            return {"text": search.ask_model(search.answer_messages(a["query"], results), max_tokens=1500), "sources": results[:search.SNIPPET_RESULTS]}
+        raise KeyError(op)
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except search.NoModel as err:
+                out = {"error": str(err)}
+            except Exception as err:
+                traceback.print_exc()
+                msg = str(err) or err.__class__.__name__
+                out = {"error": msg.removeprefix("assistant.complete failed: ")}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+    @Slot(str, result=str)
+    def script(self, name):
+        """One of js/*.js (run in pages)."""
+        with open(os.path.join(JS_DIR, os.path.basename(name) + ".js")) as f:
+            return f.read()
+
+    @Slot(result=bool)
+    def demoMode(self):
+        return self.demo
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one, and
+    the voice assistant searches and reads the page in front."""
+    command = Signal(str)
+    readPage = Signal(int)
+    evalJs = Signal(int, str)                        # tests: run JavaScript in the page (COUCHBOX_TEST_SHOT=1)
+    shot = Signal(str)                               # tests: save the window (COUCHBOX_TEST_SHOT=1)
+
+    def __init__(self):
+        super().__init__()
+        self.state = {"page": "starting"}
+        self.server = None
+        self.pending = {}
+        self.lock = threading.Lock()
+        self.n = 0
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    @Slot(int, str)
+    def pageRead(self, rid, js):
+        with self.lock:
+            p = self.pending.get(rid)
+        if p:
+            p["out"] = js
+            p["done"].set()
+
+    def read(self, code=None):
+        with self.lock:
+            self.n += 1
+            rid = self.n
+            p = self.pending[rid] = {"done": threading.Event(), "out": ""}
+        if code is None:
+            self.readPage.emit(rid)
+        else:
+            self.evalJs.emit(rid, code)
+        p["done"].wait(15)
+        with self.lock:
+            self.pending.pop(rid, None)
+        if code is not None:
+            return {"result": p["out"]}
+        if not p["out"]:
+            return {"error": "No page is open in Search."}
+        art = json.loads(p["out"])
+        text = search.page_text(art, 6000)
+        return {"title": art.get("title", ""), "url": art.get("url", ""), "text": text}
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Search")
+        if op == "open":
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        if op == "read":
+            return self.read()
+        if op == "js" and os.environ.get("COUCHBOX_TEST_SHOT") == "1":
+            return self.read(req["code"])
+        if op == "shot" and os.environ.get("COUCHBOX_TEST_SHOT") == "1":
+            import time
+            self.shot.emit(req["path"])
+            time.sleep(1.0)
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    web = not demo
+    if web:                                          # before the application exists
+        from PySide6.QtWebEngineQuick import QtWebEngineQuick
+        QGuiApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+        QtWebEngineQuick.initialize()
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-search")
+    app.setApplicationDisplayName("Search")
+    app.setDesktopFileName("couchbox-search")       # Wayland app id: matches couchbox-search.desktop
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    if not web:                                      # a stand-in for the web view
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control()
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demo", demo)
+    ctx.setContextProperty("muted", os.environ.get("COUCHBOX_MUTE") == "1")
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    control.shot.connect(shooter.save)
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)
+
+
+if __name__ == "__main__":
+    main()

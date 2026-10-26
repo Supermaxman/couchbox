@@ -35,5 +35,12 @@ shot weather-week couchbox-weather --open week --keys down,down
 shot weather-day couchbox-weather --open day:tomorrow
 shot weather-day-hour couchbox-weather --keys right,right,right,ok
 shot weather-alerts couchbox-weather --open alerts
+# Search with made-up pages: the start page, results (with the AI answer), the toolbar, the
+# reader and a summary
+shot search-start couchbox-search
+shot search-results couchbox-search --open "search:eiffel tower height"
+shot search-toolbar couchbox-search --open "search:eiffel tower height" --keys up
+shot search-reader couchbox-search --open reader
+shot search-summary couchbox-search --open summary
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

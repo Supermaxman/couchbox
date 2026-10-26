@@ -49,7 +49,7 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
-| Native apps | QML + PySide6 + libmpv | tv | Seerr, Frigate, Weather, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
+| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
 ### Voice assistant
@@ -63,6 +63,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `seerr`: its API.
   - `frigate`: shows a camera live (by spoken name), all cameras, the alerts, or the last day's timeline (of a camera or all), through the Frigate app's control socket.
   - `weather`: the forecast as text for the model to answer from (now, a spoken day such as "this weekend", or the fortnight), fetched by the tool itself (Open-Meteo); `show` also opens the Weather app at that day.
+  - `search`: shows Google's results for a query, opens an address, or reads the page in front as text (so the assistant can summarize it or answer about it), through the Search app's control socket.
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.

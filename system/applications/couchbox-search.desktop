@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Search
+Comment=Search Google and read pages with the remote
+Icon=system-search
+Categories=Network;WebBrowser;
+Exec=/usr/lib/couchbox/bin/couchbox-search
+StartupWMClass=couchbox-search

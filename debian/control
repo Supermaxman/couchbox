@@ -13,7 +13,7 @@ Package: couchbox
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends},
  python3-dbus-fast, python3-evdev, python3-dbus, python3-gi, python3-requests, python3-websocket,
- python3-pyside6.qtquick, python3-pyside6.qtdbus, python3-mpv, qt6-image-formats-plugins, qt6-svg-plugins,
+ python3-pyside6.qtquick, python3-pyside6.qtdbus, python3-pyside6.qtwebenginequick, qml6-module-qtwebengine, python3-mpv, qt6-image-formats-plugins, qt6-svg-plugins,
  qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-window,
  qml6-module-qtquick-shapes, qml6-module-qtquick-effects, qml6-module-qtcore, qml6-module-org-kde-layershell, qml-qt6, qml6-module-org-kde-plasma-plasma5support,
  plasma-bigscreen, kwin-wayland, sddm, kscreen, plasma-nm, plasma-pa, bluedevil, xdg-desktop-portal-kde, libkf6config-bin,

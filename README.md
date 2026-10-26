@@ -19,6 +19,7 @@
   - YouTube (VacuumTube, ad-free, with SponsorBlock);
   - Jellyfin (hardware HEVC decoding on the Pi 5);
   - native TV apps for Seerr, Frigate (your cameras: live view, alerts, recordings), Twitch (chat overlay, emotes), Nebula, Dropout and 2nd Try;
+  - Search: Google and the pages it finds, made for the remote (link-hopping, a reader view, and assistant summaries when the assistant is set up);
   - any website as a remote-friendly web app;
   - AirPlay and FCast receivers.
 - **Remotes:**

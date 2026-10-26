@@ -1,0 +1,4 @@
+module QtWebEngine
+WebEngineView 1.0 WebEngineView.qml
+WebEngineProfile 1.0 WebEngineProfile.qml
+WebEngineSettings 1.0 WebEngineSettings.qml
