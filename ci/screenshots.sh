@@ -99,4 +99,6 @@ shot edge-movies-top-last couchbox-movies --open top:movie --keys $d13,$r6
 shot edge-movies-person-work couchbox-movies --open person:303 --keys down,$r6
 shot edge-search-recent couchbox-search --keys down,down
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
+# the remote's Back key on every app's pages: it goes back a level or closes the app
+python3 ci/back_check.py "$OUT/back" || fail=1
 exit $fail

@@ -139,6 +139,9 @@ FocusScope {
     Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && !bar.activeFocus) player.controls = false }
 
     function skip(s) { if (!live) video.seek(s); showControls(); }
+    // Back to the video from the buttons. The bar has to let go of its focus first: focusing the
+    // page (a FocusScope) alone hands it straight back to the bar, and Back then never got out.
+    function leaveBar() { bar.focus = false; player.forceActiveFocus(); }
 
     // ------------------------------------------------------------------ chat (Twitch)
     Connections {
@@ -240,7 +243,7 @@ FocusScope {
         const k = event.key;
         if (k === Qt.Key_Escape || k === Qt.Key_Back) {
             if (player.showUpNext) player.upNextDismissed = true;
-            else if (bar.activeFocus) { player.forceActiveFocus(); controls = false; }
+            else if (bar.activeFocus) { leaveBar(); controls = false; }
             else player.finished();
         } else if (k === Qt.Key_MediaTogglePlayPause || k === Qt.Key_MediaPlay || k === Qt.Key_MediaPause || k === Qt.Key_Space) {
             video.togglePause(); showControls();
@@ -451,8 +454,8 @@ FocusScope {
                 }
                 Keys.onLeftPressed: step(-1)
                 Keys.onRightPressed: step(1)
-                Keys.onUpPressed: { player.forceActiveFocus(); player.showControls(); }
-                Keys.onDownPressed: { player.forceActiveFocus(); player.showControls(); }
+                Keys.onUpPressed: { player.leaveBar(); player.showControls(); }
+                Keys.onDownPressed: { player.leaveBar(); player.showControls(); }
                 onActiveFocusChanged: { if (activeFocus) hide.stop(); else hide.restart(); }
             }
         }

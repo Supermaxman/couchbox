@@ -44,7 +44,8 @@ os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone p
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache, QNetworkRequest  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
 from couchbox.services import vhx  # noqa: E402
@@ -202,6 +203,38 @@ class Shooter(QObject):
         print(f"key {name} -> focus {type(f).__name__} {f.objectName() if f else ''}", flush=True)
 
 
+class Network(QQmlNetworkAccessManagerFactory):
+    """The QML's downloads (pictures, chat emotes): HTTP/1.1 and a disk cache. Every emote in
+    chat is its own AnimatedImage, which fetches it again, all at once over one HTTP/2
+    connection: 7TV's CDN called that excessive load and reset the connection, so emotes
+    failed ("Error Reading Animated Image File"). HTTP/1.1 waits its turn (6 at a time per
+    server) and the cache keeps repeats off the network."""
+
+    def __init__(self, site):
+        super().__init__()
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        self.dir = os.path.join(base, f"couchbox-{site}", "network")
+        self.lock = threading.Lock()
+        self.made = 0
+
+    def create(self, parent):                       # once per thread that loads things
+        with self.lock:
+            n, self.made = self.made, self.made + 1
+        nam = _Http1(parent)
+        cache = QNetworkDiskCache(nam)
+        cache.setCacheDirectory(os.path.join(self.dir, str(n)))     # a cache isn't shared between threads
+        cache.setMaximumCacheSize(64 * 1024 * 1024)
+        nam.setCache(cache)
+        return nam
+
+
+class _Http1(QNetworkAccessManager):
+    def createRequest(self, op, request, data=None):
+        request = QNetworkRequest(request)
+        request.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
+        return super().createRequest(op, request, data)
+
+
 def keep_signed_in(site):
     from couchbox.services import twitch
     t = twitch.Twitch(site)
@@ -235,6 +268,8 @@ def main():
     else:                                            # no GPU off screen: a stand-in for the video
         os.environ["COUCHBOX_NO_VIDEO"] = "1"
     engine = QQmlApplicationEngine()
+    network = Network(site)                          # kept: the engine doesn't own it
+    engine.setNetworkAccessManagerFactory(network)
     engine.addImportPath(TVKIT)
     if os.environ.get("COUCHBOX_NO_VIDEO"):
         engine.addImportPath(str(paths.share() / "ui/stubs"))
