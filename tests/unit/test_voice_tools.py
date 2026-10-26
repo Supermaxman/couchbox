@@ -192,3 +192,21 @@ def test_weather_needs_a_town_and_answers_from_the_forecast(monkeypatch):
     tools.weather_tool("week", show=True)
     assert calls[-1][1] == {"op": "open", "target": "week"}
     assert "Today" in tools.weather_tool("now")
+
+
+def test_search_tool_searches_and_reads_the_page(monkeypatch):
+    calls = []
+    monkeypatch.setattr(tools.registry, "get", lambda *a: type("A", (), {"name": "Search", "desktop": "couchbox-search"})())
+    monkeypatch.setattr(tools.streaming, "ensure", lambda *a, **k: None)
+    monkeypatch.setattr(tools, "raise_window", lambda *a: None)
+    page = {"title": "Eiffel Tower", "url": "https://example.org/e", "text": "It is 330 m tall."}
+    monkeypatch.setattr(tools.appctl, "call", lambda site, req, **k: calls.append((site, req)) or page)
+    assert tools.search_tool("search", " how tall is the eiffel tower ") == "Showing Google's results for 'how tall is the eiffel tower'."
+    assert calls[-1] == ("search", {"op": "open", "target": "search:how tall is the eiffel tower"})
+    assert tools.search_tool("open", "example.org") == "Opening example.org."
+    assert calls[-1][1]["target"] == "url:example.org"
+    assert tools.search_tool("read") == "Page: Eiffel Tower (https://example.org/e)\nIt is 330 m tall."
+    assert tools.search_tool("search", "") == "Missing query."
+    assert "search" in names()
+    settings.update({"home.hidden": ["search"]})
+    assert "search" not in names()

@@ -64,6 +64,8 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `apps.airplay.name` | hostname | | `MTV_AIRPLAY_NAME` |
 | `apps.airplay.pin` | unset | 4 digits, or off | `MTV_AIRPLAY_PIN` |
 | `apps.fcast.enabled` | `true` | FCast receiver | always on |
+| `apps.search.ai_answer` | `false` | Search: a short answer written by the assistant's model from Google's results, above them and labelled AI (needs the assistant) | — |
+| `apps.search.zoom` | `1.5` | Search: page size (A− / A+ in the app) | — |
 | `apps.idle_minutes` | `60` | Close apps after this long unused (not while playing) | `MTV_APP_IDLE_MINUTES` |
 | `apps.web_cache_mb` | `256` | Chromium cache cap | `MTV_WEB_CACHE_BYTES` |
 

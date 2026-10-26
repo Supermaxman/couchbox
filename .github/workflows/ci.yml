@@ -38,7 +38,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src couchbox-dev sh -c '
             set -e
-            ruff check src tests bin/couchbox-firstboot bin/couchbox-updater bin/couchbox-setup bin/couchbox-settings bin/couchbox-active-window bin/couchbox-frigate bin/couchbox-weather
+            ruff check src tests bin/couchbox-firstboot bin/couchbox-updater bin/couchbox-setup bin/couchbox-settings bin/couchbox-active-window bin/couchbox-frigate bin/couchbox-weather bin/couchbox-search
             ruff format --check src tests
             shellcheck -S warning $(grep -l "^#!/.*sh" bin/* ci/*.sh installer/*.sh image/*.sh system/dracut/90couchbox/*.sh 2>/dev/null)
             python3 ci/check_data.py

@@ -39,6 +39,8 @@
     "apps.airplay.name": {"type": "string", "default": "", "max_len": 40, "page": "apps", "label": "AirPlay name", "help": "Empty: the device name.", "restart": "service:couchbox-airplay"},
     "apps.airplay.pin": {"type": "string", "default": "", "pattern": "^([0-9]{4})?$", "page": "apps", "label": "AirPlay PIN", "restart": "service:couchbox-airplay"},
     "apps.fcast.enabled": {"type": "bool", "default": true, "page": "apps", "label": "FCast receiver"},
+    "apps.search.ai_answer": {"type": "bool", "default": false, "page": "apps", "label": "AI answer above Google results", "help": "The voice assistant's model writes a short answer from the results, labelled as AI. Needs the assistant set up."},
+    "apps.search.zoom": {"type": "number", "min": 1.0, "max": 2.5, "default": 1.5, "page": "apps", "label": "Search page size"},
     "apps.idle_minutes": {"type": "int", "min": 10, "max": 1440, "default": 60, "page": "system", "label": "Close unused apps after (minutes)"},
     "apps.web_cache_mb": {"type": "int", "min": 64, "max": 4096, "default": 256, "page": "system", "label": "Web app cache (MB)"},
 

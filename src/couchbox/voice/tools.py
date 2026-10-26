@@ -878,6 +878,7 @@ TOOL_APP = {
     "seerr": "seerr",
     "frigate": "frigate",
     "weather": "weather",
+    "search": "search",
     **{t: a for t, (_, a) in streaming.SITES.items()},
 }
 
@@ -969,6 +970,17 @@ def _schemas(st=None):
                 action=act(["now", "day", "week"], "now: now and the rest of today · day: the day(s) in day · week: a line a day"),
                 day={"type": "string", "description": "today, tomorrow, a weekday, this/next weekend, or YYYY-MM-DD"},
                 show={"type": "boolean"},
+            ),
+        ),
+        fn(
+            "search",
+            "Google on the TV (the Search app): results, pages, and the page in front as text.",
+            s(
+                action=act(
+                    ["search", "read", "open"],
+                    "search: Google's results for query · read: the page in front (to summarize or answer) · open: address in query",
+                ),
+                query=q,
             ),
         ),
     ]
@@ -1092,6 +1104,7 @@ def status_text(name, args):
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
         "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
         "weather": lambda: "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
+        "search": lambda: {"search": f"Googling “{a.get('query')}”", "read": "Reading the page"}.get(a.get("action"), "Opening the page"),
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1175,6 +1188,22 @@ def weather_tool(action, day=None, show=False):
     return out
 
 
+def search_tool(action, query=None):
+    a = registry.get("search")
+    streaming.ensure("search", start=lambda: open_app(a.name, wait=False))
+    if action == "read":
+        r = appctl.call("search", {"op": "read"}, timeout=30)
+        if r.get("error"):
+            return r["error"]
+        return f"Page: {r['title']} ({r['url']})\n{r['text']}"
+    if not (query or "").strip():
+        return "Missing query."
+    target = ("url:" if action == "open" else "search:") + query.strip()
+    appctl.call("search", {"op": "open", "target": target})
+    raise_window(a.desktop, a.name)
+    return f"Showing Google's results for {query.strip()!r}." if action == "search" else f"Opening {query.strip()}."
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1189,6 +1218,7 @@ def run_tool(name, args):
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
         "frigate": lambda: frigate_tool(args["action"], args.get("query")),
         "weather": lambda: weather_tool(args["action"], args.get("day"), bool(args.get("show"))),
+        "search": lambda: search_tool(args["action"], args.get("query")),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)

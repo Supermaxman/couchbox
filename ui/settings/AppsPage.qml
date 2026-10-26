@@ -28,6 +28,9 @@ SettingsPage {
             T.secretRow("media.seerr.api_key", {help: "Seerr → Settings → General → API key. The Seerr app and voice requests use it."}),
             T.section("Frigate"),
             T.row("media.frigate.url", {help: "Your Frigate server (cameras), e.g. https://frigate.example.ts.net or http://192.168.1.20:8971. The Frigate tile shows once it's set; sign in from the app."}),
+            T.section("Search"),
+            T.row("apps.search.ai_answer", {help: s["voice.llm.url"] ? "A short answer written by the assistant's model from Google's results, shown above them and labelled AI. Summarize and Ask work on any page either way."
+                                                                   : "Needs the voice assistant's model (Settings → Voice). Then Search can also summarize pages."}),
             T.section("Watching"),
             T.row("apps.player.captions"),
             {kind: "choice", label: T.label("apps.youtube.captions"), value: s["apps.youtube.captions"] ? s["apps.youtube.captions"] : "Off",
