@@ -1,5 +1,5 @@
 // Today: now (big), the day's numbers, the model's "at a glance" line (when the assistant is set
-// up), any alert, and the next 48 hours. Left/Right move along the hours, OK opens that day in
+// up), any alert, the next 48 hours, and today's pollen (where there's a source). Left/Right move along the hours, OK opens that day in
 // detail; Up reaches the alert (OK reads it); Left from the first hour goes to the sidebar.
 import QtQuick
 
@@ -9,6 +9,7 @@ FocusScope {
     readonly property var today: d ? d.days[0] : null
     readonly property var hours: d ? d.hours : []
     readonly property bool hasAlert: !!d && d.alerts.length > 0
+    readonly property var pollen: today && today.pollen ? today.pollen : null
     property int zone: 1                     // 0 the alert, 1 the hours
     property int hi: 0
     signal openDay(string date, int hour)
@@ -140,7 +141,7 @@ FocusScope {
                     width: stats.cw
                     glyph: "air"; label: page.d && page.d.aqi ? page.d.aqi.scale : "Air quality"
                     value: page.d && page.d.aqi ? page.d.aqi.value + "" : "–"
-                    note: page.d && page.d.aqi ? page.d.aqi.label : "Not available here"
+                    note: page.d && page.d.aqi ? page.d.aqi.label + (page.d.aqi.pollutant ? "  ·  " + page.d.aqi.pollutant : "") : "Not available here"
                     tint: page.d && page.d.aqi ? page.d.aqi.color : W.text
                 }
             }
@@ -202,6 +203,63 @@ FocusScope {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: card.modelData.rain >= 10 ? card.modelData.rain + "%" : " "
                     color: W.cool; font.family: W.font; font.pixelSize: W.tSmall; font.weight: Font.DemiBold
+                }
+            }
+        }
+    }
+
+    Row {                                        // pollen today: tree, grass, weed and what's in the air
+        id: pollenRow
+        visible: !!page.pollen
+        anchors { left: content.left; top: strip.bottom; topMargin: 22 * W.u }
+        width: content.width
+        spacing: 16 * W.u
+        Row {
+            id: pollenHead
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 12 * W.u
+            width: 180 * W.u
+            Text { text: "Pollen"; color: W.text; font.family: W.font; font.pixelSize: W.tHead; font.weight: Font.DemiBold }
+        }
+        Repeater {
+            model: page.pollen || []
+            delegate: Rectangle {
+                id: chip
+                required property var modelData
+                width: (pollenRow.width - pollenHead.width - pollenRow.spacing * 3) / Math.max(1, (page.pollen || []).length)
+                height: 84 * W.u
+                radius: W.radius
+                color: W.panel
+                Image {
+                    id: chipIcon
+                    x: 22 * W.u; anchors.verticalCenter: parent.verticalCenter
+                    width: 38 * W.u; height: width; sourceSize: Qt.size(width, height)
+                    source: W.glyph(chip.modelData.code.toLowerCase())
+                    opacity: chip.modelData.value > 0 ? 1 : 0.5
+                }
+                Column {
+                    anchors { left: chipIcon.right; leftMargin: 18 * W.u; right: parent.right; rightMargin: 18 * W.u; verticalCenter: parent.verticalCenter }
+                    spacing: 2 * W.u
+                    Text {
+                        text: chip.modelData.type.toUpperCase()
+                        color: W.faint; font.family: W.font; font.pixelSize: 16 * W.u; font.weight: Font.Bold; font.letterSpacing: 1.2 * W.u
+                    }
+                    Row {
+                        width: parent.width
+                        spacing: 12 * W.u
+                        Text {
+                            id: lvl
+                            text: chip.modelData.value > 0 ? chip.modelData.level : chip.modelData.inSeason ? "None" : "Out of season"
+                            color: chip.modelData.value > 0 ? chip.modelData.color : W.dim
+                            font.family: W.font; font.pixelSize: W.tBody; font.weight: Font.DemiBold
+                        }
+                        Text {
+                            anchors.baseline: lvl.baseline
+                            width: parent.width - lvl.width - 12 * W.u
+                            text: chip.modelData.value > 0 ? chip.modelData.plants.slice(0, 3).join(", ") : ""
+                            color: W.dim; font.family: W.font; font.pixelSize: W.tMeta; elide: Text.ElideRight
+                        }
+                    }
                 }
             }
         }

@@ -86,5 +86,11 @@ FocusScope {
             text: "Forecast: Open-Meteo"
             color: W.faint; font.family: W.font; font.pixelSize: 18 * W.u; elide: Text.ElideRight
         }
+        Text {
+            width: parent.width
+            visible: !!(W.data && W.data.aqi && W.data.aqi.source !== "Open-Meteo")
+            text: visible ? "Air and pollen: " + W.data.aqi.source : ""
+            color: W.faint; font.family: W.font; font.pixelSize: 18 * W.u; elide: Text.ElideRight
+        }
     }
 }

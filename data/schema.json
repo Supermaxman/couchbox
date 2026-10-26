@@ -90,7 +90,7 @@
   "secrets": {
     "media.tmdb.token": {"page": "apps", "label": "TMDB API key", "help": "Movies & TV without Seerr: themoviedb.org → Settings → API."},
     "media.seerr.api_key": {"page": "apps", "label": "Seerr API key", "help": "Only for voice requests."},
-    "apps.maps.google_api_key": {"page": "apps", "label": "Google Maps API key", "help": "Traffic, transit and Google's places in Maps."},
+    "apps.maps.google_api_key": {"page": "apps", "label": "Google Maps Platform key", "help": "Traffic, transit and Google's places in Maps; air quality and pollen in Weather."},
     "voice.stt.api_key": {"page": "voice", "label": "Speech-to-text API key"},
     "voice.llm.api_key": {"page": "voice", "label": "Assistant API key"},
     "tailscale.auth_key": {"page": "access", "label": "Tailscale auth key"},

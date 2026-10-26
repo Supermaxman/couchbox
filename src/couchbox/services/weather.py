@@ -2,7 +2,9 @@
 
   forecast   Open-Meteo (https://open-meteo.com, free, no key): now, 48 hours, 14 days with
              their hours, in the box's units (Settings → Time: location.*)
-  air        Open-Meteo's air quality API: US AQI (imperial) or European AQI (metric)
+  air        air quality and pollen (services/air.py): Google's Air Quality and Pollen APIs with
+             a Google Maps Platform key, else Open-Meteo's air-quality API (US AQI or European
+             AQI; pollen in Europe only)
   alerts     the US National Weather Service (api.weather.gov, free) for places it covers;
              elsewhere there are none
   summaries  plain sentences made from the numbers ("Rain, mostly in the afternoon (80%) …"),
@@ -21,8 +23,10 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from couchbox.services import air
+
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+AIR_URL = air.OPEN_METEO
 NWS_URL = "https://api.weather.gov/alerts/active"
 UA = "couchbox-weather (https://github.com/Supermaxman/couchbox)"
 TIMEOUT = (6, 20)
@@ -103,32 +107,7 @@ def units_of(units):
     return {"system": "metric", "temp": "°C", "wind": "km/h", "precip": "mm", "windy": 40, "rainy": 0.5}
 
 
-def aqi_label(value, scale):
-    """(words, colour) for an AQI value."""
-    if value is None:
-        return "", ""
-    if scale == "us":
-        bands = [
-            (50, "Good", "#22c55e"),
-            (100, "Moderate", "#eab308"),
-            (150, "Unhealthy for some", "#f97316"),
-            (200, "Unhealthy", "#ef4444"),
-            (300, "Very unhealthy", "#a855f7"),
-        ]
-        worst = ("Hazardous", "#7f1d1d")
-    else:
-        bands = [
-            (20, "Good", "#22c55e"),
-            (40, "Fair", "#84cc16"),
-            (60, "Moderate", "#eab308"),
-            (80, "Poor", "#f97316"),
-            (100, "Very poor", "#ef4444"),
-        ]
-        worst = ("Extremely poor", "#a855f7")
-    for top, words, colour in bands:
-        if value <= top:
-            return words, colour
-    return worst
+aqi_label = air.aqi_label
 
 
 def uv_label(uv):
@@ -243,8 +222,9 @@ def now_summary(data):
 
 
 # ---------------------------------------------------------------------- parsing
-def parse(raw, place, clock24=False, air=None, alerts=None, now=None):
-    """Open-Meteo's answer (unixtime) -> what the app shows."""
+def parse(raw, place, clock24=False, air=None, alerts=None, now=None, pollen=None):
+    """Open-Meteo's answer (unixtime) -> what the app shows. air and pollen: air.py's (each day
+    gets its own reading and pollen; "aqi" is the reading now)."""
     u = units_of(place.get("units", "metric"))
     tz = ZoneInfo(raw.get("timezone") or "UTC")
     now = now or time.time()
@@ -344,28 +324,17 @@ def parse(raw, place, clock24=False, air=None, alerts=None, now=None):
         },
         "hours": [dict(h) for h in hours if h["t"] > now - 3600][:48],  # copies: the first says "Now"
         "days": days[:DAYS],
-        "aqi": air or None,
+        "aqi": dict(air["now"], scale=air["scale"], source=air["source"]) if air else None,
+        "air": air or None,
+        "pollen": pollen or None,
         "alerts": alerts or [],
     }
+    for d in data["days"]:
+        d["aqi"] = (air or {}).get("days", {}).get(d["date"])
+        d["pollen"] = (pollen or {}).get(d["date"])
     if data["hours"]:
         data["hours"][0]["hour"] = "Now"
     return data
-
-
-def parse_air(raw, units):
-    c = (raw or {}).get("current") or {}
-    scale = "us" if units == "imperial" else "eu"
-    v = c.get("us_aqi" if scale == "us" else "european_aqi")
-    if v is None:
-        return None
-    words, colour = aqi_label(v, scale)
-    return {
-        "value": round(v),
-        "scale": "US AQI" if scale == "us" else "European AQI",
-        "label": words,
-        "color": colour,
-        "pm25": rnd(c.get("pm2_5"), 1),
-    }
 
 
 def parse_alerts(raw, clock24=False):
@@ -401,10 +370,12 @@ def parse_alerts(raw, clock24=False):
 
 # ---------------------------------------------------------------------- the service
 class Weather:
-    def __init__(self, demo=False, session=None):
+    def __init__(self, demo=False, session=None, key_source=None):
+        """key_source(): the Google Maps Platform key or "" (air quality and pollen)."""
         self.demo = demo
         self.http = session or requests.Session()
         self.http.headers["User-Agent"] = UA
+        self.airs = air.Air(self.http, key_source)
         self.cache = {}  # (lat, lon, units, clock24) -> (time, data)
 
     def get(self, place, clock24=False, force=False):
@@ -440,19 +411,8 @@ class Weather:
             raw = r.json()
         except (requests.RequestException, ValueError) as err:
             raise WeatherError("The forecast service isn't answering. Check the connection.") from err
-        return parse(raw, place, clock24, air=self.air(place), alerts=self.alerts(place, clock24))
-
-    def air(self, place):
-        try:
-            r = self.http.get(
-                AIR_URL,
-                params={"latitude": place["lat"], "longitude": place["lon"], "current": "us_aqi,european_aqi,pm2_5", "timezone": "auto"},
-                timeout=TIMEOUT,
-            )
-            r.raise_for_status()
-            return parse_air(r.json(), place.get("units"))
-        except (requests.RequestException, ValueError):
-            return None  # nice to have
+        aq, pollen = self.airs.get(place, raw.get("timezone"))
+        return parse(raw, place, clock24, air=aq, pollen=pollen, alerts=self.alerts(place, clock24))
 
     def alerts(self, place, clock24=False):
         if not in_nws_area(place["lat"], place["lon"]):
@@ -524,6 +484,11 @@ def voice_report(data, action, day=None):
     t = u["temp"][0]
     head = f"Weather for {data['place']['name'] or 'this TV'} (units: {u['temp']}, {u['wind']}, {u['precip']})."
     alerts = "".join(f" ALERT: {a['event']}" + (f" until {a['until']}" if a["until"] else "") + "." for a in data["alerts"])
+    if action == "air":
+        return head + alerts + " " + air.air_report(data.get("air"), data["days"])
+    if action == "pollen":
+        picked = pick_days(data["days"], day) if day else data["days"][:1]
+        return head + " " + air.pollen_report(data.get("pollen"), picked)
     if action == "week":
         lines = [
             f"{d['name']} {d['date']}: {d['cond']}, {d['hi']}{t}/{d['lo']}{t}, rain {d['rain']}%"
@@ -559,6 +524,12 @@ def glance_facts(data):
         f"feels like {data['now']['feels']}{t}. Today: {d['summary']} Coming hours: {hours}."
         + (f" Alerts: {alerts}." if alerts else "")
         + (f" Tomorrow: {data['days'][1]['summary']}" if len(data["days"]) > 1 else "")
+        + (f" Air: {data['aqi']['scale']} {data['aqi']['value']} ({data['aqi']['label'].lower()})." if data.get("aqi") else "")
+        + (
+            " Pollen today: " + ", ".join(f"{t['type'].lower()} {t['level'].lower()}" for t in d["pollen"]) + "."
+            if d.get("pollen") and any(t["value"] >= 3 for t in d["pollen"])
+            else ""
+        )
     )
 
 
@@ -670,7 +641,28 @@ def demo_forecast(place, clock24=False):
         "hourly": hourly,
         "daily": daily,
     }
-    air = {"value": 38, "scale": "US AQI" if imperial else "European AQI", "label": "Good", "color": "#22c55e", "pm25": 4.1}
+    dates = [(start + timedelta(days=i)).date().isoformat() for i in range(5)]
+    reading = lambda v, p: dict(zip(("label", "color"), air.aqi_label(v, "us"), strict=False), value=v, pollutant=p)  # noqa: E731
+    aq = {
+        "now": dict(reading(38, "PM2.5"), pm25=4.1, advice="With this level of air quality, you have no limitations. Enjoy the outdoors!"),
+        "days": dict(
+            zip(
+                dates,
+                [reading(44, "PM2.5"), reading(57, "Ozone"), reading(71, "Ozone"), reading(35, "PM2.5"), reading(29, "PM2.5")],
+                strict=False,
+            )
+        ),
+        "scale": "US AQI" if imperial else "European AQI",
+        "source": "Google",
+    }
+    levels = [(4, 1, 0), (3, 2, 0), (2, 2, 1), (4, 3, 1), (1, 0, 0)]  # tree, grass, weed a day
+    pollen = {
+        d: [
+            air.pollen_entry(code, name, lv, lv > 0, plants if lv else [])
+            for (code, name), lv, plants in zip(air.TYPES, lvs, (["Birch", "Oak", "Alder"], ["Grasses"], ["Ragweed"]), strict=True)
+        ]
+        for d, lvs in zip(dates, levels, strict=True)
+    }
     alerts = [
         {
             "event": "Wind Advisory",
@@ -684,4 +676,4 @@ def demo_forecast(place, clock24=False):
             "color": "#f59e0b",
         }
     ]
-    return parse(raw, place, clock24, air=air, alerts=alerts, now=now)
+    return parse(raw, place, clock24, air=aq, pollen=pollen, alerts=alerts, now=now)

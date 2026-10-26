@@ -1,0 +1,2844 @@
+{
+ "google_current": {
+  "dateTime": "2026-10-26T14:00:00Z",
+  "regionCode": "us",
+  "indexes": [
+   {
+    "code": "uaqi",
+    "displayName": "Universal AQI",
+    "aqi": 80,
+    "aqiDisplay": "80",
+    "color": {
+     "red": 0.34509805,
+     "green": 0.74509805,
+     "blue": 0.20784314
+    },
+    "category": "Excellent air quality",
+    "dominantPollutant": "no2"
+   },
+   {
+    "code": "usa_epa",
+    "displayName": "AQI (US)",
+    "aqi": 51,
+    "aqiDisplay": "51",
+    "color": {
+     "red": 1,
+     "green": 1
+    },
+    "category": "Moderate air quality",
+    "dominantPollutant": "pm25"
+   }
+  ],
+  "pollutants": [
+   {
+    "code": "no2",
+    "displayName": "NO2",
+    "fullName": "Nitrogen dioxide",
+    "concentration": {
+     "value": 27.08,
+     "units": "PARTS_PER_BILLION"
+    }
+   },
+   {
+    "code": "pm25",
+    "displayName": "PM2.5",
+    "fullName": "Fine particulate matter (<2.5µm)",
+    "concentration": {
+     "value": 11.53,
+     "units": "MICROGRAMS_PER_CUBIC_METER"
+    }
+   }
+  ],
+  "healthRecommendations": {
+   "generalPopulation": "With this level of air quality, you have no limitations. Enjoy the outdoors!",
+   "elderly": "If you start to feel respiratory discomfort such as coughing or breathing difficulties, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, construction sites, open fires and other sources of smoke.",
+   "lungDiseasePopulation": "If you start to feel respiratory discomfort such as coughing or breathing difficulties, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, industrial emission stacks, open fires and other sources of smoke.",
+   "heartDiseasePopulation": "If you start to feel respiratory discomfort such as coughing or breathing difficulties, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, construction sites, industrial emission stacks, open fires and other sources of smoke.",
+   "athletes": "If you start to feel respiratory discomfort such as coughing or breathing difficulties, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, construction sites, industrial emission stacks, open fires and other sources of smoke.",
+   "pregnantWomen": "To keep you and your baby healthy, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, construction sites, open fires and other sources of smoke.",
+   "children": "If you start to feel respiratory discomfort such as coughing or breathing difficulties, consider reducing the intensity of your outdoor activities. Try to limit the time you spend near busy roads, construction sites, open fires and other sources of smoke."
+  }
+ },
+ "google_forecast": {
+  "hourlyForecasts": [
+   {
+    "dateTime": "2026-10-26T15:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 80,
+      "aqiDisplay": "80",
+      "color": {
+       "red": 0.34509805,
+       "green": 0.74509805,
+       "blue": 0.20784314
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "no2"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 51,
+      "aqiDisplay": "51",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T16:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 79,
+      "aqiDisplay": "79",
+      "color": {
+       "red": 0.36078432,
+       "green": 0.7529412,
+       "blue": 0.20784314
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 52,
+      "aqiDisplay": "52",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T17:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 77,
+      "aqiDisplay": "77",
+      "color": {
+       "red": 0.39607844,
+       "green": 0.7647059,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 53,
+      "aqiDisplay": "53",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T18:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 75,
+      "aqiDisplay": "75",
+      "color": {
+       "red": 0.43137255,
+       "green": 0.7764706,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 53,
+      "aqiDisplay": "53",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T19:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 76,
+      "aqiDisplay": "76",
+      "color": {
+       "red": 0.4117647,
+       "green": 0.77254903,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 54,
+      "aqiDisplay": "54",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T20:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 80,
+      "aqiDisplay": "80",
+      "color": {
+       "red": 0.34509805,
+       "green": 0.74509805,
+       "blue": 0.20784314
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 54,
+      "aqiDisplay": "54",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T21:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 81,
+      "aqiDisplay": "81",
+      "color": {
+       "red": 0.3254902,
+       "green": 0.7411765,
+       "blue": 0.20784314
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 55,
+      "aqiDisplay": "55",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T22:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 77,
+      "aqiDisplay": "77",
+      "color": {
+       "red": 0.39607844,
+       "green": 0.7647059,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 55,
+      "aqiDisplay": "55",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-26T23:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 77,
+      "aqiDisplay": "77",
+      "color": {
+       "red": 0.39607844,
+       "green": 0.7647059,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 55,
+      "aqiDisplay": "55",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T00:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 77,
+      "aqiDisplay": "77",
+      "color": {
+       "red": 0.39607844,
+       "green": 0.7647059,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 55,
+      "aqiDisplay": "55",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T01:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 84,
+      "aqiDisplay": "84",
+      "color": {
+       "red": 0.27450982,
+       "green": 0.72156864,
+       "blue": 0.21176471
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 56,
+      "aqiDisplay": "56",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T02:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 79,
+      "aqiDisplay": "79",
+      "color": {
+       "red": 0.36078432,
+       "green": 0.7529412,
+       "blue": 0.20784314
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 56,
+      "aqiDisplay": "56",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T03:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 71,
+      "aqiDisplay": "71",
+      "color": {
+       "red": 0.49803922,
+       "green": 0.8039216,
+       "blue": 0.2
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 57,
+      "aqiDisplay": "57",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T04:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 66,
+      "aqiDisplay": "66",
+      "color": {
+       "red": 0.6117647,
+       "green": 0.84705883,
+       "blue": 0.15686275
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 57,
+      "aqiDisplay": "57",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T05:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 59,
+      "aqiDisplay": "59",
+      "color": {
+       "red": 0.78039217,
+       "green": 0.9137255,
+       "blue": 0.08627451
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 58,
+      "aqiDisplay": "58",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T06:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 55,
+      "aqiDisplay": "55",
+      "color": {
+       "red": 0.8784314,
+       "green": 0.9529412,
+       "blue": 0.047058824
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 59,
+      "aqiDisplay": "59",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T07:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 54,
+      "aqiDisplay": "54",
+      "color": {
+       "red": 0.9019608,
+       "green": 0.9607843,
+       "blue": 0.039215688
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 60,
+      "aqiDisplay": "60",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T08:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 57,
+      "aqiDisplay": "57",
+      "color": {
+       "red": 0.827451,
+       "green": 0.93333334,
+       "blue": 0.06666667
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 61,
+      "aqiDisplay": "61",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T09:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 60,
+      "aqiDisplay": "60",
+      "color": {
+       "red": 0.75686276,
+       "green": 0.90588236,
+       "blue": 0.09803922
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 62,
+      "aqiDisplay": "62",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T10:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 62,
+      "aqiDisplay": "62",
+      "color": {
+       "red": 0.70980394,
+       "green": 0.8862745,
+       "blue": 0.11764706
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 63,
+      "aqiDisplay": "63",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T11:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 68,
+      "aqiDisplay": "68",
+      "color": {
+       "red": 0.5647059,
+       "green": 0.827451,
+       "blue": 0.1764706
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 63,
+      "aqiDisplay": "63",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T12:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 72,
+      "aqiDisplay": "72",
+      "color": {
+       "red": 0.48235294,
+       "green": 0.79607844,
+       "blue": 0.2
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T13:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 76,
+      "aqiDisplay": "76",
+      "color": {
+       "red": 0.4117647,
+       "green": 0.77254903,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T14:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 78,
+      "aqiDisplay": "78",
+      "color": {
+       "red": 0.3764706,
+       "green": 0.75686276,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T15:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 78,
+      "aqiDisplay": "78",
+      "color": {
+       "red": 0.3764706,
+       "green": 0.75686276,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T16:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 77,
+      "aqiDisplay": "77",
+      "color": {
+       "red": 0.39607844,
+       "green": 0.7647059,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T17:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 78,
+      "aqiDisplay": "78",
+      "color": {
+       "red": 0.3764706,
+       "green": 0.75686276,
+       "blue": 0.20392157
+      },
+      "category": "Good air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T18:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 82,
+      "aqiDisplay": "82",
+      "color": {
+       "red": 0.30980393,
+       "green": 0.73333335,
+       "blue": 0.20784314
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "pm25"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 64,
+      "aqiDisplay": "64",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T19:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 85,
+      "aqiDisplay": "85",
+      "color": {
+       "red": 0.25882354,
+       "green": 0.7137255,
+       "blue": 0.21176471
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 63,
+      "aqiDisplay": "63",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   },
+   {
+    "dateTime": "2026-10-27T20:00:00Z",
+    "indexes": [
+     {
+      "code": "uaqi",
+      "displayName": "Universal AQI",
+      "aqi": 81,
+      "aqiDisplay": "81",
+      "color": {
+       "red": 0.3254902,
+       "green": 0.7411765,
+       "blue": 0.20784314
+      },
+      "category": "Excellent air quality",
+      "dominantPollutant": "o3"
+     },
+     {
+      "code": "usa_epa",
+      "displayName": "AQI (US)",
+      "aqi": 63,
+      "aqiDisplay": "63",
+      "color": {
+       "red": 1,
+       "green": 1
+      },
+      "category": "Moderate air quality",
+      "dominantPollutant": "pm25"
+     }
+    ]
+   }
+  ],
+  "regionCode": "us"
+ },
+ "google_pollen_seattle": {
+  "regionCode": "US",
+  "dailyInfo": [
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 26
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "GRASS",
+      "displayName": "Grass"
+     },
+     {
+      "code": "TREE",
+      "displayName": "Tree"
+     },
+     {
+      "code": "WEED",
+      "displayName": "Weed"
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "MAPLE",
+      "displayName": "Maple"
+     },
+     {
+      "code": "ELM",
+      "displayName": "Elm"
+     },
+     {
+      "code": "COTTONWOOD",
+      "displayName": "Cottonwood"
+     },
+     {
+      "code": "ALDER",
+      "displayName": "Alder"
+     },
+     {
+      "code": "BIRCH",
+      "displayName": "Birch"
+     },
+     {
+      "code": "ASH",
+      "displayName": "Ash"
+     },
+     {
+      "code": "PINE",
+      "displayName": "Pine"
+     },
+     {
+      "code": "OAK",
+      "displayName": "Oak"
+     },
+     {
+      "code": "JUNIPER",
+      "displayName": "Juniper"
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses"
+     },
+     {
+      "code": "RAGWEED",
+      "displayName": "Ragweed"
+     }
+    ]
+   },
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 27
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "GRASS",
+      "displayName": "Grass"
+     },
+     {
+      "code": "TREE",
+      "displayName": "Tree"
+     },
+     {
+      "code": "WEED",
+      "displayName": "Weed"
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "MAPLE",
+      "displayName": "Maple"
+     },
+     {
+      "code": "ELM",
+      "displayName": "Elm"
+     },
+     {
+      "code": "COTTONWOOD",
+      "displayName": "Cottonwood"
+     },
+     {
+      "code": "ALDER",
+      "displayName": "Alder"
+     },
+     {
+      "code": "BIRCH",
+      "displayName": "Birch"
+     },
+     {
+      "code": "ASH",
+      "displayName": "Ash"
+     },
+     {
+      "code": "PINE",
+      "displayName": "Pine"
+     },
+     {
+      "code": "OAK",
+      "displayName": "Oak"
+     },
+     {
+      "code": "JUNIPER",
+      "displayName": "Juniper"
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses"
+     },
+     {
+      "code": "RAGWEED",
+      "displayName": "Ragweed"
+     }
+    ]
+   },
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 28
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "GRASS",
+      "displayName": "Grass"
+     },
+     {
+      "code": "TREE",
+      "displayName": "Tree"
+     },
+     {
+      "code": "WEED",
+      "displayName": "Weed"
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "MAPLE",
+      "displayName": "Maple"
+     },
+     {
+      "code": "ELM",
+      "displayName": "Elm"
+     },
+     {
+      "code": "COTTONWOOD",
+      "displayName": "Cottonwood"
+     },
+     {
+      "code": "ALDER",
+      "displayName": "Alder"
+     },
+     {
+      "code": "BIRCH",
+      "displayName": "Birch"
+     },
+     {
+      "code": "ASH",
+      "displayName": "Ash"
+     },
+     {
+      "code": "PINE",
+      "displayName": "Pine"
+     },
+     {
+      "code": "OAK",
+      "displayName": "Oak"
+     },
+     {
+      "code": "JUNIPER",
+      "displayName": "Juniper"
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses"
+     },
+     {
+      "code": "RAGWEED",
+      "displayName": "Ragweed"
+     }
+    ]
+   },
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 29
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "GRASS",
+      "displayName": "Grass"
+     },
+     {
+      "code": "TREE",
+      "displayName": "Tree"
+     },
+     {
+      "code": "WEED",
+      "displayName": "Weed"
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "MAPLE",
+      "displayName": "Maple"
+     },
+     {
+      "code": "ELM",
+      "displayName": "Elm"
+     },
+     {
+      "code": "COTTONWOOD",
+      "displayName": "Cottonwood"
+     },
+     {
+      "code": "ALDER",
+      "displayName": "Alder"
+     },
+     {
+      "code": "BIRCH",
+      "displayName": "Birch"
+     },
+     {
+      "code": "ASH",
+      "displayName": "Ash"
+     },
+     {
+      "code": "PINE",
+      "displayName": "Pine"
+     },
+     {
+      "code": "OAK",
+      "displayName": "Oak"
+     },
+     {
+      "code": "JUNIPER",
+      "displayName": "Juniper"
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses"
+     },
+     {
+      "code": "RAGWEED",
+      "displayName": "Ragweed"
+     }
+    ]
+   },
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 30
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "GRASS",
+      "displayName": "Grass"
+     },
+     {
+      "code": "TREE",
+      "displayName": "Tree"
+     },
+     {
+      "code": "WEED",
+      "displayName": "Weed"
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "MAPLE",
+      "displayName": "Maple"
+     },
+     {
+      "code": "ELM",
+      "displayName": "Elm"
+     },
+     {
+      "code": "COTTONWOOD",
+      "displayName": "Cottonwood"
+     },
+     {
+      "code": "ALDER",
+      "displayName": "Alder"
+     },
+     {
+      "code": "BIRCH",
+      "displayName": "Birch"
+     },
+     {
+      "code": "ASH",
+      "displayName": "Ash"
+     },
+     {
+      "code": "PINE",
+      "displayName": "Pine"
+     },
+     {
+      "code": "OAK",
+      "displayName": "Oak"
+     },
+     {
+      "code": "JUNIPER",
+      "displayName": "Juniper"
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses"
+     },
+     {
+      "code": "RAGWEED",
+      "displayName": "Ragweed"
+     }
+    ]
+   }
+  ]
+ },
+ "google_pollen_sydney": {
+  "regionCode": "AU",
+  "dailyInfo": [
+   {
+    "date": {
+     "year": 2026,
+     "month": 10,
+     "day": 26
+    },
+    "pollenTypeInfo": [
+     {
+      "code": "TREE",
+      "displayName": "Tree",
+      "inSeason": false,
+      "indexInfo": {
+       "code": "UPI",
+       "displayName": "Universal Pollen Index",
+       "value": 1,
+       "category": "Very Low",
+       "indexDescription": "People with very high allergy to pollen are likely to experience symptoms",
+       "color": {
+        "green": 0.61960787,
+        "blue": 0.22745098
+       }
+      },
+      "healthRecommendations": [
+       "Pollen levels are very low right now. It's a great day to enjoy the outdoors!"
+      ]
+     },
+     {
+      "code": "GRASS",
+      "displayName": "Grass",
+      "inSeason": true,
+      "indexInfo": {
+       "code": "UPI",
+       "displayName": "Universal Pollen Index",
+       "value": 3,
+       "category": "Moderate",
+       "indexDescription": "People with allergy to pollen are likely to experience symptoms",
+       "color": {
+        "red": 1,
+        "green": 1
+       }
+      },
+      "healthRecommendations": [
+       "It's important to shower and wash your hair after spending a lot of time outdoors.",
+       "When spending time outside, use sunglasses and a cap to keep pollen out of your face and eyes.",
+       "Wash clothes worn outdoors to remove any remnants of pollen grains.",
+       "If possible, wear glasses instead of contact lenses.",
+       "Did you hang any laundry outside? Now is a good time to hang clothes indoors or use a dryer if possible."
+      ]
+     }
+    ],
+    "plantInfo": [
+     {
+      "code": "CYPRESS_PINE",
+      "displayName": "Cypress Pine",
+      "inSeason": false,
+      "indexInfo": {
+       "code": "UPI",
+       "displayName": "Universal Pollen Index",
+       "value": 1,
+       "category": "Very Low",
+       "indexDescription": "People with very high allergy to pollen are likely to experience symptoms",
+       "color": {
+        "green": 0.61960787,
+        "blue": 0.22745098
+       }
+      }
+     },
+     {
+      "code": "GRAMINALES",
+      "displayName": "Grasses",
+      "inSeason": true,
+      "indexInfo": {
+       "code": "UPI",
+       "displayName": "Universal Pollen Index",
+       "value": 3,
+       "category": "Moderate",
+       "indexDescription": "People with allergy to pollen are likely to experience symptoms",
+       "color": {
+        "red": 1,
+        "green": 1
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "open_meteo_seattle": {
+  "latitude": 47.600006,
+  "longitude": -122.3,
+  "utc_offset_seconds": 0,
+  "timezone": "GMT",
+  "timezone_abbreviation": "GMT",
+  "elevation": 72.0,
+  "current_units": {
+   "time": "unixtime",
+   "interval": "seconds",
+   "us_aqi": "USAQI",
+   "us_aqi_pm2_5": "USAQI",
+   "us_aqi_pm10": "USAQI",
+   "us_aqi_ozone": "USAQI",
+   "us_aqi_nitrogen_dioxide": "USAQI",
+   "us_aqi_sulphur_dioxide": "USAQI",
+   "us_aqi_carbon_monoxide": "USAQI",
+   "pm2_5": "μg/m³"
+  },
+  "current": {
+   "time": 1793023200,
+   "interval": 3600,
+   "us_aqi": 55,
+   "us_aqi_pm2_5": 55,
+   "us_aqi_pm10": 11,
+   "us_aqi_ozone": 9,
+   "us_aqi_nitrogen_dioxide": 25,
+   "us_aqi_sulphur_dioxide": 1,
+   "us_aqi_carbon_monoxide": 3,
+   "pm2_5": 13.1
+  },
+  "hourly_units": {
+   "time": "unixtime",
+   "us_aqi": "USAQI",
+   "us_aqi_pm2_5": "USAQI",
+   "us_aqi_pm10": "USAQI",
+   "us_aqi_ozone": "USAQI",
+   "us_aqi_nitrogen_dioxide": "USAQI",
+   "us_aqi_sulphur_dioxide": "USAQI",
+   "us_aqi_carbon_monoxide": "USAQI",
+   "alder_pollen": "grains/m³",
+   "birch_pollen": "grains/m³",
+   "olive_pollen": "grains/m³",
+   "grass_pollen": "grains/m³",
+   "mugwort_pollen": "grains/m³",
+   "ragweed_pollen": "grains/m³"
+  },
+  "hourly": {
+   "time": [
+    1792972800,
+    1792976400,
+    1792980000,
+    1792983600,
+    1792987200,
+    1792990800,
+    1792994400,
+    1792998000,
+    1793001600,
+    1793005200,
+    1793008800,
+    1793012400,
+    1793016000,
+    1793019600,
+    1793023200,
+    1793026800,
+    1793030400,
+    1793034000,
+    1793037600,
+    1793041200,
+    1793044800,
+    1793048400,
+    1793052000,
+    1793055600,
+    1793059200,
+    1793062800,
+    1793066400,
+    1793070000,
+    1793073600,
+    1793077200,
+    1793080800,
+    1793084400,
+    1793088000,
+    1793091600,
+    1793095200,
+    1793098800,
+    1793102400,
+    1793106000,
+    1793109600,
+    1793113200,
+    1793116800,
+    1793120400,
+    1793124000,
+    1793127600,
+    1793131200,
+    1793134800,
+    1793138400,
+    1793142000
+   ],
+   "us_aqi": [
+    62,
+    62,
+    62,
+    62,
+    62,
+    61,
+    60,
+    59,
+    58,
+    58,
+    57,
+    57,
+    56,
+    56,
+    55,
+    55,
+    55,
+    55,
+    55,
+    56,
+    56,
+    57,
+    57,
+    57,
+    57,
+    57,
+    57,
+    57,
+    58,
+    59,
+    60,
+    61,
+    63,
+    64,
+    65,
+    66,
+    67,
+    67,
+    67,
+    67,
+    68,
+    67,
+    67,
+    66,
+    66,
+    65,
+    65,
+    65
+   ],
+   "us_aqi_pm2_5": [
+    62,
+    62,
+    62,
+    62,
+    62,
+    61,
+    60,
+    59,
+    58,
+    58,
+    57,
+    57,
+    56,
+    56,
+    55,
+    55,
+    55,
+    55,
+    55,
+    56,
+    56,
+    57,
+    57,
+    57,
+    57,
+    57,
+    57,
+    57,
+    58,
+    59,
+    60,
+    61,
+    63,
+    64,
+    65,
+    66,
+    67,
+    67,
+    67,
+    67,
+    68,
+    67,
+    67,
+    66,
+    66,
+    65,
+    65,
+    65
+   ],
+   "us_aqi_pm10": [
+    15,
+    15,
+    15,
+    15,
+    14,
+    14,
+    14,
+    13,
+    13,
+    13,
+    12,
+    12,
+    12,
+    12,
+    11,
+    11,
+    11,
+    11,
+    11,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    13,
+    13,
+    14,
+    15,
+    16,
+    16,
+    17,
+    17,
+    17,
+    17,
+    17,
+    17,
+    17,
+    17,
+    17,
+    16,
+    16,
+    16,
+    16
+   ],
+   "us_aqi_ozone": [
+    18,
+    19,
+    20,
+    21,
+    21,
+    20,
+    19,
+    17,
+    16,
+    15,
+    14,
+    12,
+    11,
+    10,
+    9,
+    8,
+    7,
+    7,
+    7,
+    7,
+    8,
+    10,
+    13,
+    15,
+    18,
+    20,
+    21,
+    21,
+    20,
+    17,
+    14,
+    10,
+    7,
+    4,
+    2,
+    1,
+    0,
+    1,
+    1,
+    1,
+    1,
+    2,
+    3,
+    4,
+    6,
+    8,
+    12,
+    15
+   ],
+   "us_aqi_nitrogen_dioxide": [
+    13,
+    13,
+    14,
+    15,
+    16,
+    18,
+    20,
+    21,
+    22,
+    23,
+    24,
+    24,
+    25,
+    25,
+    25,
+    24,
+    23,
+    22,
+    20,
+    17,
+    14,
+    12,
+    10,
+    10,
+    11,
+    17,
+    25,
+    30,
+    32,
+    31,
+    31,
+    30,
+    30,
+    29,
+    28,
+    27,
+    27,
+    27,
+    27,
+    26,
+    24,
+    21,
+    17,
+    13,
+    9,
+    5,
+    3,
+    3
+   ],
+   "us_aqi_sulphur_dioxide": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "us_aqi_carbon_monoxide": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    2,
+    3,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    4,
+    3,
+    3,
+    3,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "alder_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "birch_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "olive_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "grass_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "mugwort_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "ragweed_pollen": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ },
+ "open_meteo_berlin": {
+  "latitude": 52.5,
+  "longitude": 13.400002,
+  "utc_offset_seconds": 0,
+  "timezone": "GMT",
+  "timezone_abbreviation": "GMT",
+  "elevation": 30.0,
+  "current_units": {
+   "time": "unixtime",
+   "interval": "seconds",
+   "european_aqi": "EAQI",
+   "european_aqi_pm2_5": "EAQI",
+   "european_aqi_pm10": "EAQI",
+   "european_aqi_ozone": "EAQI",
+   "european_aqi_nitrogen_dioxide": "EAQI",
+   "european_aqi_sulphur_dioxide": "EAQI",
+   "pm2_5": "μg/m³"
+  },
+  "current": {
+   "time": 1793023200,
+   "interval": 3600,
+   "european_aqi": 22,
+   "european_aqi_pm2_5": 22,
+   "european_aqi_pm10": 16,
+   "european_aqi_ozone": 19,
+   "european_aqi_nitrogen_dioxide": 19,
+   "european_aqi_sulphur_dioxide": 2,
+   "pm2_5": 6.2
+  },
+  "hourly_units": {
+   "time": "unixtime",
+   "european_aqi": "EAQI",
+   "european_aqi_pm2_5": "EAQI",
+   "european_aqi_pm10": "EAQI",
+   "european_aqi_ozone": "EAQI",
+   "european_aqi_nitrogen_dioxide": "EAQI",
+   "european_aqi_sulphur_dioxide": "EAQI",
+   "alder_pollen": "grains/m³",
+   "birch_pollen": "grains/m³",
+   "olive_pollen": "grains/m³",
+   "grass_pollen": "grains/m³",
+   "mugwort_pollen": "grains/m³",
+   "ragweed_pollen": "grains/m³"
+  },
+  "hourly": {
+   "time": [
+    1792972800,
+    1792976400,
+    1792980000,
+    1792983600,
+    1792987200,
+    1792990800,
+    1792994400,
+    1792998000,
+    1793001600,
+    1793005200,
+    1793008800,
+    1793012400,
+    1793016000,
+    1793019600,
+    1793023200,
+    1793026800,
+    1793030400,
+    1793034000,
+    1793037600,
+    1793041200,
+    1793044800,
+    1793048400,
+    1793052000,
+    1793055600,
+    1793059200,
+    1793062800,
+    1793066400,
+    1793070000,
+    1793073600,
+    1793077200,
+    1793080800,
+    1793084400,
+    1793088000,
+    1793091600,
+    1793095200,
+    1793098800,
+    1793102400,
+    1793106000,
+    1793109600,
+    1793113200,
+    1793116800,
+    1793120400,
+    1793124000,
+    1793127600,
+    1793131200,
+    1793134800,
+    1793138400,
+    1793142000
+   ],
+   "european_aqi": [
+    20,
+    19,
+    19,
+    19,
+    19,
+    20,
+    22,
+    23,
+    24,
+    22,
+    23,
+    21,
+    21,
+    22,
+    22,
+    26,
+    33,
+    37,
+    42,
+    44,
+    43,
+    41,
+    37,
+    32,
+    29,
+    30,
+    30,
+    30,
+    30,
+    30,
+    31,
+    36,
+    32,
+    31,
+    30,
+    30,
+    29,
+    28,
+    27,
+    31,
+    40,
+    43,
+    43,
+    41,
+    40,
+    40,
+    39,
+    35
+   ],
+   "european_aqi_pm2_5": [
+    16,
+    18,
+    18,
+    18,
+    19,
+    20,
+    22,
+    22,
+    24,
+    22,
+    23,
+    21,
+    21,
+    22,
+    22,
+    24,
+    27,
+    28,
+    29,
+    29,
+    28,
+    28,
+    29,
+    28,
+    29,
+    30,
+    30,
+    30,
+    30,
+    30,
+    31,
+    33,
+    32,
+    31,
+    30,
+    30,
+    29,
+    28,
+    27,
+    27,
+    30,
+    33,
+    30,
+    30,
+    29,
+    30,
+    29,
+    30
+   ],
+   "european_aqi_pm10": [
+    10,
+    11,
+    11,
+    11,
+    11,
+    12,
+    12,
+    13,
+    13,
+    14,
+    15,
+    15,
+    15,
+    15,
+    16,
+    18,
+    20,
+    21,
+    20,
+    21,
+    21,
+    20,
+    20,
+    20,
+    19,
+    19,
+    19,
+    19,
+    18,
+    18,
+    19,
+    19,
+    19,
+    17,
+    17,
+    17,
+    17,
+    17,
+    17,
+    19,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    21,
+    21
+   ],
+   "european_aqi_ozone": [
+    20,
+    19,
+    19,
+    19,
+    19,
+    18,
+    18,
+    18,
+    18,
+    19,
+    19,
+    20,
+    20,
+    21,
+    19,
+    18,
+    16,
+    13,
+    12,
+    10,
+    9,
+    9,
+    11,
+    12,
+    12,
+    13,
+    13,
+    13,
+    13,
+    14,
+    12,
+    11,
+    13,
+    16,
+    17,
+    17,
+    18,
+    18,
+    18,
+    18,
+    15,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12
+   ],
+   "european_aqi_nitrogen_dioxide": [
+    11,
+    12,
+    11,
+    11,
+    11,
+    16,
+    20,
+    23,
+    20,
+    17,
+    15,
+    13,
+    13,
+    15,
+    19,
+    26,
+    33,
+    37,
+    42,
+    44,
+    43,
+    41,
+    37,
+    32,
+    28,
+    25,
+    24,
+    22,
+    23,
+    23,
+    29,
+    36,
+    32,
+    27,
+    23,
+    21,
+    20,
+    21,
+    23,
+    31,
+    40,
+    43,
+    43,
+    41,
+    40,
+    40,
+    39,
+    35
+   ],
+   "european_aqi_sulphur_dioxide": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    2,
+    2
+   ],
+   "alder_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "birch_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "olive_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "grass_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "mugwort_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ragweed_pollen": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ }
+}
