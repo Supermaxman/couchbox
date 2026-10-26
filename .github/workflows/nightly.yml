@@ -28,7 +28,7 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true; df -h /
       - name: build the image
         run: sudo image/build-image.sh "nightly-$(date +%Y%m%d)" dist out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: {name: image, path: "out/*.img.xz*", retention-days: 7, compression-level: 0}
 
   boot-test:
