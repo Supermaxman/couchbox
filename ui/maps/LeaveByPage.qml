@@ -99,7 +99,7 @@ FocusScope {
                         opacity: off ? 0.35 : 1
                         Row {
                             anchors.centerIn: parent; spacing: 8 * M.u
-                            Image { anchors.verticalCenter: parent.verticalCenter; width: 26 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon(M.modeIcon(parent.parent.modelData)) }
+                            Image { anchors.verticalCenter: parent.verticalCenter; width: 26 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon(M.modeIcon(parent.parent.modelData)) }
                             Text { anchors.verticalCenter: parent.verticalCenter; text: M.modeName(parent.parent.modelData); color: M.text; font.family: M.font; font.pixelSize: 21 * M.u }
                         }
                     }

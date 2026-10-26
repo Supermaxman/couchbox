@@ -12,7 +12,7 @@ FocusScope {
         Row {
             spacing: 18 * M.u
             Rectangle { width: 64 * M.u; height: width; radius: 16 * M.u; color: M.accent
-                Image { anchors.centerIn: parent; width: 40 * M.u; height: width; sourceSize: Qt.size(width, height); source: "icons/mark.svg" } }
+                Image { anchors.centerIn: parent; width: 40 * M.u; height: width; sourceSize: M.sz(width, height); source: "icons/mark.svg" } }
             Text { anchors.verticalCenter: parent.verticalCenter; text: "Movies & TV"; color: M.text; font.family: M.font; font.pixelSize: 48 * M.u; font.weight: Font.Bold }
         }
         Text {

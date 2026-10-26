@@ -58,7 +58,7 @@ FocusScope {
             color: page.activeFocus && page.idx === 0 ? M.panel2 : M.panel
             border.color: page.activeFocus && page.idx === 0 ? M.focus : M.line
             border.width: page.activeFocus && page.idx === 0 ? M.ring : 1 * M.u
-            Image { id: sic; x: 34 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 36 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon("search") }
+            Image { id: sic; x: 34 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 36 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon("search") }
             Text {
                 anchors { left: sic.right; leftMargin: 22 * M.u; right: parent.right; rightMargin: 34 * M.u; verticalCenter: parent.verticalCenter }
                 text: page.query || "A place, an address or a kind of place (coffee, gas, pharmacy)"
@@ -91,7 +91,7 @@ FocusScope {
                 id: rb
                 x: 24 * M.u; anchors.verticalCenter: parent.verticalCenter
                 width: 60 * M.u; height: width; radius: width / 2; color: parent.modelData.saved ? "#14352b" : M.panel2
-                Image { anchors.centerIn: parent; width: 32 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon(parent.parent.modelData.saved ? (parent.parent.modelData.kind === "home" ? "home" : parent.parent.modelData.kind === "work" ? "work" : "star") : "pin") }
+                Image { anchors.centerIn: parent; width: 32 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon(parent.parent.modelData.saved ? (parent.parent.modelData.kind === "home" ? "home" : parent.parent.modelData.kind === "work" ? "work" : "star") : "pin") }
             }
             Column {
                 anchors { left: rb.right; leftMargin: 22 * M.u; right: dist.left; rightMargin: 20 * M.u; verticalCenter: parent.verticalCenter }

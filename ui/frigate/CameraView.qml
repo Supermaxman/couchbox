@@ -169,7 +169,7 @@ FocusScope {
                             Column {
                                 anchors.centerIn: parent
                                 spacing: 16 * F.u
-                                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 84 * F.u; height: width; sourceSize: Qt.size(width, height); source: F.icon("timeline") }
+                                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 84 * F.u; height: width; sourceSize: F.sz(width, height); source: F.icon("timeline") }
                                 Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Timeline"; color: F.text; font.family: F.font; font.pixelSize: F.tBody; font.weight: Font.DemiBold }
                                 Text { anchors.horizontalCenter: parent.horizontalCenter; text: "The last 24 hours"; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta }
                             }

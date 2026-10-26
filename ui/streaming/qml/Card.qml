@@ -37,7 +37,7 @@ Item {
                 const src = card.shape === "poster" ? (c.poster || c.landscape) : card.shape === "square" ? (c.square || c.poster || c.landscape) : (c.landscape || c.background);
                 return D.img(src, card.w * 1.2, card.h * 1.2);
             }
-            sourceSize.width: card.w * 1.2
+            sourceSize.width: D.px(card.w)
             asynchronous: true
             fillMode: Image.PreserveAspectCrop
         }

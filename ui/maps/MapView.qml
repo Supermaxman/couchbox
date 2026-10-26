@@ -143,7 +143,7 @@ FocusScope {
                 visible: parent.modelData.kind !== "start"
                 anchors.fill: parent
                 source: M.icon(parent.modelData.kind === "end" ? "pin-end" : "pin-place")
-                sourceSize: Qt.size(width, height)
+                sourceSize: M.sz(width, height)
             }
         }
     }

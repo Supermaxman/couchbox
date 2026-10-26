@@ -35,14 +35,14 @@ Item {
             Image {                              // no picture yet (or demo)
                 anchors.centerIn: parent
                 visible: a.status !== Image.Ready && b.status !== Image.Ready
-                width: 70 * F.u; height: width; sourceSize: Qt.size(width, height)
+                width: 70 * F.u; height: width; sourceSize: F.sz(width, height)
                 source: F.icon("object"); opacity: 0.12
             }
             Image { id: a; anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: false; visible: tile.showA
-                    sourceSize.width: Math.round(tile.width)
+                    sourceSize.width: F.px(tile.width)
                     onStatusChanged: if (status === Image.Ready && !tile.showA) tile.showA = true }
             Image { id: b; anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: false; visible: !tile.showA
-                    sourceSize.width: Math.round(tile.width)
+                    sourceSize.width: F.px(tile.width)
                     onStatusChanged: if (status === Image.Ready && tile.showA) tile.showA = false }
         }
         Rectangle {                              // shade under the name

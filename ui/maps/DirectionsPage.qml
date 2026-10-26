@@ -95,7 +95,7 @@ FocusScope {
                         Row {
                             anchors.centerIn: parent
                             spacing: 8 * M.u
-                            Image { anchors.verticalCenter: parent.verticalCenter; width: 30 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon(parent.parent.modelData === "leave" ? "clock" : M.modeIcon(parent.parent.modelData)) }
+                            Image { anchors.verticalCenter: parent.verticalCenter; width: 30 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon(parent.parent.modelData === "leave" ? "clock" : M.modeIcon(parent.parent.modelData)) }
                             Text { anchors.verticalCenter: parent.verticalCenter; visible: parent.parent.modelData === "leave"; text: "Leave by"; color: M.text; font.family: M.font; font.pixelSize: M.tMeta }
                         }
                     }
@@ -194,7 +194,7 @@ FocusScope {
                 width: steps.width; height: Math.max(70 * M.u, stx.implicitHeight + 26 * M.u); radius: 10 * M.u
                 color: cur ? M.panel2 : "transparent"
                 border.color: cur ? M.focus : "transparent"; border.width: 3 * M.u
-                Image { id: sti; x: 14 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 34 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon(parent.modelData.icon) }
+                Image { id: sti; x: 14 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 34 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon(parent.modelData.icon) }
                 Text {
                     id: stx
                     anchors { left: sti.right; leftMargin: 18 * M.u; right: sd.left; rightMargin: 12 * M.u; verticalCenter: parent.verticalCenter }

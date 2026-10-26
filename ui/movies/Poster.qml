@@ -38,7 +38,7 @@ Item {
             source: card.item.poster || ""
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            sourceSize.width: Math.round(card.width)
+            sourceSize.width: M.px(card.width)
         }
         Rectangle {                          // the score, top right
             visible: !!card.item.score

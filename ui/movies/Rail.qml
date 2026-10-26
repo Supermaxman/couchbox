@@ -29,7 +29,7 @@ FocusScope {
         spacing: 16 * M.u
         Rectangle {
             width: 54 * M.u; height: width; radius: 14 * M.u; color: M.accent
-            Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: Qt.size(width, height); source: "icons/mark.svg" }
+            Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: M.sz(width, height); source: "icons/mark.svg" }
         }
         Column {
             anchors.verticalCenter: parent.verticalCenter
@@ -54,7 +54,7 @@ FocusScope {
                 Image {
                     id: icon
                     x: 22 * M.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 30 * M.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 30 * M.u; height: width; sourceSize: M.sz(width, height)
                     source: "icons/" + parent.modelData.icon + ".svg"
                     opacity: parent.sel || parent.cur ? 1 : 0.65
                 }

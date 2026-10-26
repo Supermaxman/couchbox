@@ -39,7 +39,7 @@ FocusScope {
         height: 250 * W.u
         Image {
             id: bigIcon
-            width: 170 * W.u; height: width; sourceSize: Qt.size(width, height)
+            width: 170 * W.u; height: width; sourceSize: W.sz(width, height)
             source: page.day ? W.icon(page.day.icon) : ""
         }
         Column {
@@ -72,7 +72,7 @@ FocusScope {
                             id: dcRow
                             anchors.centerIn: parent
                             spacing: 10 * W.u
-                            Image { anchors.verticalCenter: parent.verticalCenter; width: 24 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.glyph(dc.modelData.glyph) }
+                            Image { anchors.verticalCenter: parent.verticalCenter; width: 24 * W.u; height: width; sourceSize: W.sz(width, height); source: W.glyph(dc.modelData.glyph) }
                             Text { anchors.verticalCenter: parent.verticalCenter; text: dc.modelData.what; color: W.dim; font.family: W.font; font.pixelSize: W.tMeta }
                             Text { anchors.verticalCenter: parent.verticalCenter; text: dc.modelData.level; color: dc.modelData.color; font.family: W.font; font.pixelSize: W.tMeta; font.weight: Font.DemiBold }
                             Text { anchors.verticalCenter: parent.verticalCenter; visible: text !== ""; text: dc.modelData.more; color: W.faint; font.family: W.font; font.pixelSize: W.tMeta }

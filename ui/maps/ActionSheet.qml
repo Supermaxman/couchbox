@@ -50,7 +50,7 @@ FocusScope {
                     Image {
                         id: aic
                         x: 22 * M.u; anchors.verticalCenter: parent.verticalCenter
-                        width: 32 * M.u; height: width; sourceSize: Qt.size(width, height)
+                        width: 32 * M.u; height: width; sourceSize: M.sz(width, height)
                         source: M.icon(parent.modelData.icon || "pin")
                     }
                     Text {

@@ -211,7 +211,7 @@ FocusScope {
                 Image {
                     id: playIcon
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 30 * W.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 30 * W.u; height: width; sourceSize: W.sz(width, height)
                     source: W.glyph(page.playing ? "pause" : "play")
                 }
                 Row {

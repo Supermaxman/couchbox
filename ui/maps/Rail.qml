@@ -32,7 +32,7 @@ FocusScope {
         spacing: 16 * M.u
         Rectangle {
             width: 54 * M.u; height: width; radius: 14 * M.u; color: M.accent
-            Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon("mark") }
+            Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon("mark") }
         }
         Text { anchors.verticalCenter: parent.verticalCenter; text: "Maps"; color: M.text; font.family: M.font; font.pixelSize: 38 * M.u; font.weight: Font.Bold }
     }
@@ -55,7 +55,7 @@ FocusScope {
                 Image {
                     id: ric
                     x: 22 * M.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 30 * M.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 30 * M.u; height: width; sourceSize: M.sz(width, height)
                     source: M.icon(parent.modelData.icon)
                     opacity: parent.sel || parent.cur ? 1 : 0.7
                 }

@@ -69,7 +69,7 @@ FocusScope {
                         id: entryIcon
                         visible: !!entryCol.modelData.icon
                         x: 22 * F.u; anchors.verticalCenter: parent.verticalCenter
-                        width: 30 * F.u; height: width; sourceSize: Qt.size(width, height)
+                        width: 30 * F.u; height: width; sourceSize: F.sz(width, height)
                         source: entryCol.modelData.icon ? F.icon(entryCol.modelData.icon) : ""
                         opacity: parent.sel || parent.cur ? 1 : 0.7
                     }

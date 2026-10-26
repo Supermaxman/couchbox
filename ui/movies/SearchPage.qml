@@ -45,7 +45,7 @@ FocusScope {
         Keys.onReturnPressed: page.ask(page.query)
         Keys.onEnterPressed: page.ask(page.query)
         Keys.onLeftPressed: page.toRail()
-        Image { id: lens; x: 28 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 36 * M.u; height: width; sourceSize: Qt.size(width, height); source: "icons/search.svg"; opacity: 0.7 }
+        Image { id: lens; x: 28 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 36 * M.u; height: width; sourceSize: M.sz(width, height); source: "icons/search.svg"; opacity: 0.7 }
         Text {
             anchors { left: lens.right; leftMargin: 20 * M.u; right: parent.right; rightMargin: 28 * M.u; verticalCenter: parent.verticalCenter }
             text: page.query || "Movies, shows and people  (press OK to type, or use your phone)"

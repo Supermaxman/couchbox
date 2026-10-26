@@ -105,7 +105,7 @@ FocusScope {
                             visible: card.modelData.add === true
                             anchors.centerIn: parent
                             spacing: 14 * M.u
-                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 52 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon("plus"); opacity: 0.8 }
+                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 52 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon("plus"); opacity: 0.8 }
                             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Add a place"; color: M.text2; font.family: M.font; font.pixelSize: M.tBody }
                         }
                         Item {
@@ -115,7 +115,7 @@ FocusScope {
                                 id: badge
                                 width: 64 * M.u; height: width; radius: width / 2
                                 color: card.modelData.kind === "home" ? "#1e3a5f" : card.modelData.kind === "work" ? "#3b2a4a" : "#14352b"
-                                Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon(card.modelData.kind === "home" ? "home" : card.modelData.kind === "work" ? "work" : "star") }
+                                Image { anchors.centerIn: parent; width: 34 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon(card.modelData.kind === "home" ? "home" : card.modelData.kind === "work" ? "work" : "star") }
                             }
                             Column {
                                 anchors { left: badge.right; leftMargin: 20 * M.u; right: parent.right; verticalCenter: badge.verticalCenter }
@@ -136,7 +136,7 @@ FocusScope {
                                     Image {
                                         visible: card.modelData.kind !== "home"
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: 34 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon("car"); opacity: 0.8
+                                        width: 34 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon("car"); opacity: 0.8
                                     }
                                     Text {
                                         text: card.modelData.kind === "home" ? (card.modelData.approx ? "Drive times start from your town" : "Drive times start here")
@@ -174,7 +174,7 @@ FocusScope {
                         color: M.panel
                         border.color: cur ? M.focus : M.line; border.width: cur ? M.ring : 1 * M.u
                         scale: cur ? M.lift : 1
-                        Image { id: rpin; x: 20 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * M.u; height: width; sourceSize: Qt.size(width, height); source: M.icon("recent"); opacity: 0.75 }
+                        Image { id: rpin; x: 20 * M.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * M.u; height: width; sourceSize: M.sz(width, height); source: M.icon("recent"); opacity: 0.75 }
                         Column {
                             anchors { left: rpin.right; leftMargin: 16 * M.u; right: parent.right; rightMargin: 18 * M.u; verticalCenter: parent.verticalCenter }
                             spacing: 2 * M.u

@@ -24,7 +24,7 @@ Rectangle {
         Image {
             visible: !!b.icon
             anchors.verticalCenter: parent.verticalCenter
-            width: 30 * M.u; height: width; sourceSize: Qt.size(width, height)
+            width: 30 * M.u; height: width; sourceSize: M.sz(width, height)
             source: b.icon ? "icons/" + b.icon + (b.primary ? "-dark" : "") + ".svg" : ""
         }
         Text {
