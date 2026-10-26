@@ -98,7 +98,7 @@ jobs:
           ssh-keygen -q -Y sign -f /tmp/key -n couchbox-release dist/release.json
           rm -f /tmp/key
           ssh-keygen -Y verify -f system/keys/allowed_signers -I release@couchbox -n couchbox-release -s dist/release.json.sig < dist/release.json
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with: {subject-path: "dist/*"}
       - name: upload
         env: {GH_TOKEN: "${{ github.token }}", TAG: "${{ inputs.tag }}", PRE: "${{ inputs.prerelease }}"}
