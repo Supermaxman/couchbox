@@ -29,12 +29,14 @@ shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin
 # the Weather app with a made-up fortnight: Today, the 14 days, a day in detail (from an hour
-# picked on Today, and from the list), the alert
+# picked on Today, and from the list), the alert, the radar (playing; paused a frame back, zoomed in)
 shot weather-today couchbox-weather
 shot weather-week couchbox-weather --open week --keys down,down
 shot weather-day couchbox-weather --open day:tomorrow
 shot weather-day-hour couchbox-weather --keys right,right,right,ok
 shot weather-alerts couchbox-weather --open alerts
+shot weather-radar couchbox-weather --open radar
+shot weather-radar-paused couchbox-weather --open radar --keys up,ok,left,left
 # Search with made-up pages: the start page, results (with the AI answer), the toolbar, the
 # reader and a summary
 shot search-start couchbox-search
