@@ -11,7 +11,7 @@ Rectangle {
     Image {
         anchors.centerIn: parent
         width: b.size * 0.62; height: width
-        sourceSize: Qt.size(width, height)
+        sourceSize: F.sz(width, height)
         source: F.icon(b.kind)
         smooth: true
     }

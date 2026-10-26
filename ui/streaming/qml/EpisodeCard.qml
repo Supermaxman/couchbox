@@ -22,7 +22,7 @@ Item {
         Image {
             anchors.fill: parent
             source: D.img(card.c.landscape, D.epW * 1.2, D.epH * 1.2)
-            sourceSize.width: D.epW * 1.2
+            sourceSize.width: D.px(D.epW)
             asynchronous: true
             fillMode: Image.PreserveAspectCrop
         }

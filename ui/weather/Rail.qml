@@ -29,7 +29,7 @@ FocusScope {
         id: brand
         x: 40 * W.u; y: 48 * W.u
         spacing: 16 * W.u
-        Image { width: 58 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.icon("partly-day"); anchors.verticalCenter: parent.verticalCenter }
+        Image { width: 58 * W.u; height: width; sourceSize: W.sz(width, height); source: W.icon("partly-day"); anchors.verticalCenter: parent.verticalCenter }
         Text { anchors.verticalCenter: parent.verticalCenter; text: "Weather"; color: W.text; font.family: W.font; font.pixelSize: 38 * W.u; font.weight: Font.Bold }
     }
 
@@ -52,7 +52,7 @@ FocusScope {
                 Image {
                     id: entryIcon
                     x: 22 * W.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 30 * W.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 30 * W.u; height: width; sourceSize: W.sz(width, height)
                     source: W.glyph(entry.modelData.icon)
                     opacity: entry.sel || entry.cur ? 1 : 0.7
                 }

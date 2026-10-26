@@ -170,7 +170,7 @@ FocusScope {
                 x: 150 * M.u; anchors.verticalCenter: parent.verticalCenter
                 width: 72 * M.u; height: 108 * M.u; radius: 8 * M.u; clip: true
                 color: Qt.hsla(M.hue(rowItem.modelData.title), 0.4, 0.22, 1)
-                Image { anchors.fill: parent; source: rowItem.modelData.poster || ""; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize.width: 92 }
+                Image { anchors.fill: parent; source: rowItem.modelData.poster || ""; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize.width: M.px(width) }
             }
             Column {
                 anchors { left: thumb.right; leftMargin: 26 * M.u; right: score.left; rightMargin: 20 * M.u; verticalCenter: parent.verticalCenter }

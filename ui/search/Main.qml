@@ -205,7 +205,7 @@ ApplicationWindow {
             readonly property bool sel: bar.activeFocus && bar.idx === 0
             color: sel ? S.panel2 : S.panel
             border.color: sel ? S.focus : S.line; border.width: (sel ? 3 : 1) * S.u
-            Image { id: g2; x: 26 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/search.svg"; opacity: 0.7 }
+            Image { id: g2; x: 26 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/search.svg"; opacity: 0.7 }
             Text {
                 anchors { left: g2.right; leftMargin: 18 * S.u; right: parent.right; rightMargin: 28 * S.u; verticalCenter: parent.verticalCenter }
                 text: win.query || view.title || view.url.toString()
@@ -252,7 +252,7 @@ ApplicationWindow {
             spacing: 8 * S.u
             Row {
                 spacing: 12 * S.u
-                Image { width: 28 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/spark.svg"; anchors.verticalCenter: parent.verticalCenter }
+                Image { width: 28 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/spark.svg"; anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "AI answer"; color: S.ai; font.family: S.font; font.pixelSize: S.tMeta; font.weight: Font.Bold; anchors.verticalCenter: parent.verticalCenter }
                 Text { text: "· written by the assistant from the results below; check them"; color: S.dim; font.family: S.font; font.pixelSize: 19 * S.u; anchors.verticalCenter: parent.verticalCenter }
             }

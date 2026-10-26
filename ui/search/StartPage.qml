@@ -32,7 +32,7 @@ FocusScope {
             spacing: 22 * S.u
             Rectangle {
                 width: 84 * S.u; height: width; radius: 20 * S.u; color: S.accent
-                Image { anchors.centerIn: parent; width: 52 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/search.svg" }
+                Image { anchors.centerIn: parent; width: 52 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/search.svg" }
             }
             Text { text: "Search"; color: S.text; font.family: S.font; font.pixelSize: 64 * S.u; font.weight: Font.Bold; anchors.verticalCenter: parent.verticalCenter }
         }
@@ -42,7 +42,7 @@ FocusScope {
             color: page.idx === 0 && page.activeFocus ? S.panel2 : S.panel
             border.color: page.idx === 0 && page.activeFocus ? S.focus : S.line
             border.width: (page.idx === 0 && page.activeFocus ? 4 : 1.5) * S.u
-            Image { id: glass; x: 36 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 40 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/search.svg"; opacity: 0.7 }
+            Image { id: glass; x: 36 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 40 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/search.svg"; opacity: 0.7 }
             Text {
                 anchors { left: glass.right; leftMargin: 24 * S.u; right: parent.right; rightMargin: 40 * S.u; verticalCenter: parent.verticalCenter }
                 text: "Search Google or type an address"
@@ -72,7 +72,7 @@ FocusScope {
                 border.color: sel ? S.focus : "transparent"; border.width: 3 * S.u
                 scale: sel ? 1.02 : 1
                 Behavior on scale { NumberAnimation { duration: 120 } }
-                Image { id: clock; x: 26 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/history.svg"; opacity: 0.6 }
+                Image { id: clock; x: 26 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/history.svg"; opacity: 0.6 }
                 Text {
                     anchors { left: clock.right; leftMargin: 22 * S.u; right: parent.right; rightMargin: 26 * S.u; verticalCenter: parent.verticalCenter }
                     text: modelData; color: S.text2; font.family: S.font; font.pixelSize: S.tBody; elide: Text.ElideRight

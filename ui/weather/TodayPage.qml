@@ -50,7 +50,7 @@ FocusScope {
             readonly property bool cur: page.activeFocus && page.zone === 0
             color: Qt.rgba(0.96, 0.62, 0.04, 0.12)
             border.color: cur ? W.focus : (a ? a.color : W.warm); border.width: cur ? W.ring : 2 * W.u
-            Image { id: alertIcon; x: 26 * W.u; anchors.verticalCenter: parent.verticalCenter; width: 38 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.glyph("alert") }
+            Image { id: alertIcon; x: 26 * W.u; anchors.verticalCenter: parent.verticalCenter; width: 38 * W.u; height: width; sourceSize: W.sz(width, height); source: W.glyph("alert") }
             Text {
                 anchors { left: alertIcon.right; leftMargin: 18 * W.u; right: alertMore.left; rightMargin: 18 * W.u; verticalCenter: parent.verticalCenter }
                 text: parent.a ? parent.a.event + (parent.a.until ? "  ·  until " + parent.a.until : "") : ""
@@ -74,7 +74,7 @@ FocusScope {
                 Row {
                     spacing: 18 * W.u
                     Image {
-                        width: 190 * W.u; height: width; sourceSize: Qt.size(width, height)
+                        width: 190 * W.u; height: width; sourceSize: W.sz(width, height)
                         source: page.d ? W.icon(page.d.now.icon) : ""
                     }
                     Column {
@@ -193,7 +193,7 @@ FocusScope {
                     text: card.midnight ? Qt.formatDate(new Date(card.modelData.date + "T12:00:00"), "ddd") : card.modelData.hour
                     color: card.midnight ? W.accent : W.dim; font.family: W.font; font.pixelSize: W.tMeta; font.weight: card.midnight ? Font.Bold : Font.Medium
                 }
-                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 64 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.icon(card.modelData.icon) }
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 64 * W.u; height: width; sourceSize: W.sz(width, height); source: W.icon(card.modelData.icon) }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: W.deg(card.modelData.temp)
@@ -233,7 +233,7 @@ FocusScope {
                 Image {
                     id: chipIcon
                     x: 22 * W.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 38 * W.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 38 * W.u; height: width; sourceSize: W.sz(width, height)
                     source: W.glyph(chip.modelData.code.toLowerCase())
                     opacity: chip.modelData.value > 0 ? 1 : 0.5
                 }

@@ -137,7 +137,7 @@ FocusScope {
                 Image {
                     visible: index === 0
                     x: 22 * F.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 28 * F.u; height: width; sourceSize: Qt.size(width, height)
+                    width: 28 * F.u; height: width; sourceSize: F.sz(width, height)
                     source: F.icon("timeline"); opacity: 0.8
                 }
                 Text {
@@ -174,14 +174,14 @@ FocusScope {
             Image {
                 anchors.centerIn: parent
                 visible: a.status !== Image.Ready && b.status !== Image.Ready
-                width: 80 * F.u; height: width; sourceSize: Qt.size(width, height)
+                width: 80 * F.u; height: width; sourceSize: F.sz(width, height)
                 source: F.icon("timeline"); opacity: 0.12
             }
             Image { id: a; anchors.fill: parent; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: false; visible: frameBox.showA
-                    sourceSize.height: Math.round(frameBox.height)
+                    sourceSize.height: F.px(frameBox.height)
                     onStatusChanged: if (status === Image.Ready && !frameBox.showA) frameBox.showA = true }
             Image { id: b; anchors.fill: parent; fillMode: Image.PreserveAspectFit; asynchronous: true; cache: false; visible: !frameBox.showA
-                    sourceSize.height: Math.round(frameBox.height)
+                    sourceSize.height: F.px(frameBox.height)
                     onStatusChanged: if (status === Image.Ready && frameBox.showA) frameBox.showA = false }
             Timer {                              // after the cursor stops: the recorded picture there
                 id: settle

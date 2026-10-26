@@ -160,7 +160,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         visible: win.mode !== "app"
         spacing: 30 * win.u
-        Image { anchors.horizontalCenter: parent.horizontalCenter; width: 160 * win.u; height: width; sourceSize: Qt.size(width, height); source: W.icon(win.mode === "problem" ? "cloudy" : "partly-day"); opacity: 0.8 }
+        Image { anchors.horizontalCenter: parent.horizontalCenter; width: 160 * win.u; height: width; sourceSize: W.sz(width, height); source: W.icon(win.mode === "problem" ? "cloudy" : "partly-day"); opacity: 0.8 }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             width: Math.min(implicitWidth, 1100 * win.u)

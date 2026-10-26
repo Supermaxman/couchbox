@@ -19,7 +19,7 @@ Rectangle {
         id: ic
         visible: !!b.icon
         anchors { left: parent.left; leftMargin: 26 * M.u; verticalCenter: parent.verticalCenter }
-        width: 34 * M.u; height: width; sourceSize: Qt.size(width, height)
+        width: 34 * M.u; height: width; sourceSize: M.sz(width, height)
         source: b.icon ? M.icon(b.icon) : ""
     }
     Column {

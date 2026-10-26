@@ -6,6 +6,10 @@ import QtQuick
 
 QtObject {
     id: d
+    // Image sizes in real pixels: the TV may run scaled (QT_SCALE_FACTOR 1.5), and Qt decodes an
+    // Image at its sourceSize as given, so logical sizes come out soft. sourceSize.width: D.px(width)
+    readonly property real dpr: Qt.application.screens.length ? Qt.application.screens[0].devicePixelRatio : 1
+    function px(n) { return Math.ceil(n * dpr); }
 
     property real u: 1                         // Main sets height / 1080
     property var site: ({})                    // Main sets it: name, accent, logo (vhx.SITES)

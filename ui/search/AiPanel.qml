@@ -26,7 +26,7 @@ FocusScope {
         id: head
         x: 34 * S.u; y: 30 * S.u
         spacing: 14 * S.u
-        Image { width: 34 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/spark.svg"; anchors.verticalCenter: parent.verticalCenter }
+        Image { width: 34 * S.u; height: width; sourceSize: S.sz(width, height); source: "icons/spark.svg"; anchors.verticalCenter: parent.verticalCenter }
         Text { text: p.title; color: S.text; font.family: S.font; font.pixelSize: S.tHead; font.weight: Font.Bold; anchors.verticalCenter: parent.verticalCenter }
     }
     Text {

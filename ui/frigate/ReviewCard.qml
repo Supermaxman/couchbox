@@ -28,7 +28,7 @@ Item {
             Image {
                 anchors.centerIn: parent
                 visible: thumb.status !== Image.Ready
-                width: 64 * F.u; height: width; sourceSize: Qt.size(width, height)
+                width: 64 * F.u; height: width; sourceSize: F.sz(width, height)
                 source: F.icon(card.kinds.length ? card.kinds[0].kind : "motion")
                 opacity: 0.18
             }
@@ -36,7 +36,7 @@ Item {
                 id: thumb
                 anchors.fill: parent
                 source: card.r.thumb || ""
-                sourceSize.width: Math.round(card.width)
+                sourceSize.width: F.px(card.width)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
             }

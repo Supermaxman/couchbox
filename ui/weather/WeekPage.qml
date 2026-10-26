@@ -64,7 +64,7 @@ FocusScope {
             Image {
                 id: dayIcon
                 anchors { left: dayCol.right; leftMargin: 10 * W.u; verticalCenter: parent.verticalCenter }
-                width: 70 * W.u; height: width; sourceSize: Qt.size(width, height)
+                width: 70 * W.u; height: width; sourceSize: W.sz(width, height)
                 source: W.icon(row.modelData.icon)
             }
             Text {
@@ -80,7 +80,7 @@ FocusScope {
                 width: 210 * W.u
                 spacing: 8 * W.u
                 opacity: row.modelData.rain >= 10 || row.modelData.precip > 0 ? 1 : 0.35
-                Image { anchors.verticalCenter: parent.verticalCenter; width: 24 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.glyph("rain") }
+                Image { anchors.verticalCenter: parent.verticalCenter; width: 24 * W.u; height: width; sourceSize: W.sz(width, height); source: W.glyph("rain") }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.modelData.rain + "%" + (row.modelData.precip > 0 ? "  " + W.amount(row.modelData.precip) : "")

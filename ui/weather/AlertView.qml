@@ -33,7 +33,7 @@ FocusScope {
             spacing: 22 * W.u
             Row {
                 spacing: 18 * W.u
-                Image { width: 54 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.glyph("alert"); anchors.verticalCenter: parent.verticalCenter }
+                Image { width: 54 * W.u; height: width; sourceSize: W.sz(width, height); source: W.glyph("alert"); anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     text: view.a ? view.a.event : ""
                     color: view.a ? view.a.color : W.warm; font.family: W.font; font.pixelSize: W.tTitle; font.weight: Font.Bold
