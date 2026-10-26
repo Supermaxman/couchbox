@@ -104,8 +104,6 @@ FocusScope {
                 color: d.cur ? (page.moving && d.r.kind === "app" ? T.accent : T.panel2) : d.r.kind === "info" || d.r.kind === "qr" ? "transparent" : T.panel
                 border.color: d.cur ? T.accent : "transparent"
                 border.width: 3 * T.u
-                scale: d.cur ? 1.01 : 1
-                Behavior on scale { NumberAnimation { duration: 90 } }
 
                 Column {
                     id: col
