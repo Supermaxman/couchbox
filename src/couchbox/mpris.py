@@ -6,7 +6,7 @@ our libmpv player has to too. This serves org.mpris.MediaPlayer2.<name> on the s
 (dbus-python on a GLib loop in its own thread) and hands the commands to Qt.
 
     bridge = Mpris("couchbox_dropout", "Dropout", "couchbox-streaming")    # a QObject
-    bridge.command -> ("playpause" | "play" | "pause" | "stop" | "next" | "seek", seconds)
+    bridge.command -> ("playpause" | "play" | "pause" | "stop" | "next" | "previous" | "seek", seconds)
     bridge.update(playing, paused, title, artist, length_s, position_s)   from QML
 """
 
@@ -56,7 +56,8 @@ class _Service(dbus.service.Object):
 
     @dbus.service.method(PLAYER)
     def Previous(self):
-        self.bridge.command.emit("seek", -30.0)
+        # the previous song (Spotify); the video apps go back 30 s (they have no previous)
+        self.bridge.command.emit("previous", -30.0)
 
     @dbus.service.method(PLAYER, in_signature="x")
     def Seek(self, offset_us):

@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox media keys: the remote's Play/Pause, Rewind and Fast-forward for whatever is playing
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-mediakeys
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

@@ -18,6 +18,7 @@
 │  ├─ native apps ......... Seerr, Twitch, Nebula, Dropout, 2nd Try (QML + libmpv)    │
 │  ├─ Flatpak apps ........ YouTube (VacuumTube), Chromium web apps, Jellyfin, FCast  │
 │  ├─ couchbox-airplay .... UxPlay                                                    │
+│  ├─ couchbox-mediakeys .. Play/Pause, Rewind, FF → whatever is playing (MPRIS)      │
 │  └─ voice overlay ....... the pill at the bottom of the screen (layer-shell QML)    │
 │                │  Unix socket /run/couchbox/couchboxd.sock (group couchbox)         │
 │                ▼                                                                    │
@@ -47,6 +48,7 @@
 | `couchbox-phone` | Python | own user | Phone typing and remote page, QR | `mtv-type` |
 | `couchbox-updater` | Python | root | [updates-and-releases.md](updates-and-releases.md) | `mtv-update` (manual) |
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
+| `couchbox-mediakeys` | Python | tv | The remote's media keys for whatever is playing: the app in front's player, else the one playing, else the one paused last, over MPRIS (couchbox-input hands it the keys) | new |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
 | Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Maps, Movies & TV, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |

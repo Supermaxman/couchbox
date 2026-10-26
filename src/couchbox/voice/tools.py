@@ -837,6 +837,15 @@ KEYS = {
 _ui = None
 
 
+def media_key(action):
+    """Play/Pause etc. through couchbox-mediakeys (the player in front, else what's playing);
+    False if it had nothing to control or isn't running."""
+    try:
+        return bool(appctl.call("mediakeys", {"op": "key", "action": action}, timeout=2).get("player"))
+    except (appctl.NotRunning, OSError, ValueError, RuntimeError):
+        return False
+
+
 def press(keys):
     global _ui
     if _ui is None:
@@ -848,6 +857,9 @@ def press(keys):
         if name not in KEYS:
             return f"Unknown key {name}. Keys: {', '.join(KEYS)}."
         for _ in range(int(n or 1)):
+            if name == "play_pause" and media_key("playpause"):  # whatever is playing, like the remote's key
+                time.sleep(0.25)
+                continue
             _ui.write(e.EV_KEY, KEYS[name], 1)
             _ui.syn()
             _ui.write(e.EV_KEY, KEYS[name], 0)

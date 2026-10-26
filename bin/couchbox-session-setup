@@ -34,9 +34,16 @@ printf '[Desktop Entry]\nType=Application\nName=Couchbox display mode\nExec=/usr
   | as tee "$H/.config/autostart/couchbox-display.desktop" >/dev/null
 printf '[Desktop Entry]\nType=Application\nName=Couchbox setup\nExec=/usr/lib/couchbox/bin/couchbox-setup --if-needed\nX-KDE-autostart-phase=2\n' \
   | as tee "$H/.config/autostart/couchbox-setup.desktop" >/dev/null
-for u in couchbox-airplay.service couchbox-voice-overlay.service; do
+for u in couchbox-airplay.service couchbox-voice-overlay.service couchbox-mediakeys.service; do
   as ln -sfn "/usr/lib/systemd/user/$u" "$H/.config/systemd/user/graphical-session.target.wants/$u"
 done
+# (re)start the media keys service in a running TV session, so an update doesn't wait for the
+# next login (it only remembers what played last; until it runs, keys go to Plasma as before)
+R=/run/user/$(id -u "$U")
+if [ -S "$R/bus" ]; then
+  as env XDG_RUNTIME_DIR="$R" DBUS_SESSION_BUS_ADDRESS="unix:path=$R/bus" sh -c \
+    'systemctl --user daemon-reload && systemctl --user restart couchbox-mediakeys.service' >/dev/null 2>&1 || true
+fi
 rm -rf "$H/.local/share/couchbox/web-extension"
 cp -r /usr/share/couchbox/web-extension "$H/.local/share/couchbox/web-extension"
 chown -R "$U:$U" "$H/.local/share/couchbox"
