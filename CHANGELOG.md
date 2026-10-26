@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/Supermaxman/couchbox/compare/v0.10.1...v0.11.0) (2026-10-26)
+
+
+### New
+
+* **remote:** Play/Pause, Rewind and Fast-forward control whatever is playing ([#59](https://github.com/Supermaxman/couchbox/issues/59)) ([8adba9b](https://github.com/Supermaxman/couchbox/commit/8adba9b5421d2cf918701fff518167f73bf6bf0b))
+
+
+### Fixed
+
+* **settings:** focused rows no longer grow past the list's edges ([#55](https://github.com/Supermaxman/couchbox/issues/55)) ([8e8ec1a](https://github.com/Supermaxman/couchbox/commit/8e8ec1ac292d91721d39d97eebaa34a94666281d))
+* **spotify:** sharp covers, and Now Playing shows the art, artists and length ([#57](https://github.com/Supermaxman/couchbox/issues/57)) ([1f99073](https://github.com/Supermaxman/couchbox/commit/1f9907384f5389a6996de9fa814bbc4c000a8598))
+* **twitch:** stop signing out after an hour ([#56](https://github.com/Supermaxman/couchbox/issues/56)) ([468993c](https://github.com/Supermaxman/couchbox/commit/468993c07f9b3e9980edeb4e393673534f8e9c9a))
+
 ## [0.10.1](https://github.com/Supermaxman/couchbox/compare/v0.10.0...v0.10.1) (2026-10-26)
 
 
