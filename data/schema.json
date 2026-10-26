@@ -29,6 +29,7 @@
     "media.jellyfin.url": {"type": "url", "default": "", "page": "apps", "label": "Jellyfin server"},
     "media.jellyfin.client": {"type": "enum", "values": ["native", "web"], "default": "native", "page": "apps", "label": "Jellyfin player", "help": "Native plays HEVC on the Pi's hardware decoder."},
     "media.seerr.url": {"type": "url", "default": "", "page": "apps", "label": "Seerr server"},
+    "media.frigate.url": {"type": "url", "default": "", "page": "apps", "label": "Frigate server"},
     "apps.disabled": {"type": "list", "items": "string", "default": [], "page": "apps", "label": "Turned-off apps"},
     "apps.youtube.captions": {"type": "string", "default": "en", "pattern": "^([a-z]{2}(-[A-Z]{2})?)?$", "page": "apps", "label": "YouTube captions", "help": "Language turned on for every video. Empty: off."},
     "apps.player.captions": {"type": "bool", "default": true, "page": "apps", "label": "Subtitles on by default"},

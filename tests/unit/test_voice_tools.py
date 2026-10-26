@@ -141,3 +141,20 @@ def test_cookie_browser_is_stopped_even_when_it_escaped(tmp_path):
     vhx.stop_browser(proc, tmp)
     assert proc.poll() is not None
     assert subprocess.run(["pgrep", "-f", f"--user-data-dir={tmp}"], capture_output=True).returncode != 0
+
+
+def test_frigate_needs_its_server_and_finds_cameras_by_name():
+    assert "frigate" not in names()
+    settings.update({"media.frigate.url": "https://frigate.example"})
+    assert "frigate" in names()
+    settings.update({"home.hidden": ["frigate"]})
+    assert "frigate" not in names()
+    cams = [
+        {"name": "front_door", "label": "Front Door"},
+        {"name": "backyard", "label": "Backyard"},
+        {"name": "backyard_left", "label": "Backyard Left"},
+    ]
+    assert tools.match_camera("front door", cams)["name"] == "front_door"
+    assert tools.match_camera("the backyard camera", cams)["name"] == "backyard"
+    assert tools.match_camera("backyard left cam", cams)["name"] == "backyard_left"
+    assert tools.match_camera("garage", cams) is None

@@ -54,6 +54,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `media.jellyfin.client` | `native` | `native` (hardware HEVC, couchbox-media) or `web` | `9-jellyfin-hevc.sh` |
 | `media.seerr.url` | unset | Seerr app sign-in uses Seerr's own login. Tile hidden until set | `MTV_SEERR_URL` |
 | `media.seerr.api_key` 🔒 | unset | Optional, only for voice requests | `secrets/seerr-key` |
+| `media.frigate.url` | unset | Frigate (cameras). Tile hidden until set; the app signs in with a Frigate user (kept in the TV user's `~/.local/share/couchbox-frigate`, mode 600) | — |
 | `apps.youtube.captions` | `en` | Captions language turned on for each video; empty = off | `MTV_YT_CAPTIONS` |
 | `apps.player.captions` | `on` | Native apps: subtitles on by default | per-app setting |
 | `apps.twitch.chat` | `overlay` | overlay, side, off | per-app setting |

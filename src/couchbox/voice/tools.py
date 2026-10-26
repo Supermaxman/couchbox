@@ -871,7 +871,13 @@ def tv(action, times=1):
 # their servers set). Descriptions stay short: the model reads them on every request.
 
 STREAMING_ACTIONS = ["continue", "search", "shows", "latest", "episodes", "resume", "play", "open", "mylist"]
-TOOL_APP = {"youtube": "youtube", "jellyfin": "jellyfin", "seerr": "seerr", **{t: a for t, (_, a) in streaming.SITES.items()}}
+TOOL_APP = {
+    "youtube": "youtube",
+    "jellyfin": "jellyfin",
+    "seerr": "seerr",
+    "frigate": "frigate",
+    **{t: a for t, (_, a) in streaming.SITES.items()},
+}
 
 
 def schemas():
@@ -888,6 +894,8 @@ def disabled_tools(st):
         off.add("jellyfin")
     if not (st["media.seerr.url"] and secrets.is_set("media.seerr.api_key")):
         off.add("seerr")
+    if not st["media.frigate.url"]:
+        off.add("frigate")
     if not any(a.kind == "web" for a in registry.home_row(st) if a.hideable):
         off.add("page")
     return off
@@ -937,6 +945,14 @@ def _schemas(st=None):
                 query=q,
                 id=q,
                 type={"type": "string", "enum": ["movie", "tv"]},
+            ),
+        ),
+        fn(
+            "frigate",
+            "Home security cameras (Frigate): show one live, all of them, or the alerts.",
+            s(
+                action=act(["camera", "all", "alerts", "detections"], "camera: show the camera named in query full screen, live"),
+                query=q,
             ),
         ),
     ]
@@ -1058,6 +1074,7 @@ def status_text(name, args):
         "remote": lambda: "Pressing " + ", ".join(a.get("keys") or []),
         "tv": lambda: "TV " + str(a.get("action", "")).replace("_", " "),
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
+        "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1075,6 +1092,36 @@ def run_streaming(tool, args):
     )
 
 
+def match_camera(query, cams):
+    """The camera a spoken name means ("front door", "the backyard cam"), or None."""
+    q = re.sub(r"\b(the|camera|cam)\b", " ", (query or "").lower().replace("_", " "))
+    q = " ".join(q.split())
+    if not q:
+        return None
+    for c in cams:  # exact first, then contained either way
+        if q in (c["name"].replace("_", " "), c["label"].lower()):
+            return c
+    hits = [c for c in cams if q in c["label"].lower() or c["label"].lower() in q]
+    return min(hits, key=lambda c: len(c["label"])) if hits else None
+
+
+def frigate_tool(action, query=None):
+    a = registry.get("frigate")
+    streaming.ensure("frigate", start=lambda: open_app(a.name, wait=False))
+    if action == "camera":
+        cams = appctl.call("frigate", {"op": "call", "fn": "config"}, timeout=30)["cameras"]
+        cam = match_camera(query, cams)
+        if not cam:
+            return f"No camera called {query!r}. Cameras: " + ", ".join(c["label"] for c in cams)
+        target, said = f"camera:{cam['name']}", f"Showing {cam['label']}, live."
+    else:
+        target = {"all": "live", "alerts": "alerts", "detections": "detections"}.get(action, "live")
+        said = {"live": "Showing all cameras.", "alerts": "Showing the alerts.", "detections": "Showing the detections."}[target]
+    appctl.call("frigate", {"op": "open", "target": target})
+    raise_window(a.desktop, a.name)
+    return said
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1087,6 +1134,7 @@ def run_tool(name, args):
         "remote": lambda: press(args.get("keys") or []),
         "tv": lambda: tv(args["action"], args.get("times") or 1),
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
+        "frigate": lambda: frigate_tool(args["action"], args.get("query")),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)
