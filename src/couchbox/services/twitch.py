@@ -111,18 +111,38 @@ class Twitch:
         except (OSError, ValueError):
             self.auth = {}
 
+    def _due(self):
+        """Near expiry. Twitch's TV-app tokens say expires_in 0: they don't expire (expires_at 0)."""
+        e = self.auth.get("expires_at", 0)
+        return bool(e) and time.time() > e - 300
+
+    def _check(self):
+        """Ask Twitch whether the token still works: 200 yes, 401 no, else unknown (keep it)."""
+        try:
+            r = self.s.get(
+                "https://id.twitch.tv/oauth2/validate",
+                headers={"Authorization": f"OAuth {self.auth.get('access_token', '')}"},
+                timeout=TIMEOUT,
+            )
+        except requests.RequestException:
+            return 0
+        if r.status_code == 200:
+            n = int((r.json() or {}).get("expires_in") or 0)
+            self.auth["expires_at"] = time.time() + n if n else 0
+        return r.status_code
+
     def token(self, force=False):
         """The user's access token, refreshed when it's near expiry ("" when signed out)."""
         if not self.signed_in:
             return ""
-        if (force or time.time() > self.auth.get("expires_at", 0) - 300) and self.auth.get("refresh_token"):
+        if (force or self._due()) and self.auth.get("refresh_token"):
             with open(os.path.join(self.dir, ".lock"), "w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
                 mine = self.auth.get("refresh_token")
                 self._reload()  # another process (the app, keep_alive) may have refreshed already
                 if not self.signed_in:
                     return ""
-                if self.auth.get("refresh_token") != mine and time.time() < self.auth.get("expires_at", 0) - 300:
+                if not self._due() and (not force or self.auth.get("refresh_token") != mine):
                     return self.auth["access_token"]
                 r = self.s.post(
                     "https://id.twitch.tv/oauth2/token",
@@ -131,23 +151,37 @@ class Twitch:
                 )
                 if r.ok:
                     j = r.json()
+                    n = int(j.get("expires_in") or 0)
                     self.auth.update(
                         access_token=j["access_token"],
                         refresh_token=j.get("refresh_token", self.auth["refresh_token"]),
-                        expires_at=time.time() + int(j.get("expires_in") or 3600),
+                        expires_at=time.time() + n if n else 0,
                         refreshed_at=time.time(),
                     )
                     self._save()
-                elif r.status_code in (400, 401):  # revoked, password changed, or 30 days unused
-                    print(f"twitch: refresh refused ({r.status_code} {r.text[:120]}): signed out", flush=True)
-                    self.sign_out()
-                    return ""
+                elif r.status_code in (400, 401):
+                    # Refused: the TV app's client can't refresh at all ("missing client secret"),
+                    # so only sign out when the token itself is dead (revoked, password changed).
+                    if self._check() == 401:
+                        print(f"twitch: refresh refused ({r.status_code} {r.text[:120]}), token invalid: signed out", flush=True)
+                        self.sign_out()
+                        return ""
+                    self.auth["refreshed_at"] = time.time()
+                    self._save()
         return self.auth.get("access_token", "")
 
     def keep_alive(self, every=7 * 86400):
-        """Refresh a token that hasn't been refreshed for a week (Twitch drops it after 30 days unused)."""
+        """Weekly: refresh a token that expires (Twitch drops it after 30 days unused); check one
+        that doesn't, and sign out if Twitch no longer takes it."""
         if self.signed_in and time.time() - self.auth.get("refreshed_at", self.auth.get("signed_in_at", 0)) > every:
-            return bool(self.token(force=True))
+            if self.auth.get("expires_at") and self.auth.get("refresh_token"):
+                return bool(self.token(force=True))
+            if self._check() == 401:
+                print("twitch: token no longer valid: signed out", flush=True)
+                self.sign_out()
+                return False
+            self.auth["refreshed_at"] = time.time()
+            self._save()
         return self.signed_in
 
     def status(self):
@@ -196,7 +230,7 @@ class Twitch:
             auth = {
                 "access_token": j["access_token"],
                 "refresh_token": j.get("refresh_token", ""),
-                "expires_at": time.time() + int(j.get("expires_in") or 3600),
+                "expires_at": time.time() + int(j["expires_in"]) if j.get("expires_in") else 0,  # 0: never
                 "signed_in_at": time.time(),
             }
             v = self.s.get(
