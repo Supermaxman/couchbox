@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Weather
+Comment=The forecast where the TV is: today, the next two weeks, hour by hour
+Icon=weather-few-clouds
+Categories=Utility;
+Exec=/usr/lib/couchbox/bin/couchbox-weather
+StartupWMClass=couchbox-weather

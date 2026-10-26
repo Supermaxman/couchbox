@@ -171,3 +171,24 @@ def test_frigate_timeline_opens_the_named_camera(monkeypatch):
     assert calls[-1] == {"op": "open", "target": "timeline:garage"}
     assert tools.frigate_tool("timeline") == "Showing the last day."
     assert calls[-1] == {"op": "open", "target": "timeline"}
+
+
+def test_weather_needs_a_town_and_answers_from_the_forecast(monkeypatch):
+    from couchbox.services import weather
+
+    assert "weather" not in names()
+    settings.update({"location.name": "Lakeside", "location.lat": 45.6, "location.lon": -122.7, "time.timezone": "America/Los_Angeles"})
+    assert "weather" in names()
+    monkeypatch.setattr(tools, "_weather", weather.Weather(demo=True))
+    out = tools.weather_tool("day", "tomorrow")
+    assert "Tomorrow" in out and "°F" in out and "Shown" not in out
+    calls = []
+    monkeypatch.setattr(tools.registry, "get", lambda *a: type("A", (), {"name": "Weather", "desktop": "couchbox-weather"})())
+    monkeypatch.setattr(tools.streaming, "ensure", lambda *a, **k: None)
+    monkeypatch.setattr(tools, "raise_window", lambda *a: None)
+    monkeypatch.setattr(tools.appctl, "call", lambda site, req, **k: calls.append((site, req)) or {"ok": True})
+    tools.weather_tool("day", "tomorrow", show=True)
+    assert calls[-1][0] == "weather" and calls[-1][1]["target"].startswith("day:")
+    tools.weather_tool("week", show=True)
+    assert calls[-1][1] == {"op": "open", "target": "week"}
+    assert "Today" in tools.weather_tool("now")

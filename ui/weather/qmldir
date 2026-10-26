@@ -1,0 +1,8 @@
+singleton W 1.0 W.qml
+Rail 1.0 Rail.qml
+TodayPage 1.0 TodayPage.qml
+WeekPage 1.0 WeekPage.qml
+DayPage 1.0 DayPage.qml
+AlertView 1.0 AlertView.qml
+Chart 1.0 Chart.qml
+Stat 1.0 Stat.qml

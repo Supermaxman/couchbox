@@ -28,5 +28,12 @@ shot frigate-recording couchbox-frigate --open review --keys right,ok
 shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin
+# the Weather app with a made-up fortnight: Today, the 14 days, a day in detail (from an hour
+# picked on Today, and from the list), the alert
+shot weather-today couchbox-weather
+shot weather-week couchbox-weather --open week --keys down,down
+shot weather-day couchbox-weather --open day:tomorrow
+shot weather-day-hour couchbox-weather --keys right,right,right,ok
+shot weather-alerts couchbox-weather --open alerts
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail
