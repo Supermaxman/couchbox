@@ -158,3 +158,16 @@ def test_frigate_needs_its_server_and_finds_cameras_by_name():
     assert tools.match_camera("the backyard camera", cams)["name"] == "backyard"
     assert tools.match_camera("backyard left cam", cams)["name"] == "backyard_left"
     assert tools.match_camera("garage", cams) is None
+
+
+def test_frigate_timeline_opens_the_named_camera(monkeypatch):
+    calls = []
+    cams = [{"name": "front_door", "label": "Front Door"}, {"name": "garage", "label": "Garage"}]
+    monkeypatch.setattr(tools.registry, "get", lambda *a: type("A", (), {"name": "Frigate", "desktop": "couchbox-frigate"})())
+    monkeypatch.setattr(tools.streaming, "ensure", lambda *a, **k: None)
+    monkeypatch.setattr(tools, "raise_window", lambda *a: None)
+    monkeypatch.setattr(tools.appctl, "call", lambda site, req, **k: calls.append(req) or {"cameras": cams})
+    assert tools.frigate_tool("timeline", "the garage") == "Showing the last day of Garage."
+    assert calls[-1] == {"op": "open", "target": "timeline:garage"}
+    assert tools.frigate_tool("timeline") == "Showing the last day."
+    assert calls[-1] == {"op": "open", "target": "timeline"}

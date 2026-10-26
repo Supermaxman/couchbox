@@ -12,7 +12,8 @@
                                               (/live/mse/api/ws?src=<stream>, the one live route
                                               behind its login), unwrapped into one fMP4 stream
   data       /api/config (cameras, camera groups), /api/review (alerts and detections),
-             /api/reviews/viewed
+             /api/reviews/viewed, /api/review/activity/motion (the timeline's motion),
+             /api/<camera>/recordings/<time>/snapshot.jpg (the timeline's picture under the cursor)
 
 Demo mode (tests, screenshots) answers with made-up cameras and alerts and no server.
 """
@@ -44,6 +45,27 @@ def label(name):
     return " ".join(w.capitalize() for w in name.replace("-", "_").split("_") if w)
 
 
+# What the app has an icon for (ui/frigate/icons); other labels share one.
+KINDS = {"person", "car", "motorcycle", "bicycle", "dog", "cat", "bird", "horse", "package", "face", "license_plate"}
+ALIASES = {
+    "truck": "car",
+    "bus": "car",
+    "van": "car",
+    "motorbike": "motorcycle",
+    "plate": "license_plate",
+    **dict.fromkeys(
+        ("amazon", "ups", "fedex", "usps", "dhl", "dpd", "gls", "an_post", "purolator", "postnl", "nzpost", "postnord"), "package"
+    ),
+}
+
+
+def kind(name):
+    """A Frigate label -> its icon: person, car (also trucks, buses), package (also the delivery
+    companies' logos Frigate+ finds), ..., or object."""
+    k = ALIASES.get(name, name)
+    return k if k in KINDS else "object"
+
+
 class Frigate:
     def __init__(self, url="", demo=False):
         self.demo = demo
@@ -63,6 +85,7 @@ class Frigate:
         self.s.headers["User-Agent"] = "couchbox-frigate"
         self.lock = threading.Lock()
         self.relay = None
+        self.labels = {}  # camera -> its friendly name (from config())
 
     # ------------------------------------------------------------------ session
     @property
@@ -173,6 +196,7 @@ class Frigate:
                 }
             )
         cams.sort(key=lambda x: (x["order"], x["name"]))
+        self.labels = {x["name"]: x["label"] for x in cams}
         known = {x["name"] for x in cams}
         groups = [{"name": "All cameras", "icon": "", "cameras": [x["name"] for x in cams]}]
         for name, g in sorted((c.get("camera_groups") or {}).items(), key=lambda kv: (kv[1].get("order", 0), kv[0])):
@@ -185,18 +209,23 @@ class Frigate:
         start, end = r.get("start_time") or 0, r.get("end_time")
         data = r.get("data") or {}
         objects = list(dict.fromkeys((data.get("sub_labels") or []) + (data.get("objects") or []) + (data.get("audio") or [])))
+        seen = list(dict.fromkeys(o.split("-verified")[0] for o in data.get("objects") or []))
+        kinds = [{"kind": kind(o), "label": label(o)} for o in seen]
+        kinds += [{"kind": "audio", "label": label(a)} for a in dict.fromkeys(data.get("audio") or [])]
         thumb = r.get("thumb_path") or ""
         if "/clips/" in thumb:
             thumb = "/clips/" + thumb.split("/clips/", 1)[1]
         return {
             "id": r["id"],
             "camera": r["camera"],
-            "cameraLabel": label(r["camera"]),
+            "cameraLabel": self.labels.get(r["camera"]) or label(r["camera"]),
             "severity": r.get("severity", "detection"),
             "start": start,
             "end": end or 0,
             "live": end is None,
             "objects": [label(o) for o in objects],
+            "kinds": kinds or [{"kind": "motion", "label": "Motion"}],
+            "names": [n for n in data.get("sub_labels") or [] if isinstance(n, str)],
             "zones": [label(z) for z in data.get("zones") or []],
             "reviewed": bool(r.get("has_been_reviewed")),
             "thumb": thumb and self.relay_url("f" + thumb),
@@ -224,9 +253,33 @@ class Frigate:
         return {"items": out[:limit]}
 
     def active(self):
-        """Cameras with something going on right now (a review item that hasn't ended)."""
-        items = self.reviews("all", limit=50, hours=1)["items"]
-        return {"cameras": sorted({x["camera"] for x in items if x["live"]})}
+        """Cameras with something going on right now (a review item that hasn't ended), and what."""
+        items = [x for x in self.reviews("all", limit=50, hours=1)["items"] if x["live"]]
+        kinds = {}
+        for x in items:
+            for k in x["kinds"]:
+                if k["kind"] not in kinds.setdefault(x["camera"], []):
+                    kinds[x["camera"]].append(k["kind"])
+        return {"cameras": sorted(kinds), "kinds": kinds}
+
+    def timeline(self, cameras, hours=24):
+        """The last `hours` of these cameras for the timeline: every alert and detection, and
+        each camera's motion in 5-minute steps (0..1 of its busiest step)."""
+        end = time.time()
+        start = end - hours * 3600
+        items = self.reviews("all", cameras, limit=1000, hours=hours)["items"]
+        motion = {}
+        for cam in cameras:
+            if self.demo:
+                rows = demo_motion(cam, start, end)
+            else:
+                try:
+                    rows = self.get_json("/api/review/activity/motion", cameras=cam, after=int(start), before=int(end), scale=300)
+                except requests.RequestException:
+                    rows = []
+            peak = max((r.get("motion") or 0 for r in rows), default=0) or 1
+            motion[cam] = [[r["start_time"], round(min(1, (r.get("motion") or 0) / peak), 3)] for r in rows if r.get("motion")]
+        return {"start": start, "end": end, "step": 300, "items": items, "motion": motion}
 
     def mark_viewed(self, ids):
         if self.demo or not ids:
@@ -242,6 +295,10 @@ class Frigate:
         end = end or time.time()
         path = f"vod/{camera}/start/{int(start - pad)}/end/{int(end + pad)}/index.m3u8"
         return {"url": "demo:recording" if self.demo else self.relay_url("f/" + path)}
+
+    def frame(self, camera, t, height=540):
+        """The recorded picture at time t (the timeline's preview)."""
+        return self.relay_url(f"f/api/{camera}/recordings/{t:.1f}/snapshot.jpg?height={height}")
 
     def live(self, stream):
         return {"url": "demo:live" if self.demo else self.relay_url(f"live/{urllib.parse.quote(stream)}.mp4")}
@@ -313,6 +370,13 @@ def pump_mse(ws, write, stop=lambda: False):
 class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        """A picture or video the app stopped loading hangs up mid-request: not worth a traceback."""
+        import sys
+
+        if not isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            super().handle_error(request, client_address)
 
 
 class Relay:
@@ -405,16 +469,27 @@ DEMO_CONFIG = {
     "cameras": {
         n: {
             "enabled": True,
+            "friendly_name": "Backyard Side Gate by the Garden Path" if n == "backyard_side_gate" else None,
             "detect": {
-                "width": 2560 if n in ("front_door", "driveway", "backyard") else 640,
-                "height": 1440 if n in ("front_door", "driveway", "backyard") else 360,
+                "width": 2560 if n in ("front_door", "driveway", "backyard_side_gate") else 640,
+                "height": 1440 if n in ("front_door", "driveway", "backyard_side_gate") else 360,
             },
             "live": {"streams": {"Main": f"{n}_main"}},
         }
-        for n in ("front_door", "driveway", "backyard", "garage", "living_room", "kitchen", "dining_room", "stairs", "upstairs_hallway")
+        for n in (
+            "front_door",
+            "driveway",
+            "backyard_side_gate",
+            "garage",
+            "living_room",
+            "kitchen",
+            "dining_room",
+            "stairs",
+            "upstairs_hallway",
+        )
     },
     "camera_groups": {
-        "Outside": {"order": 3, "icon": "LuTrees", "cameras": ["front_door", "driveway", "backyard", "garage"]},
+        "Outside": {"order": 3, "icon": "LuTrees", "cameras": ["front_door", "driveway", "backyard_side_gate", "garage"]},
         "Downstairs": {"order": 1, "icon": "LuHome", "cameras": ["living_room", "kitchen", "dining_room"]},
         "Upstairs": {"order": 2, "icon": "LuBed", "cameras": ["stairs", "upstairs_hallway"]},
         "Front": {"order": 4, "icon": "LuDoorOpen", "cameras": ["front_door", "driveway"]},
@@ -425,14 +500,17 @@ DEMO_CONFIG = {
 def demo_reviews():
     now = time.time()
     rows = [
-        ("front_door", "alert", ["person", "dog"], 120, 18, False, True),
-        ("driveway", "alert", ["car"], 1500, 42, False, False),
-        ("backyard", "alert", ["person"], 5400, 25, True, False),
-        ("front_door", "alert", ["person"], 9000, 12, True, False),
-        ("garage", "detection", ["person"], 600, 30, False, False),
-        ("living_room", "detection", ["dog"], 2000, 64, False, False),
-        ("kitchen", "detection", ["person"], 4000, 20, True, False),
-        ("stairs", "detection", ["cat"], 7000, 8, True, False),
+        ("front_door", "alert", ["person", "dog"], [], 120, 18, False, True),
+        ("driveway", "alert", ["car", "person", "bicycle"], [], 1500, 42, False, False),
+        ("backyard_side_gate", "alert", ["person"], ["speech"], 5400, 25, True, False),
+        ("front_door", "alert", ["package"], [], 9000, 12, True, False),
+        ("driveway", "alert", ["motorcycle"], [], 30000, 20, True, False),
+        ("garage", "detection", ["person"], [], 600, 30, False, False),
+        ("living_room", "detection", ["dog"], [], 2000, 64, False, False),
+        ("kitchen", "detection", [], ["speech"], 4000, 20, True, False),
+        ("stairs", "detection", ["cat"], [], 7000, 8, True, False),
+        ("backyard_side_gate", "detection", ["bird"], [], 20000, 15, True, False),
+        ("driveway", "detection", ["license_plate", "car"], [], 50000, 9, True, False),
     ]
     return [
         {
@@ -443,7 +521,21 @@ def demo_reviews():
             "end_time": None if live else now - ago + dur,
             "thumb_path": "",
             "has_been_reviewed": seen,
-            "data": {"objects": objs, "zones": [], "audio": [], "sub_labels": []},
+            "data": {"objects": objs, "zones": [], "audio": audio, "sub_labels": []},
         }
-        for i, (cam, sev, objs, ago, dur, seen, live) in enumerate(rows)
+        for i, (cam, sev, objs, audio, ago, dur, seen, live) in enumerate(rows)
     ]
+
+
+def demo_motion(camera, start, end):
+    """Made-up motion: a busy morning and evening, a camera-dependent wobble."""
+    import math
+
+    seed = sum(map(ord, camera))
+    rows, t = [], start - start % 300
+    while t < end:
+        hour = time.localtime(t).tm_hour
+        busy = 1.0 if hour in (7, 8, 17, 18, 19) else 0.35 if 9 <= hour <= 22 else 0.05
+        rows.append({"start_time": t, "motion": max(0.0, busy * (0.6 + 0.4 * math.sin(t / 900 + seed)))})
+        t += 300
+    return rows

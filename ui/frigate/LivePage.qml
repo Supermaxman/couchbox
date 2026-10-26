@@ -9,6 +9,7 @@ FocusScope {
     property var alerts: []
     readonly property var cams: F.groupCams(group)
     readonly property int cols: 3
+    readonly property real cardW: 360 * F.u
     property int zone: alerts.length ? 0 : 1    // 0 alerts strip, 1 cameras
     property int ai: 0
     property int ci: 0
@@ -61,37 +62,42 @@ FocusScope {
             id: content
             x: 56 * F.u
             width: page.width - 56 * F.u - F.edge
-            spacing: 34 * F.u
+            spacing: 36 * F.u
             topPadding: 48 * F.u
             Row {
                 spacing: 20 * F.u
-                Text { text: (F.groups[page.group] || {name: "Cameras"}).name; color: F.text; font.family: F.font; font.pixelSize: 46 * F.u; font.weight: Font.Bold }
-                Text { anchors.baseline: parent.children[0].baseline; text: page.cams.length + (page.cams.length === 1 ? " camera" : " cameras"); color: F.dim; font.family: F.font; font.pixelSize: 26 * F.u }
+                Text { id: heading; text: (F.groups[page.group] || {name: "Cameras"}).name; color: F.text; font.family: F.font; font.pixelSize: F.tTitle; font.weight: Font.Bold }
+                Text { anchors.baseline: heading.baseline; text: page.cams.length + (page.cams.length === 1 ? " camera" : " cameras"); color: F.dim; font.family: F.font; font.pixelSize: F.tMeta + 2 * F.u }
             }
             Column {
                 id: stripWrap
                 visible: page.alerts.length > 0
                 width: parent.width
-                spacing: 16 * F.u
-                Text { text: "Recent alerts"; color: F.text2; font.family: F.font; font.pixelSize: 28 * F.u; font.weight: Font.DemiBold }
+                spacing: 18 * F.u
+                Row {
+                    spacing: 14 * F.u
+                    Text { id: stripHead; text: "Recent alerts"; color: F.text2; font.family: F.font; font.pixelSize: F.tHead - 2 * F.u; font.weight: Font.DemiBold }
+                    Text { anchors.baseline: stripHead.baseline; text: page.alerts.length + " not reviewed in the last day"; color: F.faint; font.family: F.font; font.pixelSize: F.tSmall + 1 * F.u }
+                }
+                ReviewCard { id: probe; visible: false; width: page.cardW }    // how tall the cards are
                 ListView {
                     id: strip
                     width: parent.width
-                    height: 250 * F.u
+                    height: probe.implicitHeight
                     orientation: ListView.Horizontal
-                    spacing: 22 * F.u
+                    spacing: F.gap
                     clip: false
                     interactive: false
                     model: page.alerts
                     currentIndex: page.ai
                     highlightRangeMode: ListView.ApplyRange
                     preferredHighlightBegin: 0
-                    preferredHighlightEnd: width - 340 * F.u
+                    preferredHighlightEnd: width - page.cardW
                     highlightMoveDuration: 180
                     delegate: ReviewCard {
                         required property var modelData
                         required property int index
-                        width: 340 * F.u; height: 250 * F.u
+                        width: page.cardW; height: implicitHeight
                         r: modelData
                         current: page.activeFocus && page.zone === 0 && page.ai === index
                     }
@@ -104,7 +110,7 @@ FocusScope {
                 Grid {
                     id: grid
                     columns: page.cols
-                    spacing: 26 * F.u
+                    spacing: F.gap
                     readonly property real tw: (gridWrap.width - (page.cols - 1) * spacing) / page.cols
                     Repeater {
                         model: page.cams
@@ -125,6 +131,6 @@ FocusScope {
         anchors.centerIn: parent
         visible: F.cameras.length === 0
         text: "Loading cameras…"
-        color: F.dim; font.family: F.font; font.pixelSize: 30 * F.u
+        color: F.dim; font.family: F.font; font.pixelSize: F.tHead
     }
 }

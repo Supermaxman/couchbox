@@ -31,8 +31,40 @@ _egl.eglGetProcAddress.restype = ctypes.c_void_p
 _egl.eglGetProcAddress.argtypes = [ctypes.c_char_p]
 
 
+# libmpv 0.41's OpenGL render API makes a GL fence at the end of every frame and keeps it for
+# a buffer swap that only its own windows do (fixed upstream after 0.41), so it never deletes it.
+# On the Pi each fence holds a file descriptor: about 4 minutes of live video used up all 1024,
+# after which Mesa failed every frame ("Export failed") and the app crashed. glFenceSync goes
+# through _fence_sync, which notes the newest fence; after each frame _Renderer deletes the
+# frame's last one, which is that end-of-frame fence (mpv makes it after everything else).
+_FenceSyncFn = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint)
+_DeleteSyncFn = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+_gl = {"fence": None, "delete": None, "last": None}
+
+
+def _fence_sync(condition, flags):
+    fence = _gl["fence"](condition, flags)
+    _gl["last"] = fence
+    return fence
+
+
+_fence_sync_fn = _FenceSyncFn(_fence_sync)
+
+
 def _get_proc_address(_ctx, name):
-    return _egl.eglGetProcAddress(name) or 0
+    addr = _egl.eglGetProcAddress(name) or 0
+    if name == b"glFenceSync" and addr:
+        _gl["fence"] = _FenceSyncFn(addr)
+        return ctypes.cast(_fence_sync_fn, ctypes.c_void_p).value
+    if name == b"glDeleteSync" and addr:
+        _gl["delete"] = _DeleteSyncFn(addr)
+    return addr
+
+
+def _drop_frame_fence():
+    fence, _gl["last"] = _gl["last"], None
+    if fence and _gl["delete"]:
+        _gl["delete"](fence)
 
 
 _proc_fn = mpv.MpvGlGetProcAddressFn(_get_proc_address)
@@ -56,7 +88,9 @@ class _Renderer(QQuickFramebufferObject.Renderer):
             self.ctx = mpv.MpvRenderContext(self.item.mpv, "opengl", opengl_init_params={"get_proc_address": _proc_fn})
             self.ctx.update_cb = self.item.frameReady.emit
         fbo = self.framebufferObject()
+        _gl["last"] = None
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
+        _drop_frame_fence()
         if QQuickOpenGLUtils:
             QQuickOpenGLUtils.resetOpenGLState()
 

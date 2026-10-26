@@ -31,7 +31,7 @@ FocusScope {
     function ensureVisible() {
         const item = grid.children[ci];
         if (zone === 0 || !item) { flick.contentY = 0; return; }
-        const top = item.y - 20 * F.u, bottom = item.y + item.height + 30 * F.u;
+        const top = item.y, bottom = item.y + item.height + 60 * F.u;
         if (top < flick.contentY) flick.contentY = Math.max(0, top);
         else if (bottom > flick.contentY + flick.height) flick.contentY = bottom - flick.height;
     }
@@ -61,8 +61,8 @@ FocusScope {
         spacing: 26 * F.u
         Row {
             spacing: 20 * F.u
-            Text { text: "Review"; color: F.text; font.family: F.font; font.pixelSize: 46 * F.u; font.weight: Font.Bold }
-            Text { anchors.baseline: parent.children[0].baseline; text: (F.groups[page.group] || {name: ""}).name; color: F.dim; font.family: F.font; font.pixelSize: 26 * F.u }
+            Text { id: heading; text: "Review"; color: F.text; font.family: F.font; font.pixelSize: F.tTitle; font.weight: Font.Bold }
+            Text { anchors.baseline: heading.baseline; text: (F.groups[page.group] || {name: ""}).name; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta + 2 * F.u }
         }
         Row {
             spacing: 14 * F.u
@@ -73,34 +73,35 @@ FocusScope {
                     required property int index
                     readonly property bool on: page.tab === index
                     readonly property bool cur: page.activeFocus && page.zone === 0 && page.tab === index
-                    width: tabText.implicitWidth + 70 * F.u; height: 60 * F.u; radius: 30 * F.u
+                    width: tabText.implicitWidth + 70 * F.u; height: tabText.implicitHeight + 28 * F.u; radius: height / 2
                     color: on ? F.panel2 : "transparent"
                     border.color: cur ? F.focus : on ? F.line : F.line; border.width: (cur ? 3 : 1) * F.u
                     Rectangle { x: 24 * F.u; anchors.verticalCenter: parent.verticalCenter; width: 12 * F.u; height: width; radius: width / 2; color: modelData[1] }
-                    Text { id: tabText; x: 46 * F.u; anchors.verticalCenter: parent.verticalCenter; text: modelData[0]; color: parent.on ? F.text : F.dim; font.family: F.font; font.pixelSize: 26 * F.u; font.weight: Font.DemiBold }
+                    Text { id: tabText; x: 46 * F.u; anchors.verticalCenter: parent.verticalCenter; text: modelData[0]; color: parent.on ? F.text : F.dim; font.family: F.font; font.pixelSize: F.tBody; font.weight: Font.DemiBold }
                 }
             }
         }
     }
     Flickable {
         id: flick
-        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; topMargin: 30 * F.u; leftMargin: 56 * F.u; rightMargin: F.edge }
+        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; topMargin: 6 * F.u; leftMargin: 26 * F.u; rightMargin: F.edge - 30 * F.u }
         contentHeight: grid.height + 60 * F.u
         interactive: false
         clip: true
         Behavior on contentY { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Grid {
             id: grid
-            y: 10 * F.u
+            y: 30 * F.u
+            x: 30 * F.u
             columns: page.cols
-            spacing: 26 * F.u
-            readonly property real tw: (flick.width - (page.cols - 1) * spacing) / page.cols
+            spacing: F.gap
+            readonly property real tw: (flick.width - 60 * F.u - (page.cols - 1) * spacing) / page.cols
             Repeater {
                 model: page.items
                 delegate: ReviewCard {
                     required property var modelData
                     required property int index
-                    width: grid.tw; height: grid.tw * 0.78
+                    width: grid.tw; height: implicitHeight
                     r: modelData
                     current: page.activeFocus && page.zone === 1 && page.ci === index
                 }

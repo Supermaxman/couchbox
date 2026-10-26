@@ -8,3 +8,5 @@ CameraView 1.0 CameraView.qml
 PlayerView 1.0 PlayerView.qml
 SignInPage 1.0 SignInPage.qml
 FButton 1.0 FButton.qml
+KindBadge 1.0 KindBadge.qml
+TimelinePage 1.0 TimelinePage.qml

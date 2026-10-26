@@ -29,11 +29,32 @@ QtObject {
     readonly property real edge: 56 * u              // right margin, clear of TV overscan
     readonly property real railW: 330 * u
     readonly property real radius: 14 * u
+    readonly property real gap: 26 * u
+    readonly property real ring: 4 * u                // focus ring
+    readonly property real lift: 1.05                // focused cards grow a little (as elsewhere on Couchbox)
+
+    // type: sized for reading across the room
+    readonly property real tTitle: 46 * u
+    readonly property real tHead: 30 * u
+    readonly property real tBody: 26 * u
+    readonly property real tMeta: 22 * u
+    readonly property real tSmall: 19 * u
+
+    // what was seen -> its icon (icons/*.svg, white line drawings; frigate.py's kind())
+    function icon(kind) { return Qt.resolvedUrl("icons/" + (kind || "object") + ".svg"); }
+    // "Person, Dog" (and recognised names: "Person (Max)")
+    function seen(r) {
+        const k = (r.kinds || []).map(x => x.label);
+        const n = (r.names || []).length ? " (" + r.names.join(", ") + ")" : "";
+        return (k.join(", ") || "Motion") + n;
+    }
+    function sevColor(r) { return r.severity === "alert" ? alert : detection; }
 
     // ------------------------------------------------------------------ data
     property var cameras: []                 // [{name, label, stream, aspect}]
     property var groups: []                  // [{name, icon, cameras: [names]}]
     property var activeCams: []              // cameras with something going on now
+    property var activeKinds: ({})           //   and what: {camera: [kind, ...]}
     property var status: ({})                // {configured, url, signedIn, user}
 
     function camera(name) {
@@ -45,6 +66,7 @@ QtObject {
         return g ? g.cameras.map(n => camera(n)) : cameras;
     }
     function isActive(name) { return activeCams.indexOf(name) >= 0; }
+    function clock(t) { return Qt.formatTime(new Date(t * 1000), "h:mm AP"); }
 
     // "3:42 PM", or "Yesterday, 9:10 PM", or "Mon 12 Oct, 9:10 PM"
     function when(t) {

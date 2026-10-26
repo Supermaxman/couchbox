@@ -949,9 +949,12 @@ def _schemas(st=None):
         ),
         fn(
             "frigate",
-            "Home security cameras (Frigate): show one live, all of them, or the alerts.",
+            "Home security cameras (Frigate): show one live, all of them, the alerts, or the last day's timeline.",
             s(
-                action=act(["camera", "all", "alerts", "detections"], "camera: show the camera named in query full screen, live"),
+                action=act(
+                    ["camera", "all", "alerts", "detections", "timeline"],
+                    "camera: show the camera named in query full screen, live · timeline: the last day (of the camera in query, if any)",
+                ),
                 query=q,
             ),
         ),
@@ -1108,15 +1111,23 @@ def match_camera(query, cams):
 def frigate_tool(action, query=None):
     a = registry.get("frigate")
     streaming.ensure("frigate", start=lambda: open_app(a.name, wait=False))
-    if action == "camera":
+    if action == "camera" or (action == "timeline" and query):
         cams = appctl.call("frigate", {"op": "call", "fn": "config"}, timeout=30)["cameras"]
         cam = match_camera(query, cams)
         if not cam:
             return f"No camera called {query!r}. Cameras: " + ", ".join(c["label"] for c in cams)
-        target, said = f"camera:{cam['name']}", f"Showing {cam['label']}, live."
+        if action == "timeline":
+            target, said = f"timeline:{cam['name']}", f"Showing the last day of {cam['label']}."
+        else:
+            target, said = f"camera:{cam['name']}", f"Showing {cam['label']}, live."
     else:
-        target = {"all": "live", "alerts": "alerts", "detections": "detections"}.get(action, "live")
-        said = {"live": "Showing all cameras.", "alerts": "Showing the alerts.", "detections": "Showing the detections."}[target]
+        target = {"all": "live", "alerts": "alerts", "detections": "detections", "timeline": "timeline"}.get(action, "live")
+        said = {
+            "live": "Showing all cameras.",
+            "alerts": "Showing the alerts.",
+            "detections": "Showing the detections.",
+            "timeline": "Showing the last day.",
+        }[target]
     appctl.call("frigate", {"op": "open", "target": target})
     raise_window(a.desktop, a.name)
     return said

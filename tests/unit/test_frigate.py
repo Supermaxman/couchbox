@@ -94,7 +94,7 @@ def test_expired_token_signs_in_again(server):
     f = frigate.Frigate(server.url)
     f.login("tv", "pw")
     server.tokens.clear()  # Frigate's token ran out
-    assert [c["name"] for c in f.config()["cameras"]][:2] == ["backyard", "dining_room"]
+    assert [c["name"] for c in f.config()["cameras"]][:2] == ["backyard_side_gate", "dining_room"]
     assert server.logins == 2
 
 
@@ -118,7 +118,8 @@ def test_groups_and_reviews(server):
     alerts = f.reviews("alert", cameras=["front_door"])["items"]
     assert alerts and all(x["camera"] == "front_door" and x["severity"] == "alert" for x in alerts)
     assert alerts[0]["objects"] == ["Person", "Dog"] and alerts[0]["live"]
-    assert f.active()["cameras"] == ["front_door"]
+    assert alerts[0]["kinds"] == [{"kind": "person", "label": "Person"}, {"kind": "dog", "label": "Dog"}]
+    assert f.active() == {"cameras": ["front_door"], "kinds": {"front_door": ["person", "dog"]}}
     f.mark_viewed(["a", "b"])
     assert server.viewed == ["a", "b"]
 
@@ -164,3 +165,28 @@ def test_demo_needs_no_server():
     assert f.status()["signedIn"]
     assert len(f.config()["groups"]) == 5
     assert f.reviews("detection")["items"]
+
+
+def test_labels_get_icons():
+    assert [frigate.kind(x) for x in ("person", "truck", "ups", "license_plate", "umbrella")] == [
+        "person",
+        "car",
+        "package",
+        "license_plate",
+        "object",
+    ]
+    f = frigate.Frigate("", demo=True)
+    f.config()
+    items = {x["id"]: x for x in f.reviews("all", limit=50)["items"]}
+    assert items["demo-2"]["kinds"] == [{"kind": "person", "label": "Person"}, {"kind": "audio", "label": "Speech"}]
+    assert items["demo-2"]["cameraLabel"] == "Backyard Side Gate by the Garden Path"  # the friendly name
+    assert items["demo-7"]["kinds"] == [{"kind": "audio", "label": "Speech"}]
+
+
+def test_timeline_has_events_and_motion():
+    f = frigate.Frigate("", demo=True)
+    t = f.timeline(["driveway", "garage"], hours=24)
+    assert t["end"] - t["start"] == 24 * 3600 and t["step"] == 300
+    assert {x["camera"] for x in t["items"]} == {"driveway", "garage"}
+    assert set(t["motion"]) == {"driveway", "garage"}
+    assert all(0 < m <= 1 for _, m in t["motion"]["driveway"]) and max(m for _, m in t["motion"]["driveway"]) == 1
