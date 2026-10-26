@@ -1,0 +1,33 @@
+<svg data-couchbox-glow="#f5b301" xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <!-- couchbox home tile: Movies & TV (look up movies, shows and people). Rendered to PNG by
+       couchbox-home (rsvg-convert); data-couchbox-glow is the colour of the glow behind it. An
+       original mark (a clapperboard with a star), not IMDb's or TMDB's logo. -->
+  <defs>
+    <clipPath id="r"><rect width="800" height="450" rx="36"/></clipPath>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="0.3" cy="0.3" r="1">
+      <stop offset="0" stop-color="#2b2410"/><stop offset="0.55" stop-color="#16130b"/><stop offset="1" stop-color="#0b0b0d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.95" r="0.6">
+      <stop offset="0" stop-color="#f5b301" stop-opacity="0.30"/><stop offset="1" stop-color="#f5b301" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="800" height="450" fill="url(#bg)"/>
+    <rect width="800" height="450" fill="url(#glow)"/>
+    <g transform="translate(96 150)">
+      <!-- the clapper's arm, tilted open -->
+      <g transform="rotate(-14 0 40)">
+        <rect x="0" y="12" width="160" height="34" rx="8" fill="#f5b301"/>
+        <path d="M24 12 L44 46 M64 12 L84 46 M104 12 L124 46" stroke="#16130b" stroke-width="14"/>
+      </g>
+      <rect x="0" y="52" width="160" height="104" rx="14" fill="#f5b301"/>
+      <path d="M80 72 l11 22 24 3.5 -17.5 17 4 24 -21.5 -11.5 -21.5 11.5 4 -24 -17.5 -17 24 -3.5z" fill="#16130b"/>
+    </g>
+    <text x="300" y="214" font-family="Inter, DejaVu Sans, sans-serif" font-size="84" font-weight="700" fill="#fafafa">Movies</text>
+    <text x="300" y="300" font-family="Inter, DejaVu Sans, sans-serif" font-size="84" font-weight="700" fill="#fafafa">&amp; TV</text>
+    <rect width="800" height="450" fill="url(#sheen)"/>
+  </g>
+</svg>

@@ -67,5 +67,16 @@ shot maps-google-places couchbox-maps
 shot maps-google-transit couchbox-maps --open 'to:{"place":{"name":"Airport","lat":37.6213,"lon":-122.379},"mode":"transit"}'
 shot maps-leave-by couchbox-maps --open 'leave:{"place":{"name":"Airport","address":"San Francisco International Airport","lat":37.6213,"lon":-122.379}}'
 unset COUCHBOX_MAPS_DEMO_GOOGLE
+# Movies & TV with made-up titles: home, a movie, a show (and its seasons row), a season,
+# a person (known for, a filmography), search, the top-rated grid
+shot movies-home couchbox-movies
+shot movies-movie couchbox-movies --open movie:101
+shot movies-movie-cast couchbox-movies --open movie:101 --keys down
+shot movies-show couchbox-movies --open tv:201 --keys down,down,down
+shot movies-season couchbox-movies --open season:201:1
+shot movies-person couchbox-movies --open person:303
+shot movies-person-work couchbox-movies --open person:303:directing
+shot movies-search couchbox-movies --open search:harbor
+shot movies-top couchbox-movies --open top:movie
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

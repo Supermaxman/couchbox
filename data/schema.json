@@ -88,6 +88,7 @@
     "system.logs_mb": {"type": "int", "min": 50, "max": 2000, "default": 200, "page": "system", "label": "Log space (MB)"}
   },
   "secrets": {
+    "media.tmdb.token": {"page": "apps", "label": "TMDB API key", "help": "Movies & TV without Seerr: themoviedb.org → Settings → API."},
     "media.seerr.api_key": {"page": "apps", "label": "Seerr API key", "help": "Only for voice requests."},
     "apps.maps.google_api_key": {"page": "apps", "label": "Google Maps API key", "help": "Traffic, transit and Google's places in Maps."},
     "voice.stt.api_key": {"page": "voice", "label": "Speech-to-text API key"},

@@ -45,6 +45,9 @@ for f in sorted((REPO / "data/apps").glob("*.json")):
     for r in m.get("requires", []):
         if r not in sch["settings"]:
             errors.append(f"{f.name}: requires unknown setting {r}")
+    for r in m.get("requires_any", []):
+        if r not in sch["settings"] and r.removeprefix("secret:") not in sch["secrets"]:
+            errors.append(f"{f.name}: requires_any unknown setting or secret {r}")
     if m.get("kind") == "native" and m["desktop"].startswith("couchbox-") and m["id"] != "settings":
         if not (REPO / "system/applications" / m["desktop"]).exists():
             errors.append(f"{f.name}: {m['desktop']} missing from system/applications")

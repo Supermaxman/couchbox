@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Movies & TV
+Comment=Look up movies, shows and people: ratings, cast and crew, filmographies
+Icon=video-x-generic
+Categories=AudioVideo;Video;
+Exec=/usr/lib/couchbox/bin/couchbox-movies
+StartupWMClass=couchbox-movies

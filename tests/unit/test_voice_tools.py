@@ -253,3 +253,32 @@ def test_maps_tool_answers_and_opens_the_route(monkeypatch):
     said = tools.maps_tool("leave_by", "work", when="17:00")
     assert said.startswith("Leave by ") and "with expected traffic" in said
     assert calls[-1]["target"].startswith("leave:")
+
+
+def test_movies_needs_seerr_or_a_tmdb_key():
+    from couchbox import secrets
+
+    assert "movies" not in names()
+    secrets.put("media.tmdb.token", "test-fake-tmdb")
+    assert "movies" in names()
+    settings.update({"home.hidden": ["movies"]})
+    assert "movies" not in names()
+
+
+def test_movies_answers_and_opens_the_app(monkeypatch, tmp_path):
+    from couchbox.services import movies
+
+    opened = []
+    monkeypatch.setattr(movies.Movies, "for_root", classmethod(lambda cls: cls(movies.Demo(), movies.demo_ratings(tmp_path / "r.bin"))))
+    monkeypatch.setattr(tools, "open_movies", opened.append)
+    said = tools.movies_tool("title", "the long harbor")
+    assert said.startswith("The Long Harbor (2024 movie, PG-13, 118 min") and "Directed by Ines Okafor." in said
+    assert "IMDb 8.3/10" in said and "Rotten Tomatoes 91% critics" in said and "It's in Jellyfin." in said
+    assert opened[-1] == "movie:101"
+    said = tools.movies_tool("person", "ines okafor", role="directing")
+    assert (
+        said.startswith("Ines Okafor, director, born 1988-04-12") and "Directing (3, newest first): Paper Orchards (2025, Director)" in said
+    )
+    assert opened[-1] == "person:303:Directing"
+    assert tools.movies_tool("top", type="tv").startswith("Top rated shows: 1. Saltmarsh (2022, 8.6)")
+    assert opened[-1] == "top:tv"
