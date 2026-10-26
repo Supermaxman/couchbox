@@ -44,7 +44,7 @@ ApplicationWindow {
         mode = "app";
         home.load();
         openFromArgs();
-        if (!stack.length && !nowOpen) focusPage();
+        if (!stack.length && !nowOpen && !actions.visible && !picker.visible) focusPage();
     }
 
     Connections {
@@ -87,6 +87,8 @@ ApplicationWindow {
         updateState();
     }
     function back() {
+        if (picker.visible) return picker.closed();      // a menu over the page closes first
+        if (actions.visible) return closeMenu();
         if (stack.length) {
             const s = stack.slice(0, -1);
             stack = s;

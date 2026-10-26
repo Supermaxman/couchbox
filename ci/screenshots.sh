@@ -81,4 +81,6 @@ shot movies-person-work couchbox-movies --open person:303:directing
 shot movies-search couchbox-movies --open search:harbor
 shot movies-top couchbox-movies --open top:movie
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
+# the remote's Back key on every app's pages: it goes back a level or closes the app
+python3 ci/back_check.py "$OUT/back" || fail=1
 exit $fail

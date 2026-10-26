@@ -67,7 +67,8 @@ ApplicationWindow {
         updateState();
     }
     function back() {
-        stack.pop(StackView.Immediate);
+        if (stack.depth > 1) stack.pop(StackView.Immediate);
+        else stack.clear(StackView.Immediate);           // pop() never takes the last page off
         focusPage();
         updateState();
     }
