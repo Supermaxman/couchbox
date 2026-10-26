@@ -164,7 +164,13 @@ FocusScope {
             clip: true
             property bool showA: true
             property string want: ""
-            function next(url) { if (!url) return; if (showA) b.source = url; else a.source = url; }
+            function next(url) {                 // load into the hidden picture; it flips in when ready
+                if (!url) return;
+                const shown = showA ? a : b, hidden = showA ? b : a;
+                if (shown.source.toString() === url) return;
+                if (hidden.source.toString() === url && hidden.status === Image.Ready) { showA = !showA; return; }  // back to the last one
+                hidden.source = url;
+            }
             Image {
                 anchors.centerIn: parent
                 visible: a.status !== Image.Ready && b.status !== Image.Ready
