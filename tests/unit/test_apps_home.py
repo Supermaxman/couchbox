@@ -106,3 +106,15 @@ def test_overlay_falls_back_for_untested_bigscreen(box, monkeypatch):
     monkeypatch.setattr(home, "bigscreen_version", lambda: "6.9.0")
     assert home.overlay({"apps": []}) == "stock"
     assert not ours.exists()
+
+
+def test_movies_shows_with_seerr_or_a_tmdb_key():
+    from couchbox import secrets
+
+    assert "movies" not in ids(apps.home_row())
+    settings.update({"media.seerr.url": "https://seerr.example"})
+    assert "movies" in ids(apps.home_row())
+    settings.update({"media.seerr.url": ""})
+    secrets.put("media.tmdb.token", "test-fake-tmdb")
+    assert "movies" in ids(apps.home_row())
+    assert apps.get("movies").missing(settings.load()) == []

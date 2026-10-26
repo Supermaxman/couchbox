@@ -1,0 +1,201 @@
+#!/usr/bin/python3
+"""couchbox-movies: Movies & TV, an IMDb-style guide for the TV. Look up movies, shows and
+people: ratings (IMDb, Rotten Tomatoes, TMDB), cast and crew, directors, seasons and episodes,
+filmographies by year, and what's trending, popular and top rated. Every title and person
+opens the next; Back goes back.
+
+Data is TMDB's, through the box's Seerr (which also knows what's in Jellyfin: Play in
+Jellyfin, Request in Seerr) or a TMDB API key (Settings → Apps → Movies & TV), reached through
+couchbox-voice's proxy on 127.0.0.1:8790, which holds the keys. IMDb ratings come from IMDb's
+daily dataset, indexed in ~/.cache/couchbox-movies (couchbox.services.movies).
+
+  couchbox-movies [--open movie:ID | tv:ID | person:ID[:DEPT] | season:ID:N | search:TEXT | top:movie | top:tv | home]
+  couchbox-movies --demo --shot FILE [--open ...] [--keys down,ok,...]
+                                     render once off screen (made-up titles, no network)
+"""
+import json
+import os
+import sys
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_MOVIES_QML", str(paths.share() / "ui/movies/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
+SITE = "movies"
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+
+from PySide6.QtCore import QObject, QProcess, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (root object typed as QQuickWindow: grabWindow)
+
+from couchbox.services import movies  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to movies.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        self.demo = demo
+        self.seerr_url = settings.get("media.seerr.url")
+        self.m = movies.Movies.for_app(self.seerr_url, demo=demo)
+        self.pool = ThreadPoolExecutor(max_workers=6)
+        if not demo:                                 # IMDb's ratings: at most once a day
+            threading.Thread(target=self.m.refresh_ratings, daemon=True).start()
+
+    def run(self, op, a):
+        m = self.m
+        ops = {
+            "status": lambda: dict(m.status(), seerr=bool(self.seerr_url), credits=[movies.CREDIT_TMDB, movies.CREDIT_IMDB]),
+            "home": lambda: m.home(),
+            "top": lambda: m.top(a["kind"]),
+            "search": lambda: m.search(a["query"]),
+            "title": lambda: m.title(a["kind"], a["id"]),
+            "season": lambda: m.season(a["id"], a["n"]),
+            "person": lambda: m.person(a["id"]),
+            "find": lambda: m.find(a["query"], a.get("kind")),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+    @Slot(str, str)
+    def post(self, path, body):
+        """Play in Jellyfin / a trailer on YouTube, through couchbox-voice (as the Seerr app does)."""
+        if self.demo:
+            return
+        import requests
+
+        def work():
+            try:
+                requests.post("http://127.0.0.1:8790" + path, data=body, timeout=10,
+                              headers={"X-Couchbox": "1", "Content-Type": "application/json"})
+            except Exception as err:
+                print(f"{path}: {err}", flush=True)
+        self.pool.submit(work)
+
+    @Slot(str)
+    def openSeerr(self, target):
+        """Request in Seerr: the Seerr app, on this title."""
+        if not self.demo:
+            QProcess.startDetached("/usr/lib/couchbox/bin/couchbox-seerr", ["--open", target])
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one, and
+    the voice assistant opens titles and people."""
+    command = Signal(str)
+
+    def __init__(self, backend):
+        super().__init__()
+        self.backend = backend
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Movies & TV")
+        if op == "call":
+            return self.backend.run(req["fn"], req.get("args") or {})
+        if op == "open":
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    app = QGuiApplication(sys.argv)
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-movies")
+    app.setApplicationDisplayName("Movies & TV")
+    app.setDesktopFileName("couchbox-movies")       # Wayland app id: matches couchbox-movies.desktop
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control(backend)
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demo", demo)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)
+
+
+if __name__ == "__main__":
+    main()

@@ -4,6 +4,7 @@
 Manifest fields:
   id, name, desktop (the .desktop id the TV shell launches), tile (share/tiles/<tile>.svg),
   kind (native | flatpak | web | system), requires (settings that must be set),
+  requires_any (one of these must be set: settings, or "secret:<name>" for a secret),
   default_order, default_visible, unofficial, hideable (default true), settings_page
 """
 
@@ -24,6 +25,7 @@ class App:
     icon: str = ""
     url: str = ""
     requires: list[str] = field(default_factory=list)
+    requires_any: list[str] = field(default_factory=list)
     default_order: int = 500
     default_visible: bool = True
     unofficial: bool = False
@@ -34,13 +36,27 @@ class App:
         """Installed requirements met (its settings are set) and not turned off."""
         if self.id in s["apps.disabled"]:
             return False
-        return all(s.get(k) for k in self.requires)
+        return not self.missing(s)
 
     def missing(self, s: dict[str, Any]) -> list[str]:
-        return [k for k in self.requires if not s.get(k)]
+        out = [k for k in self.requires if not s.get(k)]
+        if self.requires_any and not any(_is_set(k, s) for k in self.requires_any):
+            out.append(" or ".join(k.removeprefix("secret:") for k in self.requires_any))
+        return out
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)
+
+
+def _is_set(key: str, s: dict[str, Any]) -> bool:
+    if key.startswith("secret:"):
+        from couchbox import secrets
+
+        try:
+            return secrets.is_set(key[7:])
+        except OSError:  # not root: the secrets aren't ours to see
+            return False
+    return bool(s.get(key))
 
 
 def _manifests() -> list[App]:

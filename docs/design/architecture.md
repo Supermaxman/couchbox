@@ -49,7 +49,7 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
-| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Maps, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
+| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Maps, Movies & TV, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
 ### Voice assistant
@@ -66,6 +66,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `search`: shows Google's results for a query, opens an address, or reads the page in front as text (so the assistant can summarize it or answer about it), through the Search app's control socket.
   - `spotify`: plays a song, artist, album or one of your playlists on this TV, what's playing, like, add to a playlist, and a new playlist from songs the model picks, through `couchbox-spotify --connect`'s control socket (`spotify-connect`). See [spotify.md](spotify.md).
   - `maps`: drive time to a saved place or any place ("how long to get to work"), directions, when to leave to arrive by a time, place search; it answers in words and opens the route in the Maps app (its control socket).
+  - `movies`: facts about a movie, show or person (who made it, the cast, IMDb / Rotten Tomatoes / TMDB ratings, a filmography by department, the top rated), answered from TMDB (through Seerr, or a TMDB key) and IMDb's daily ratings dataset, and opened in the Movies & TV app. Offered when Seerr (with its key) or a TMDB key is set up.
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.
@@ -154,9 +155,9 @@ couchbox/
 ├─ docs/                    user guides (install, settings, troubleshooting) + design/
 ├─ src/couchbox/            Python package
 │  ├─ settings/  ipc/  daemon/  cli/  updater/  input/  cec/  voice/  phone/  memory/
-│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player), maps.py (Google Maps Platform with a key, else Photon + FOSSGIS OSRM + OSM tiles; places; a tile relay with a cache)
+│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player), maps.py (Google Maps Platform with a key, else Photon + FOSSGIS OSRM + OSM tiles; places; a tile relay with a cache), movies.py (TMDB via Seerr or a key, IMDb ratings index)
 ├─ apps/                    QML apps (each: main.py + qml/)
-│  ├─ settings/  setup/  seerr/  frigate/  weather/  maps/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
+│  ├─ settings/  setup/  seerr/  frigate/  weather/  maps/  movies/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
 │  └─ CouchKit/             shared QML module (keyboard + QR, buttons, pages)
 ├─ shell/                   Plasma Bigscreen home overrides + theme (GPL files live here)
 ├─ system/                  systemd units, udev rules, dracut module, sddm/kwin/logind snippets,

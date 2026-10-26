@@ -1,0 +1,13 @@
+{
+  "id": "movies",
+  "name": "Movies & TV",
+  "desktop": "couchbox-movies.desktop",
+  "kind": "native",
+  "tile": "movies",
+  "requires_any": [
+    "media.seerr.url",
+    "secret:media.tmdb.token"
+  ],
+  "default_order": 32,
+  "settings_page": "apps/movies"
+}

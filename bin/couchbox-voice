@@ -20,7 +20,8 @@ The service also serves http://127.0.0.1:8790 (always, even with voice off: the 
 the keyboard pop-ups use it): GET /state (read by the indicator), GET /log?after=N,
 POST /ask {"text": ...}, POST /cancel (the remote's Back button, via couchbox-input: stops
 the request and hides the indicator; answers whether anything was showing), POST /typing,
-/seerr/... (the Seerr app's allow-listed proxy, adding the API key), POST /play/....
+/seerr/... (the Seerr app's allow-listed proxy, adding the API key), /tmdb/... (Movies & TV's
+TMDB reads on a box without Seerr, adding the TMDB key), POST /play/....
 Writes need the header "X-Couchbox: 1" and no foreign Origin, so web pages in the TV's
 browser can't drive it. Code and prompt: couchbox.voice (Python package)."""
 import io
@@ -266,7 +267,24 @@ class Service:
                     if not self.guarded():
                         return
                     return self.seerr("GET")
+                if self.path.startswith("/tmdb/"):
+                    if not self.guarded():
+                        return
+                    return self.tmdb()
                 self.send({"error": "not found"}, 404)
+
+            def tmdb(self):
+                """Movies & TV without Seerr: TMDB reads (movies.TMDB_GET paths only), adding the
+                TMDB key (root-only), so the app (TV user) never holds it."""
+                from couchbox.services import movies
+
+                token = secrets.get("media.tmdb.token")
+                if not token:
+                    return self.send({"error": "No TMDB key yet (Settings → Apps → Movies & TV)."}, 503)
+                try:
+                    self.send(movies.tmdb_get(self.path[len("/tmdb"):], token))
+                except Exception as err:
+                    self.send({"error": str(err)}, 502)
 
             def seerr(self, method):
                 """The Seerr TV app's way to Seerr: an allow-listed proxy that adds the API key

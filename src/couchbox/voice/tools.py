@@ -881,6 +881,7 @@ TOOL_APP = {
     "search": "search",
     "spotify": "spotify",
     "maps": "maps",
+    "movies": "movies",
     **{t: a for t, (_, a) in streaming.SITES.items()},
 }
 
@@ -903,6 +904,8 @@ def disabled_tools(st):
         off.add("frigate")
     if not weather.place_from_settings(st):
         off.add("weather")
+    if not ((st["media.seerr.url"] and secrets.is_set("media.seerr.api_key")) or secrets.is_set("media.tmdb.token")):
+        off.add("movies")
     if not any(a.kind == "web" for a in registry.home_row(st) if a.hideable):
         off.add("page")
     return off
@@ -1014,6 +1017,20 @@ def _schemas(st=None):
                 mode={"type": "string", "enum": ["drive", "transit", "walk", "bike"]},
                 time={"type": "string", "description": "leave_by: arrival time, 24-hour HH:MM"},
                 origin=q,
+            ),
+        ),
+        fn(
+            "movies",
+            "Facts on movies, shows and people: who made or starred, IMDb/RT ratings, filmographies. Never answer from memory.",
+            s(
+                action=act(
+                    ["title", "person", "search", "top"],
+                    "title: the movie or show in query · person: an actor, director or writer and their work, e.g. 'X's movies' "
+                    "(role filters it; jellyfin only to play) · search · top: the best rated (type). Shows it on the TV",
+                ),
+                query=q,
+                type={"type": "string", "enum": ["movie", "tv"]},
+                role={"type": "string", "enum": ["acting", "directing", "writing", "producing"]},
             ),
         ),
     ]
@@ -1151,6 +1168,7 @@ def status_text(name, args):
             "leave_by": f"When to leave for {a.get('query')}",
             "search": f"Looking for {a.get('query')}",
         }.get(a.get("action"), "Checking your places"),
+        "movies": lambda: f"Looking up {a.get('query')}" if a.get("query") else "Opening Movies & TV",
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1349,6 +1367,123 @@ def maps_tool(action, query=None, mode=None, when=None, origin=None):
     )
 
 
+# ------------------------------------------------------------------ Movies & TV (facts about titles and people)
+MOVIES_ROLE = {"acting": "Acting", "directing": "Directing", "writing": "Writing", "producing": "Production"}
+
+
+def _names(people, n=3):
+    return ", ".join(p["name"] for p in people[:n])
+
+
+def movie_summary(t):
+    """A title as a few sentences for the model: what, who made it, who's in it, the ratings."""
+    tv = t["type"] == "tv"
+    what = [("TV series " + t["year"] + "–" + t["end_year"]) if tv else t["year"] + " movie"]
+    what += [x for x in (t["certification"], f"{t['seasons_count']} seasons" if tv and t["seasons_count"] else "") if x]
+    if not tv and t["runtime"]:
+        what.append(f"{t['runtime']} min")
+    if t["networks"]:
+        what.append("on " + ", ".join(t["networks"]))
+    out = [f"{t['title']} ({', '.join(what)}; {', '.join(t['genres'][:3])})."]
+    if t["directors"]:
+        out.append(f"Directed by {_names(t['directors'])}.")
+    if t["creators"]:
+        out.append(f"Created by {_names(t['creators'])}.")
+    if t["writers"]:
+        out.append(f"Written by {_names(t['writers'])}.")
+    if t["cast"]:
+        out.append("Starring " + ", ".join(f"{c['name']} ({c['role']})" if c["role"] else c["name"] for c in t["cast"][:5]) + ".")
+    r = t["ratings"]
+    scores = []
+    if r.get("imdb"):
+        scores.append(f"IMDb {r['imdb']['rating']}/10 ({r['imdb']['votes']:,} votes)")
+    if r.get("rt"):
+        scores.append(
+            f"Rotten Tomatoes {r['rt']['critics']}% critics" + (f", {r['rt']['audience']}% audience" if r["rt"].get("audience") else "")
+        )
+    if r.get("tmdb"):
+        scores.append(f"TMDB {r['tmdb']['score']}/10")
+    if scores:
+        out.append("; ".join(scores) + ".")
+    if t["available"]:
+        out.append(
+            {"available": "It's in Jellyfin.", "partial": "Some of it is in Jellyfin.", "requested": "It's been requested in Seerr."}[
+                t["available"]
+            ]
+        )
+    if t["overview"]:
+        out.append("Story: " + t["overview"])
+    return " ".join(out)
+
+
+def person_summary(p, dept=""):
+    job = {"Acting": "actor", "Directing": "director", "Writing": "writer", "Production": "producer"}.get(p["dept"], p["dept"].lower())
+    out = [p["name"] + (f", {job}" if job else "")]
+    if p["born"]:
+        out[0] += f", born {p['born']}" + (f" in {p['place']}" if p["place"] else "") + (f", died {p['died']}" if p["died"] else "")
+    out[0] += "."
+    if p["known_for"]:
+        out.append("Known for: " + ", ".join(f"{c['title']} ({c['year'] or 'upcoming'})" for c in p["known_for"][:8]) + ".")
+    for d in [dept] if dept else list(p["credits"])[:3]:
+        work = [c for c in p["credits"].get(d) or [] if not c["talk"]]
+        if not work:
+            continue
+        lines = [
+            f"{c['title']} ({c['year'] or 'upcoming'}" + (f", {c['role']}" if c["role"] else "") + ")" for c in work[: 25 if dept else 6]
+        ]
+        out.append(f"{d} ({len(work)}, newest first): " + "; ".join(lines) + ".")
+    return " ".join(out)
+
+
+def open_movies(target):
+    a = registry.get("movies")
+    try:
+        streaming.ensure("movies", start=lambda: open_app(a.name, wait=False))
+        appctl.call("movies", {"op": "open", "target": target})
+        raise_window(a.desktop, a.name)
+    except Exception:  # the answer still stands without the app
+        pass
+
+
+def movies_tool(action, query=None, type=None, role=None):
+    from couchbox.services import movies as mv
+
+    m = mv.Movies.for_root()
+    if action == "top":
+        kind = type if type in ("movie", "tv") else "movie"
+        items = m.top(kind, pages=1)["items"][:10]
+        open_movies(f"top:{kind}")
+        return (
+            "Top rated "
+            + ("shows" if kind == "tv" else "movies")
+            + ": "
+            + "; ".join(f"{c['rank']}. {c['title']} ({c['year']}, {c['score']})" for c in items)
+            + "."
+        )
+    if not query:
+        return "Say which movie, show or person."
+    if action == "search":
+        r = m.search(query)
+        open_movies("search:" + query)
+        parts = [
+            f"{k}: " + ", ".join(c["title"] + (f" ({c['year']})" if c.get("year") else "") for c in r[key][:4])
+            for k, key in (("People", "people"), ("Movies", "movies"), ("Shows", "tv"))
+            if r[key]
+        ]
+        return ("Found " + " · ".join(parts) + ".") if parts else f"Nothing found for {query!r}."
+    hit = m.find(query, "person" if action == "person" else type)
+    if not hit:
+        return f"Nothing called {query!r} found."
+    if hit["type"] == "person":
+        dept = MOVIES_ROLE.get(role or "", "")
+        p = m.person(hit["id"])
+        open_movies(f"person:{p['id']}" + (f":{dept}" if dept else ""))
+        return person_summary(p, dept)
+    t = m.title(hit["type"], hit["id"])
+    open_movies(f"{t['type']}:{t['id']}")
+    return movie_summary(t)
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1366,6 +1501,7 @@ def run_tool(name, args):
         "search": lambda: search_tool(args["action"], args.get("query")),
         "spotify": lambda: spotify_tool(args),
         "maps": lambda: maps_tool(args["action"], args.get("query"), args.get("mode"), args.get("time"), args.get("origin")),
+        "movies": lambda: movies_tool(args["action"], args.get("query"), args.get("type"), args.get("role")),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)

@@ -1,0 +1,15 @@
+singleton M 1.0 M.qml
+Rail 1.0 Rail.qml
+Poster 1.0 Poster.qml
+PersonCard 1.0 PersonCard.qml
+RoundPhoto 1.0 RoundPhoto.qml
+Shelf 1.0 Shelf.qml
+Scores 1.0 Scores.qml
+MButton 1.0 MButton.qml
+HomePage 1.0 HomePage.qml
+TopPage 1.0 TopPage.qml
+SearchPage 1.0 SearchPage.qml
+TitlePage 1.0 TitlePage.qml
+PersonPage 1.0 PersonPage.qml
+SeasonPage 1.0 SeasonPage.qml
+SetupPage 1.0 SetupPage.qml

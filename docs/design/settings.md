@@ -55,6 +55,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `media.seerr.url` | unset | Seerr app sign-in uses Seerr's own login. Tile hidden until set | `MTV_SEERR_URL` |
 | `media.seerr.api_key` 🔒 | unset | Optional, only for voice requests | `secrets/seerr-key` |
 | `apps.maps.google_api_key` 🔒 | unset | Optional. Maps uses Google Maps Platform (traffic, transit, Google places and map) with it, OpenStreetMap services without | — |
+| `media.tmdb.token` 🔒 | unset | Movies & TV on a box without Seerr: a TMDB API Read Access Token (or v3 key). The app reads TMDB through couchbox-voice's proxy, which adds it. Its tile shows once Seerr or this is set | — |
 | `media.frigate.url` | unset | Frigate (cameras). Tile hidden until set; the app signs in with a Frigate user (kept in the TV user's `~/.local/share/couchbox-frigate`, mode 600) | — |
 | `apps.youtube.captions` | `en` | Captions language turned on for each video; empty = off | `MTV_YT_CAPTIONS` |
 | `apps.player.captions` | `on` | Native apps: subtitles on by default | per-app setting |
