@@ -212,7 +212,13 @@ def check(st: dict[str, Any] | None = None) -> dict[str, Any] | None:
     for v, url in candidates(s["updates.channel"], s["updates.source"]):
         if v <= me or str(v) in st.get("bad", []):
             continue
-        m = verify_manifest(_get(f"{url}/{MANIFEST}"), _get(f"{url}/{MANIFEST}.sig"))
+        try:
+            m = verify_manifest(_get(f"{url}/{MANIFEST}"), _get(f"{url}/{MANIFEST}.sig"))
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            log.info("%s is still being published (no %s yet): skipped for now", v, MANIFEST)
+            continue  # its files are attached ~15 min after the tag; an older one may be ready
         if Version.parse(m["version"]) != v:
             raise UpdateError("The update's manifest is for another version.")
         if m.get("base", {}).get("version") and m["base"]["version"] != os_version():
