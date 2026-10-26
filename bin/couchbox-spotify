@@ -346,6 +346,9 @@ def app_main():
         @Slot(str)
         def save(self, path):
             try:
+                from couchbox import qtcheck
+
+                qtcheck.clipped(self.window)
                 self.window.grabWindow().save(path)
             finally:
                 QGuiApplication.quit()

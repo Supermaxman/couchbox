@@ -40,6 +40,9 @@ KEY_KPENTER = "KEY_ENTER"          # the D-pad centre sends keypad Enter (seen o
 "hid:ef:a1" = "mouse-mode"         # Prime Video button: mouse mode on/off (arrows move a pointer,
                                    # OK clicks, Rewind / Fast-forward scroll), for web pages
 KEY_HOMEPAGE = "KEY_HOMEPAGE+run:couchbox-pause-all"  # Home: the home screen, and pause what's playing
+KEY_PLAYPAUSE = "media:playpause"   # Play/Pause, Rewind, Fast-forward: whatever is playing (the app
+KEY_REWIND = "media:rewind"         # in front's, else what's playing, else what was paused last),
+KEY_FASTFORWARD = "media:forward"   # by couchbox-mediakeys; in mouse mode Rewind / FF still scroll
 # Menu (KEY_MENU) passes through unchanged. Bigscreen binds Qt::Key_HomePage to its home
 # screen and Qt::Key_Menu to the running-apps overview.
 
@@ -53,3 +56,9 @@ KEY_SELECT = "KEY_ENTER"
 KEY_EXIT = "voice-or:KEY_ESC"
 KEY_BACK = "voice-or:KEY_ESC"
 KEY_ROOT_MENU = "KEY_HOMEPAGE+run:couchbox-pause-all"   # TV remote Home/Menu -> home screen, pause
+KEY_PLAYPAUSE = "media:playpause"   # the TV remote's media keys: whatever is playing (couchbox-mediakeys)
+KEY_PLAY = "media:play"
+KEY_PAUSE = "media:pause"
+KEY_STOP = "media:stop"
+KEY_REWIND = "media:rewind"
+KEY_FASTFORWARD = "media:forward"

@@ -97,7 +97,7 @@ FocusScope {
             if (name === "playpause") video.togglePause();
             else if (name === "play") video.setPaused(false);
             else if (name === "pause") video.setPaused(true);
-            else if (name === "seek") player.skip(arg);
+            else if (name === "seek" || name === "previous") player.skip(arg);
             else if (name === "seekto") video.seekTo(arg);
             else if (name === "next" && player.v && player.v.next) player.start(player.v.next.id);
             else if (name === "stop") player.finished();

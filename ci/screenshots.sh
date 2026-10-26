@@ -1,6 +1,7 @@
 #!/bin/sh
 # Render every Settings page and the setup wizard off screen (demo mode: a fake system),
-# into $1 (default build/shots). Fails on QML errors.
+# into $1 (default build/shots). Fails on QML errors, and on a focused card that grows past whatever
+# clips it (src/couchbox/qtcheck.py).
 set -eu
 OUT=${1:-build/shots}
 make -s stage >/dev/null
@@ -9,8 +10,9 @@ export COUCHBOX_SHARE="$PWD/build/share" PYTHONPATH="$PWD/src" QT_QPA_PLATFORM=o
 fail=0
 shot() {  # shot NAME APP ARGS...
   name=$1; app=$2; shift 2
-  if ! python3 "bin/$app" --demo --shot "$OUT/$name.png" "$@" >"$OUT/$name.log" 2>&1 || grep -qE "qrc:|file:.*(Error|TypeError|ReferenceError)|is not defined|Cannot assign|Unable to assign" "$OUT/$name.log"; then
-    echo "!! $name"; grep -E "Error|error|not defined|Cannot" "$OUT/$name.log" | head -5; fail=1
+  case "$name" in ${ONLY:-}*) ;; *) return 0;; esac   # ONLY=spotify: just those
+  if ! python3 "bin/$app" --demo --shot "$OUT/$name.png" "$@" >"$OUT/$name.log" 2>&1 || grep -qE "qrc:|file:.*(Error|TypeError|ReferenceError)|is not defined|Cannot assign|Unable to assign|focus-clip:" "$OUT/$name.log"; then
+    echo "!! $name"; grep -E "Error|error|not defined|Cannot|focus-clip:" "$OUT/$name.log" | head -5; fail=1
   else
     echo "ok $name"
   fi
@@ -80,5 +82,21 @@ shot movies-person couchbox-movies --open person:303
 shot movies-person-work couchbox-movies --open person:303:directing
 shot movies-search couchbox-movies --open search:harbor
 shot movies-top couchbox-movies --open top:movie
+# focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
+# focused card grows past whatever clips it)
+d13=down,down,down,down,down,down,down,down,down,down,down,down,down
+r6=right,right,right,right,right,right
+shot edge-weather-week-last couchbox-weather --open week --keys $d13
+shot edge-weather-hours-first couchbox-weather --keys down
+shot edge-weather-hours-far couchbox-weather --keys down,$r6,$r6,$r6
+shot edge-frigate-live-last couchbox-frigate --keys down,down,down,$r6
+shot edge-frigate-review-last couchbox-frigate --open review --keys $r6,down,down,down
+shot edge-spotify-home-far couchbox-spotify --keys down,$r6,$r6
+shot edge-spotify-artist-shelves couchbox-spotify --open artist:ar1 --keys down,down,down,right
+shot edge-maps-places-last couchbox-maps --keys $r6,down,down,down
+shot edge-movies-home-rows couchbox-movies --keys down,down,$r6
+shot edge-movies-top-last couchbox-movies --open top:movie --keys $d13,$r6
+shot edge-movies-person-work couchbox-movies --open person:303 --keys down,$r6
+shot edge-search-recent couchbox-search --keys down,down
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

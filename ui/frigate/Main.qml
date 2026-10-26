@@ -157,7 +157,7 @@ ApplicationWindow {
             if (action === "playpause") video.togglePause();
             else if (action === "pause" || action === "stop") video.setPaused(true);
             else if (action === "play") video.setPaused(false);
-            else if (action === "seek") video.seek(seconds || 10);
+            else if (action === "seek" || action === "previous") video.seek(seconds || 10);
         } else if (overlay === "camera" && (action === "pause" || action === "stop")) closeCamera();
         updateState();
     }

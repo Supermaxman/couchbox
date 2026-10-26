@@ -30,8 +30,10 @@ FocusScope {
     }
     GridView {
         id: grid
-        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; leftMargin: 60 * M.u; topMargin: 36 * M.u }
-        readonly property int cols: Math.max(1, Math.floor((width - M.edge) / cellWidth))
+        readonly property real pad: 22 * M.u        // room for a focused poster to grow
+        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom; leftMargin: 60 * M.u - pad; topMargin: 36 * M.u - pad }
+        leftMargin: pad; topMargin: pad
+        readonly property int cols: Math.max(1, Math.floor((width - pad - M.edge) / cellWidth))
         cellWidth: M.posterW + M.gap + 4 * M.u
         cellHeight: M.posterH + 130 * M.u
         clip: true
