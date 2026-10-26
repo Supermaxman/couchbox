@@ -133,6 +133,29 @@ def test_release_still_publishing_is_skipped(releases, tmp_path):
     assert updater.check()["version"] == "0.2.0"
 
 
+def test_stable_falls_back_to_the_list_while_latest_is_publishing(monkeypatch):
+    import io
+    import urllib.error
+
+    monkeypatch.delenv("COUCHBOX_RELEASES_URL", raising=False)
+    api = [
+        {"tag_name": "v0.4.7", "prerelease": False},
+        {"tag_name": "v0.4.6", "prerelease": False},
+        {"tag_name": "v0.5.0-beta.1", "prerelease": True},
+    ]
+
+    def get(url, timeout=30):
+        if url.endswith("/latest/download/release.json"):  # tagged, files not attached yet
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, io.BytesIO())
+        assert url.startswith("https://api.github.com/repos/o/r/releases")
+        return json.dumps(api).encode()
+
+    monkeypatch.setattr(updater, "_get", get)
+    got = updater.candidates("stable", "o/r")
+    assert [str(v) for v, _ in got] == ["0.4.7", "0.4.6"]
+    assert got[1][1] == "https://github.com/o/r/releases/download/v0.4.6"
+
+
 def test_nothing_newer(releases):
     releases("0.1.0")
     assert updater.check() is None

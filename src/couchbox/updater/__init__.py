@@ -152,8 +152,15 @@ def candidates(channel: str, source: str) -> list[tuple[Version, str]]:
     base = base_url(source)
     if channel == "stable" and "COUCHBOX_RELEASES_URL" not in os.environ:
         # one redirect, no API rate limit
-        m = json.loads(_get(f"{base}/latest/download/{MANIFEST}"))
-        return [(Version.parse(m["version"]), f"{base}/download/v{m['version']}")]
+        try:
+            m = json.loads(_get(f"{base}/latest/download/{MANIFEST}"))
+            return [(Version.parse(m["version"]), f"{base}/download/v{m['version']}")]
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            # the newest release is tagged but its files aren't attached yet (~15 min): list the
+            # releases instead; check() skips the unfinished one
+            log.info("the latest release is still being published: looking at the ones before it")
     if "COUCHBOX_RELEASES_URL" in os.environ:
         idx = json.loads(_get(f"{base}/index.json"))  # test servers: [{"tag": "v0.2.0", "prerelease": false}]
     else:
