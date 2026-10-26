@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/Supermaxman/couchbox/compare/v0.9.0...v0.9.1) (2026-10-26)
+
+
+### Fixed
+
+* **voice:** send movie facts to the movies tool, not the model's memory ([#47](https://github.com/Supermaxman/couchbox/issues/47)) ([8e8fc79](https://github.com/Supermaxman/couchbox/commit/8e8fc794416e89a5a20319557a9ec0d0d59e5196))
+
 ## [0.9.0](https://github.com/Supermaxman/couchbox/compare/v0.8.0...v0.9.0) (2026-10-26)
 
 
