@@ -43,6 +43,16 @@ def set_client_id(value):
     set_config(client_id=v.lower())
 
 
+def set_key(value):
+    """The Soloist API key (step 2). Catches the easy mix-up: the app's client ID typed here."""
+    v = (value or "").strip()
+    if v and v.lower() == client_id().lower():
+        raise SpotifyError(
+            "That's your app's client ID. The Soloist key is a separate one: developer.spotify.com/dashboard/soloist → Generate."
+        )
+    soloist.set_api_key(v)
+
+
 def device_name():
     try:
         from couchbox import settings
@@ -92,6 +102,7 @@ def status(sp, player=None):
             "key": bool(soloist.api_key()),
             "running": bool(ps.get("connected")),
             "logged_in": bool(ps.get("logged_in")),
+            "login_error": "" if ps.get("logged_in") else soloist.login_error(),
         },
     )
     return st

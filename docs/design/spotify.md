@@ -87,7 +87,12 @@ search results or catalogue data.
 ## What a household does, once
 
 1. Spotify Premium for the person setting it up.
-2. developer.spotify.com → **Spotify Soloist API Key** → Generate.
+2. developer.spotify.com/dashboard/soloist (**Spotify Soloist API Key** in the dashboard, not inside
+   the app) → Generate. It isn't the app's Client ID or Client secret. A wrong key starts fine and
+   only fails when a phone picks the TV (the phone stays on "Connecting…"); the player logs
+   `login failed: make sure --api-key is valid`, and `--connect` turns that line into a
+   `login_error` in the player's status, which Setup and Now Playing show until a login works or
+   the key changes. Setup also refuses the app's client ID as the key.
 3. developer.spotify.com → Dashboard → **Create app**: any name; Redirect URIs as Setup shows them;
    API: Web API. Copy its **Client ID**. Others in the home: User Management.
 4. On the TV: Spotify → Setup: type the client ID and the key (the phone remote page types), press

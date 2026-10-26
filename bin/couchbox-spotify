@@ -118,7 +118,7 @@ def app_main():
                 spotify_tv.set_client_id(v)
                 return self.status()
             if op == "set_key":
-                soloist.set_api_key(v)
+                spotify_tv.set_key(v)
                 spotify_tv.service("restart")
                 return self.status()
             if op == "install_player":
@@ -375,6 +375,8 @@ def connect_main():
     mpris = None
 
     def changed(st, event):
+        if event == "auth_state" and st.get("logged_in"):
+            soloist.clear_login_error()
         ctx = st.get("context") or {}
         if event in ("context_changed", "playback_state") and ctx.get("uri") and ctx["uri"] != last_ctx["uri"]:
             last_ctx["uri"] = ctx["uri"]
@@ -466,8 +468,10 @@ def connect_main():
             for f in ("ws.port", "ws.addr"):
                 (soloist.state_dir() / f).unlink(missing_ok=True)
             started = time.time()
-            proc = subprocess.Popen(soloist.command(name))
+            proc = subprocess.Popen(soloist.command(name), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1, errors="replace")
             child["proc"] = proc
+            threading.Thread(target=soloist.relay_output, args=(proc.stdout,), daemon=True).start()
             code = proc.wait()
             child["proc"] = None
             print(f"soloist exited ({code})", flush=True)

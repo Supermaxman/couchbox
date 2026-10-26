@@ -66,7 +66,14 @@ FocusScope {
         Text { width: parent.width; text: np.info.name || ((((np.item || {}).decorations || {}).identity || {}).name) || (S.now.logged_in ? "Nothing playing" : "Not connected")
                wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
                color: S.text; font.family: S.font; font.pixelSize: 64 * S.u; font.weight: Font.Bold }
-        Text { width: parent.width; text: S.artists(np.info); elide: Text.ElideRight; color: S.text2; font.family: S.font; font.pixelSize: 34 * S.u }
+        Text { width: parent.width; text: S.artists(np.info); elide: Text.ElideRight; color: S.text2; font.family: S.font; font.pixelSize: 34 * S.u
+               visible: !keyError.visible }
+        Text {                                   // Soloist turned the phone's login down: say why
+            id: keyError
+            width: parent.width; visible: !S.now.logged_in && !np.info.name && !!(S.status.player || {}).login_error
+            text: (S.status.player || {}).login_error || ""; wrapMode: Text.WordWrap
+            color: S.danger; font.family: S.font; font.pixelSize: S.tBody
+        }
         Text { width: parent.width; text: (np.info.album || {}).name || ""; elide: Text.ElideRight; color: S.dim; font.family: S.font; font.pixelSize: S.tBody }
     }
     Item {
