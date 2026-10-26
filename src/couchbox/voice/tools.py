@@ -878,6 +878,7 @@ TOOL_APP = {
     "seerr": "seerr",
     "frigate": "frigate",
     "weather": "weather",
+    "spotify": "spotify",
     **{t: a for t, (_, a) in streaming.SITES.items()},
 }
 
@@ -949,6 +950,22 @@ def _schemas(st=None):
                 query=q,
                 id=q,
                 type={"type": "string", "enum": ["movie", "tv"]},
+            ),
+        ),
+        fn(
+            "spotify",
+            "Spotify music, played on this TV (keeps playing in the background).",
+            s(
+                action=act(
+                    ["play", "now", "like", "unlike", "add_to_playlist", "make_playlist", "pause", "resume", "next", "previous"],
+                    "play: query (a song, artist, album, or one of the user's playlists: 'my Discover Weekly', 'liked songs'); "
+                    "kind narrows it · now: what's playing · like/unlike/add_to_playlist (name): the song playing · "
+                    "make_playlist: a new playlist called name from songs you pick, 'Artist - Title', 15-30 of them",
+                ),
+                query=q,
+                kind={"type": "string", "enum": ["track", "artist", "album", "playlist"]},
+                name=q,
+                songs={"type": "array", "items": {"type": "string"}},
             ),
         ),
         fn(
@@ -1092,6 +1109,13 @@ def status_text(name, args):
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
         "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
         "weather": lambda: "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
+        "spotify": lambda: {
+            "play": f"Finding “{a.get('query')}” on Spotify" if a.get("query") else "Playing",
+            "now": "Checking what's playing",
+            "like": "Liking this song",
+            "add_to_playlist": f"Adding it to {a.get('name') or a.get('query')}",
+            "make_playlist": f"Making “{a.get('name') or a.get('query')}”",
+        }.get(a.get("action"), "Spotify"),
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1175,6 +1199,23 @@ def weather_tool(action, day=None, show=False):
     return out
 
 
+def spotify_tool(args):
+    """Through the Spotify background service (couchbox-spotify --connect, the TV user's): it
+    has the sign-in and plays here. Spotify's data isn't passed to the model beyond the reply."""
+    req = {
+        "op": "voice",
+        "action": args["action"],
+        "query": args.get("query") or "",
+        "kind": args.get("kind") or "",
+        "name": args.get("name") or "",
+        "songs": [str(x) for x in args.get("songs") or []][:60],
+    }
+    try:
+        return appctl.call("spotify-connect", req, timeout=90).get("result", "Done.")
+    except appctl.NotRunning:
+        return "Spotify isn't set up on this TV yet: open Spotify and follow Setup."
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1189,6 +1230,7 @@ def run_tool(name, args):
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
         "frigate": lambda: frigate_tool(args["action"], args.get("query")),
         "weather": lambda: weather_tool(args["action"], args.get("day"), bool(args.get("show"))),
+        "spotify": lambda: spotify_tool(args),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)

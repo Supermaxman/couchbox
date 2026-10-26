@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Spotify
+Comment=Your Spotify music: search, playlists, artists and albums, played on this TV
+Icon=audio-x-generic
+Categories=AudioVideo;Audio;
+Exec=/usr/lib/couchbox/bin/couchbox-spotify
+StartupWMClass=couchbox-spotify

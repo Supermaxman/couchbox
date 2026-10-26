@@ -1,0 +1,8 @@
+{
+  "id": "spotify",
+  "name": "Spotify",
+  "desktop": "couchbox-spotify.desktop",
+  "kind": "native",
+  "tile": "spotify",
+  "default_order": 25
+}

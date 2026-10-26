@@ -1,0 +1,14 @@
+[Unit]
+Description=Couchbox Spotify: Spotify's player on this TV (Spotify Soloist), media keys and voice control
+Documentation=https://developer.spotify.com/documentation/soloist
+After=pipewire.service wireplumber.service
+# set up from the Spotify app (Setup): the Soloist API key the user made
+ConditionPathExists=%h/.local/share/couchbox-spotify/soloist.key
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-spotify --connect
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
