@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with: {context: ., file: ci/Dockerfile, tags: couchbox-dev, load: true, cache-from: "type=gha,scope=ci-image"}
@@ -36,7 +36,7 @@ jobs:
     runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-24.04-arm' }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with: {name: image, path: out}
       - name: boot the image in a container
