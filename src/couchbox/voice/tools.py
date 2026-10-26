@@ -18,6 +18,7 @@ from evdev import ecodes as e
 
 from couchbox import appctl, secrets, settings
 from couchbox import apps as registry
+from couchbox.services import weather
 
 from . import cdp, streaming
 
@@ -876,6 +877,7 @@ TOOL_APP = {
     "jellyfin": "jellyfin",
     "seerr": "seerr",
     "frigate": "frigate",
+    "weather": "weather",
     **{t: a for t, (_, a) in streaming.SITES.items()},
 }
 
@@ -896,6 +898,8 @@ def disabled_tools(st):
         off.add("seerr")
     if not st["media.frigate.url"]:
         off.add("frigate")
+    if not weather.place_from_settings(st):
+        off.add("weather")
     if not any(a.kind == "web" for a in registry.home_row(st) if a.hideable):
         off.add("page")
     return off
@@ -956,6 +960,15 @@ def _schemas(st=None):
                     "camera: show the camera named in query full screen, live · timeline: the last day (of the camera in query, if any)",
                 ),
                 query=q,
+            ),
+        ),
+        fn(
+            "weather",
+            "The forecast where this TV is (14 days). Answer from what it returns; show: also put it on the TV.",
+            s(
+                action=act(["now", "day", "week"], "now: now and the rest of today · day: the day(s) in day · week: a line a day"),
+                day={"type": "string", "description": "today, tomorrow, a weekday, this/next weekend, or YYYY-MM-DD"},
+                show={"type": "boolean"},
             ),
         ),
     ]
@@ -1078,6 +1091,7 @@ def status_text(name, args):
         "tv": lambda: "TV " + str(a.get("action", "")).replace("_", " "),
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
         "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
+        "weather": lambda: "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
         "say": lambda: str(a.get("text", "")),
     }.get(name, lambda: name)()
 
@@ -1133,6 +1147,34 @@ def frigate_tool(action, query=None):
     return said
 
 
+_weather = None
+
+
+def weather_tool(action, day=None, show=False):
+    """The forecast as text for the model to answer from; show=True also opens the Weather app
+    there (today, the fortnight, or the day asked about)."""
+    global _weather
+    place = weather.place_from_settings()
+    if not place:
+        return "No town is set (Settings → Time), so there's no forecast."
+    _weather = _weather or weather.Weather()
+    data = _weather.get(place, clock24=place["clock24"])
+    if action == "day" and not day:
+        action = "now"
+    out = weather.voice_report(data, action, day)
+    if show:
+        target = {"now": "today", "week": "week"}.get(action, "today")
+        if action == "day":
+            picked = weather.pick_days(data["days"], day)
+            target = f"day:{picked[0]['date']}" if len(picked) == 1 else "week" if picked else "today"
+        a = registry.get("weather")
+        streaming.ensure("weather", start=lambda: open_app(a.name, wait=False))
+        appctl.call("weather", {"op": "open", "target": target})
+        raise_window(a.desktop, a.name)
+        out += "\n(Shown on the TV.)"
+    return out
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1146,6 +1188,7 @@ def run_tool(name, args):
         "tv": lambda: tv(args["action"], args.get("times") or 1),
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
         "frigate": lambda: frigate_tool(args["action"], args.get("query")),
+        "weather": lambda: weather_tool(args["action"], args.get("day"), bool(args.get("show"))),
         "say": lambda: "Shown.",
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)

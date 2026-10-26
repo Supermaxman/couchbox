@@ -1,0 +1,194 @@
+#!/usr/bin/python3
+"""couchbox-weather: the weather where the TV is, made for the couch: Today (now, the next
+hours, the day's numbers), the next two weeks, and a day in detail (hour-by-hour temperature,
+rain and wind). Data from Open-Meteo (no key) for the town in Settings → Time, US National
+Weather Service alerts where they apply; with the voice assistant set up, a one-line "today
+at a glance" from its model (couchboxd's weather.glance). The QML is in
+/usr/share/couchbox/ui/weather; the data side is couchbox.services.weather.
+
+  couchbox-weather [--open today | week | day:YYYY-MM-DD | day:tomorrow | day:saturday]
+  couchbox-weather --demo --shot FILE [--open ...] [--keys down,ok,...]
+                                     render once off screen (a made-up fortnight, no network)
+"""
+import json
+import os
+import sys
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_WEATHER_QML", str(paths.share() / "ui/weather/Main.qml"))
+SITE = "weather"
+
+from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (so the window comes back as one: grabWindow)
+
+from couchbox.services import weather  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to weather.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        self.demo = demo
+        self.w = weather.Weather(demo=demo)
+        self.pool = ThreadPoolExecutor(max_workers=3)
+
+    def place(self):
+        if self.demo:
+            return {"name": "Lakeside", "lat": 45.6, "lon": -122.7, "units": "imperial", "clock24": False}
+        return weather.place_from_settings()
+
+    def forecast(self, force=False):
+        p = self.place()
+        if not p:
+            raise weather.WeatherError("Set your town in Settings → Time to see the weather.")
+        return self.w.get(p, clock24=p.get("clock24", False), force=force)
+
+    def glance(self):
+        if self.demo:
+            return {"text": "A grey, drizzly day: take an umbrella this afternoon and a warm layer for the evening.", "enabled": True}
+        from couchbox import ipc
+        try:
+            return ipc.call("weather.glance", timeout=75, facts=weather.glance_facts(self.forecast()))
+        except Exception as err:  # the daemon or the model: the line is a nicety
+            print(f"glance: {err}", flush=True)
+            return {"text": "", "enabled": False}
+
+    def run(self, op, a):
+        ops = {
+            "forecast": lambda: self.forecast(bool(a.get("force"))),
+            "glance": lambda: self.glance(),
+            "report": lambda: weather.voice_report(self.forecast(), a.get("action", "now"), a.get("day")),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except weather.WeatherError as err:
+                out = {"error": str(err)}
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch, or the voice assistant, hands its
+    --open to this one."""
+    command = Signal(str)
+
+    def __init__(self, backend):
+        super().__init__()
+        self.backend = backend
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Weather")
+        if op == "call":
+            try:
+                return self.backend.run(req["fn"], req.get("args") or {})
+            except weather.WeatherError as err:
+                return {"error": str(err)}
+        if op == "open":
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        try:
+            self.window.grabWindow().save(path)
+        finally:
+            if "--shot" in sys.argv:
+                QGuiApplication.quit()
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    app = QGuiApplication(sys.argv)
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-weather")
+    app.setApplicationDisplayName("Weather")
+    app.setDesktopFileName("couchbox-weather")      # Wayland app id: matches couchbox-weather.desktop
+    engine = QQmlApplicationEngine()
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control(backend)
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demo", demo)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,29 @@
+<svg data-couchbox-glow="#38bdf8" xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <!-- couchbox home tile: Weather (Open-Meteo). Rendered to PNG by couchbox-home (rsvg-convert);
+       data-couchbox-glow is the colour of the glow behind it. -->
+  <defs>
+    <clipPath id="r"><rect width="800" height="450" rx="36"/></clipPath>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c4a6e"/><stop offset="0.6" stop-color="#0b2540"/><stop offset="1" stop-color="#0a1020"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.3" r="0.55">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity="0.30"/><stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="800" height="450" fill="url(#bg)"/>
+    <rect width="800" height="450" fill="url(#glow)"/>
+    <g transform="translate(118 108) scale(3.6)">
+      <g stroke="#fbbf24" stroke-width="3.6" stroke-linecap="round">
+        <path d="M28 10.5v-5M10.5 28h-5M50.5 28h5M15.6 15.6l-3.5-3.5M40.4 15.6l3.5-3.5M15.6 40.4l-3.5 3.5"/>
+      </g>
+      <circle cx="28" cy="28" r="12" fill="#fbbf24"/>
+      <path d="M26 56H55A9 9 0 0 0 55 38A13 13 0 0 0 30 36A10.5 10.5 0 0 0 26 56Z" fill="#f1f5f9"/>
+    </g>
+    <text x="380" y="258" font-family="Inter, DejaVu Sans, sans-serif" font-size="92" font-weight="700" fill="#fafafa">Weather</text>
+    <rect width="800" height="450" fill="url(#sheen)"/>
+  </g>
+</svg>

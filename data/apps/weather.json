@@ -1,0 +1,11 @@
+{
+  "id": "weather",
+  "name": "Weather",
+  "desktop": "couchbox-weather.desktop",
+  "kind": "native",
+  "tile": "weather",
+  "requires": [
+    "location.name"
+  ],
+  "default_order": 42
+}
