@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: {name: image, path: out}
       - name: boot the image in a container
         run: sudo image/test-image.sh out/couchbox-*-rpi5.img.xz
