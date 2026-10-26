@@ -11,6 +11,16 @@ FocusScope {
     readonly property var day: days[index] || null
     readonly property var hours: day ? day.hours : []
     signal closed()
+    // chips under the summary: the day's worst air quality, then its pollen
+    readonly property var chipList: {
+        const out = [];
+        if (!day) return out;
+        if (day.aqi) out.push({glyph: "air", what: "Air", level: day.aqi.value + " " + day.aqi.label, color: day.aqi.color, more: day.aqi.pollutant || ""});
+        for (const t of day.pollen || [])
+            out.push({glyph: t.code.toLowerCase(), what: t.type, level: t.value > 0 ? t.level : "None",
+                      color: t.value > 0 ? t.color : W.dim, more: t.value > 0 ? t.plants.slice(0, 2).join(", ") : ""});
+        return out;
+    }
 
     function show(date, h) {
         for (let i = 0; i < days.length; i++) if (days[i].date === date) { index = i; break; }
@@ -44,7 +54,31 @@ FocusScope {
                 width: parent.width
                 text: page.day ? page.day.summary : ""
                 color: W.text2; font.family: W.font; font.pixelSize: W.tBody; lineHeight: 1.15
-                wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight
+                wrapMode: Text.WordWrap; maximumLineCount: chips.visible ? 2 : 4; elide: Text.ElideRight
+            }
+            Flow {                               // the day's air quality and pollen, where known
+                id: chips
+                width: parent.width
+                spacing: 10 * W.u
+                visible: page.chipList.length > 0
+                Repeater {
+                    model: page.chipList
+                    delegate: Rectangle {
+                        id: dc
+                        required property var modelData
+                        width: dcRow.implicitWidth + 30 * W.u; height: 46 * W.u; radius: 23 * W.u
+                        color: W.panel
+                        Row {
+                            id: dcRow
+                            anchors.centerIn: parent
+                            spacing: 10 * W.u
+                            Image { anchors.verticalCenter: parent.verticalCenter; width: 24 * W.u; height: width; sourceSize: Qt.size(width, height); source: W.glyph(dc.modelData.glyph) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: dc.modelData.what; color: W.dim; font.family: W.font; font.pixelSize: W.tMeta }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: dc.modelData.level; color: dc.modelData.color; font.family: W.font; font.pixelSize: W.tMeta; font.weight: Font.DemiBold }
+                            Text { anchors.verticalCenter: parent.verticalCenter; visible: text !== ""; text: dc.modelData.more; color: W.faint; font.family: W.font; font.pixelSize: W.tMeta }
+                        }
+                    }
+                }
             }
         }
         Grid {

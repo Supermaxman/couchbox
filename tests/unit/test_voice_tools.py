@@ -195,6 +195,9 @@ def test_weather_needs_a_town_and_answers_from_the_forecast(monkeypatch):
     tools.weather_tool("week", show=True)
     assert calls[-1][1] == {"op": "open", "target": "week"}
     assert "Today" in tools.weather_tool("now")
+    assert "Air quality now: US AQI 38, good (mostly PM2.5)" in tools.weather_tool("air")
+    assert "Today (" in tools.weather_tool("pollen") and "tree high (Birch, Oak, Alder)" in tools.weather_tool("pollen")
+    assert "Tomorrow (" in tools.weather_tool("pollen", "tomorrow")
     out = tools.weather_tool("radar")
     assert calls[-1][1] == {"op": "open", "target": "radar"} and "radar is on the TV" in out and "Today" in out
 

@@ -47,6 +47,13 @@ def maps_google_key() -> dict[str, str]:
     return {"key": secrets.get("apps.maps.google_api_key")}
 
 
+@method("weather.google_key")
+def weather_google_key() -> dict[str, str]:
+    """The same Google Maps Platform key, for the Weather app's air quality and pollen (Google's
+    Air Quality and Pollen APIs); a write method for the same reason as maps.google_key."""
+    return {"key": secrets.get("apps.maps.google_api_key")}
+
+
 def _auth(name: str) -> dict[str, str]:
     k = secrets.get(name)
     return {"Authorization": f"Bearer {k}"} if k else {}
