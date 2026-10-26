@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+import urllib.error
 
 from couchbox import updater
 
@@ -35,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     except updater.UpdateError as e:
         print(f"couchbox-updater: {e}", file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, OSError) as e:
+        print(f"couchbox-updater: can't reach the update server ({getattr(e, 'reason', e)})", file=sys.stderr)
         return 1
     return 0
 

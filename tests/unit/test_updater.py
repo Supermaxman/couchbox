@@ -125,6 +125,14 @@ def test_check_picks_newest_stable(releases):
     assert updater.check()["version"] == "0.3.0-beta.1"
 
 
+def test_release_still_publishing_is_skipped(releases, tmp_path):
+    releases("0.2.0")
+    releases("0.3.0")
+    for f in (tmp_path / "www/download/v0.3.0").iterdir():  # tagged, files not attached yet
+        f.unlink()
+    assert updater.check()["version"] == "0.2.0"
+
+
 def test_nothing_newer(releases):
     releases("0.1.0")
     assert updater.check() is None
