@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
   id-token: write
   attestations: write
 
@@ -25,6 +26,14 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # GitHub doesn't start workflows for a PR that the built-in token opened or updated, so
+      # the release PR would have no checks; a manual (workflow_dispatch) run is allowed
+      - name: run CI on the release PR
+        if: steps.rp.outputs.pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ fromJSON(steps.rp.outputs.pr).headBranchName }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
 
   build:
     needs: release-please
