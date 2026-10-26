@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/Supermaxman/couchbox/compare/v0.8.0...v0.9.0) (2026-10-26)
+
+
+### New
+
+* **movies:** Movies & TV, an IMDb-style guide to movies, shows and people ([#42](https://github.com/Supermaxman/couchbox/issues/42)) ([747abbb](https://github.com/Supermaxman/couchbox/commit/747abbbefa62e828a9e65e4731c41ab3c6257df6))
+
 ## [0.8.0](https://github.com/Supermaxman/couchbox/compare/v0.7.0...v0.8.0) (2026-10-26)
 
 
