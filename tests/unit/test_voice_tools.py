@@ -289,8 +289,14 @@ def test_movie_facts_get_a_nudge_to_the_movies_tool():
 
     a = agent.Agent("http://x", "m", "k", lambda *_: None)
     a.tool_list = [{"function": {"name": n}} for n in ("movies", "jellyfin")]
-    for q in ("who directed Arrival", "what's the IMDb rating of Severance", "what else has Florence Pugh been in",
-              "show me Denis Villeneuve's movies", "who plays Mark in Severance", "top rated shows"):
+    for q in (
+        "who directed Arrival",
+        "what's the IMDb rating of Severance",
+        "what else has Florence Pugh been in",
+        "show me Denis Villeneuve's movies",
+        "who plays Mark in Severance",
+        "top rated shows",
+    ):
         assert "movies tool" in a.hint(q), q
     for q in ("play Severance", "pause", "cast this to the TV", "what's the weather tomorrow"):
         assert a.hint(q) == "", q
