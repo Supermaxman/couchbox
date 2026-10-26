@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/Supermaxman/couchbox/compare/v0.5.0...v0.5.1) (2026-10-26)
+
+
+### Fixed
+
+* **frigate:** no "Sign in to Frigate." error on the first sign-in screen ([#30](https://github.com/Supermaxman/couchbox/issues/30)) ([c748b7a](https://github.com/Supermaxman/couchbox/commit/c748b7a2e7448cdf1e38caa36dc3682d56be553b))
+
 ## [0.5.0](https://github.com/Supermaxman/couchbox/compare/v0.4.9...v0.5.0) (2026-10-26)
 
 
