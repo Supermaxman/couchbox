@@ -8,6 +8,7 @@ with backoff."""
 
 import json
 import os
+import re
 import time
 
 import requests
@@ -15,6 +16,12 @@ import requests
 from . import tools
 
 PROMPT = os.path.join(os.path.dirname(__file__), "prompt.md")
+# "who directed X", "X's IMDb rating", "what else has X been in", "Villeneuve's movies"...
+MOVIE_FACTS = re.compile(
+    r"\b(direct(ed|or|s)|imdb|rotten tomatoes|rated|rating|starr(ed|ing|s)|cast of|the cast|who plays|played by|"
+    r"been in|acted in|filmography|written by|wrote|(movies|films|shows) (by|with|from)|'s (movies|films|shows|work))\b",
+    re.I,
+)
 MAX_STEPS = 14
 TOOL_RESULT_CHARS = 3000
 COMPACT_CHARS = 36000  # about 10k tokens of history
@@ -91,6 +98,14 @@ class Agent:
         clock = "%H:%M" if settings.derived()["clock24"] else "%-I:%M %p"
         return f"[{tools.screen_summary()} Now: {time.strftime('%a %b %-d, ' + clock)}.]"
 
+    def hint(self, text):
+        """A nudge for requests models like to answer from memory (and get wrong): movie facts
+        go to the movies tool. Added to that request only, so the cached prompt stays the same."""
+        names = {t["function"]["name"] for t in self.tool_list}
+        if "movies" in names and MOVIE_FACTS.search(text):
+            return " This is a movie or TV fact: look it up with the movies tool, don't answer from memory."
+        return ""
+
     def history(self):
         return [m for t in self.turns for m in t]
 
@@ -137,7 +152,7 @@ class Agent:
             status("thinking", "Tidying up memory")
             self.compact(cancel)
         self.tool_list = tools.schemas()
-        turn = [{"role": "user", "content": f"{text}\n\n{self.note()}"}]
+        turn = [{"role": "user", "content": f"{text}\n\n{self.note()}{self.hint(text)}"}]
         self.turns.append(turn)
         for step in range(MAX_STEPS):
             if cancel.is_set():
