@@ -52,6 +52,7 @@ SettingsPage {
         if (s["phone.enabled"] && phone.url) {
             r.push({kind: "qr", label: "", qr: backend.qr(phone.url)});
             r.push(T.info("Scan it with your phone's camera", phone.base || ""));
+            if (phone.code) r.push(T.info("Or open the page and type this code", phone.code, {help: "For a home-screen app on an iPhone, which can't scan"}));
             r.push(T.action("New pairing code", () => T.confirm("Make a new pairing code?", "Phones paired before need to scan the new code.", "New code",
                 () => T.call("phone.rotate", {}, rr => p.phone = rr))));
         }

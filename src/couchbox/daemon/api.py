@@ -640,7 +640,7 @@ def phone_pairing() -> dict[str, Any]:
     ts = tailscale_status() if s["tailscale.enabled"] else {}
     if ts.get("state") == "Running" and ts.get("name") and s["tailscale.serve_phone_page"]:
         base = f"https://{ts['name']}"
-    return {"url": f"{base}/#t={token}", "base": base}
+    return {"url": f"{base}/#t={token}", "base": base, "code": secrets.pair_code(token)}
 
 
 METHODS["phone.pairing"].write = True  # the token is a credential
