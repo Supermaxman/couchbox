@@ -26,6 +26,8 @@ SettingsPage {
             T.section("Seerr"),
             T.row("media.seerr.url", {help: "Your Seerr server, for requesting movies and shows."}),
             T.secretRow("media.seerr.api_key", {help: "Seerr → Settings → General → API key. The Seerr app and voice requests use it."}),
+            T.section("Frigate"),
+            T.row("media.frigate.url", {help: "Your Frigate server (cameras), e.g. https://frigate.example.ts.net or http://192.168.1.20:8971. The Frigate tile shows once it's set; sign in from the app."}),
             T.section("Watching"),
             T.row("apps.player.captions"),
             {kind: "choice", label: T.label("apps.youtube.captions"), value: s["apps.youtube.captions"] ? s["apps.youtube.captions"] : "Off",

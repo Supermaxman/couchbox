@@ -49,18 +49,19 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
-| Native apps | QML + PySide6 + libmpv | tv | Seerr, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
+| Native apps | QML + PySide6 + libmpv | tv | Seerr, Frigate, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
 ### Voice assistant
 
 The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compatible model with tools (`src/couchbox/voice/`).
 
-- **Tools follow the home row.** Each app's tool is offered only while its tile is shown, so hiding Dropout removes the `dropout` tool. Jellyfin and Seerr also need their servers set. `open_app` lists only the visible apps.
+- **Tools follow the home row.** Each app's tool is offered only while its tile is shown, so hiding Dropout removes the `dropout` tool. Jellyfin, Seerr and Frigate also need their servers set. `open_app` lists only the visible apps.
 - **The tools:**
   - `youtube`: VacuumTube over DevTools.
   - `jellyfin`: the web client's API over DevTools.
   - `seerr`: its API.
+  - `frigate`: shows a camera live (by spoken name), all cameras, or the alerts, through the Frigate app's control socket.
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.
@@ -149,9 +150,9 @@ couchbox/
 ├─ docs/                    user guides (install, settings, troubleshooting) + design/
 ├─ src/couchbox/            Python package
 │  ├─ settings/  ipc/  daemon/  cli/  updater/  input/  cec/  voice/  phone/  memory/
-│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py
+│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4)
 ├─ apps/                    QML apps (each: main.py + qml/)
-│  ├─ settings/  setup/  seerr/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
+│  ├─ settings/  setup/  seerr/  frigate/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
 │  └─ CouchKit/             shared QML module (keyboard + QR, buttons, pages)
 ├─ shell/                   Plasma Bigscreen home overrides + theme (GPL files live here)
 ├─ system/                  systemd units, udev rules, dracut module, sddm/kwin/logind snippets,

@@ -1,0 +1,10 @@
+singleton F 1.0 F.qml
+CameraTile 1.0 CameraTile.qml
+ReviewCard 1.0 ReviewCard.qml
+Rail 1.0 Rail.qml
+LivePage 1.0 LivePage.qml
+ReviewPage 1.0 ReviewPage.qml
+CameraView 1.0 CameraView.qml
+PlayerView 1.0 PlayerView.qml
+SignInPage 1.0 SignInPage.qml
+FButton 1.0 FButton.qml

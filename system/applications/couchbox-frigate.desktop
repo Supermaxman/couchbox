@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Frigate
+Comment=Your Frigate cameras: live view, alerts and recordings
+Icon=camera-web
+Categories=AudioVideo;Video;
+Exec=/usr/lib/couchbox/bin/couchbox-frigate
+StartupWMClass=couchbox-frigate

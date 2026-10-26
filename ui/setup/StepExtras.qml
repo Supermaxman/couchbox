@@ -15,6 +15,7 @@ StepPage {
                 ? T.pick("Jellyfin servers", sv.map(x => ({label: x.name + " · " + x.url, value: x.url})), "", u => T.set("media.jellyfin.url", u))
                 : T.toast("No Jellyfin server answered."))),
             T.row("media.seerr.url"),
+            T.row("media.frigate.url", {help: "Your Frigate cameras (sign in from the Frigate app)"}),
             T.section("Voice"),
             T.row("voice.mode"),
             T.row("voice.stt.url", {help: "An OpenAI-compatible speech-to-text server (e.g. faster-whisper, speaches)"}),

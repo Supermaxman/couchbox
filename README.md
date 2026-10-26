@@ -18,7 +18,7 @@
 - **Apps:**
   - YouTube (VacuumTube, ad-free, with SponsorBlock);
   - Jellyfin (hardware HEVC decoding on the Pi 5);
-  - native TV apps for Seerr, Twitch (chat overlay, emotes), Nebula, Dropout and 2nd Try;
+  - native TV apps for Seerr, Frigate (your cameras: live view, alerts, recordings), Twitch (chat overlay, emotes), Nebula, Dropout and 2nd Try;
   - any website as a remote-friendly web app;
   - AirPlay and FCast receivers.
 - **Remotes:**
@@ -27,7 +27,7 @@
   - A phone page lets you type and dictate.
 - **Settings on the TV for everything:**
   - Wi-Fi, time zone and location, and the home screen layout;
-  - media servers (Jellyfin, Seerr);
+  - media servers (Jellyfin, Seerr) and cameras (Frigate);
   - voice (any OpenAI-compatible speech-to-text and model endpoint);
   - Tailscale, SSH, disk encryption (with Tang network unlock, over Wi-Fi too);
   - updates.

@@ -47,7 +47,7 @@ SEERR_GET = ("/discover/", "/search?", "/movie/", "/tv/", "/person/", "/collecti
 # ... and its writes: request, approve/decline a request, watchlist add/remove, report an issue
 SEERR_WRITE = [("POST", r"/request"), ("POST", r"/request/\d+/(approve|decline)"), ("POST", r"/watchlist"),
                ("DELETE", r"/watchlist/\d+"), ("POST", r"/issue")]
-STT_PROMPT = "YouTube, Jellyfin, Dropout, 2nd Try, Nebula, Twitch."
+STT_PROMPT = "YouTube, Jellyfin, Frigate, Dropout, 2nd Try, Nebula, Twitch."
 
 
 class Service:

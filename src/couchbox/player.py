@@ -179,6 +179,17 @@ class MpvVideo(QQuickFramebufferObject):
         self.mpv.pause = False
 
     @Slot(str)
+    def loadLive(self, url):
+        """A live camera (an endless fMP4 stream): small buffers, start as soon as there's a frame.
+        The options are per file, so later load()s play as before."""
+        self._ended = False
+        self._error = ""
+        self.endedChanged.emit()
+        opts = "cache=no,demuxer-readahead-secs=0,demuxer-lavf-analyzeduration=0.5,demuxer-lavf-probesize=65536,video-latency-hacks=yes"
+        self.mpv.command("loadfile", url, "replace", -1, opts)
+        self.mpv.pause = False
+
+    @Slot(str)
     def addSubtitle(self, url):
         try:
             self.mpv.command("sub-add", url, "auto")

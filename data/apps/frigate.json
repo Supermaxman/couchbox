@@ -1,0 +1,12 @@
+{
+  "id": "frigate",
+  "name": "Frigate",
+  "desktop": "couchbox-frigate.desktop",
+  "kind": "native",
+  "tile": "frigate",
+  "requires": [
+    "media.frigate.url"
+  ],
+  "default_order": 35,
+  "settings_page": "apps/frigate"
+}

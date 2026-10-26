@@ -1,0 +1,209 @@
+#!/usr/bin/python3
+"""couchbox-frigate: Frigate (the NVR) as a TV app, laid out like Frigate's own web UI: the
+camera groups in a sidebar, the live dashboard (recent alerts across the top, then every
+camera's picture, refreshing), a camera full screen (live, Left/Right for the next camera,
+Down for its recent activity) and Review (alerts and detections, played from the recordings).
+
+Sign-in: Frigate's user name and password, typed with the remote's keyboard pop-up or a phone.
+The server is Settings → Apps → Frigate server (media.frigate.url). The Python side
+(couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
+the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
+
+  couchbox-frigate [--open camera:NAME | review | alerts]
+  couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...]
+                                     render once off screen (made-up cameras, no server)
+Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1.
+"""
+import json
+import locale
+import os
+import sys
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_FRIGATE_QML", str(paths.share() / "ui/frigate/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
+SITE = "frigate"
+
+# libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+
+from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox.services import frigate  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to frigate.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        self.f = frigate.Frigate(settings.get("media.frigate.url"), demo=demo)
+        self.pool = ThreadPoolExecutor(max_workers=6)
+
+    def run(self, op, a):
+        f = self.f
+        ops = {
+            "status": lambda: f.status(),
+            "login": lambda: f.login(a["user"], a["password"]),
+            "signout": lambda: (f.sign_out(), f.status())[1],
+            "config": lambda: f.config(),
+            "reviews": lambda: f.reviews(a.get("severity", "alert"), a.get("cameras"), a.get("limit", 40),
+                                         a.get("hours", 0), a.get("unreviewed", False)),
+            "active": lambda: f.active(),
+            "viewed": lambda: f.mark_viewed(a["ids"]),
+            "live": lambda: f.live(a["stream"]),
+            "recording": lambda: f.recording(a["camera"], a["start"], a.get("end", 0)),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except frigate.SignInNeeded as err:
+                out = {"error": str(err), "signin": True}
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+    @Slot(str, int, result=str)
+    def snapshot(self, camera, height):
+        """The relay's address of a camera's latest picture (the QML adds a cache-buster)."""
+        return self.f.snapshot(camera, height)
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one."""
+    command = Signal(str)
+
+    def __init__(self, backend):
+        super().__init__()
+        self.backend = backend
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Frigate")
+        if op == "call":                             # the voice assistant: cameras, reviews
+            try:
+                return self.backend.run(req["fn"], req.get("args") or {})
+            except frigate.SignInNeeded as err:
+                return {"error": f"{err} (open Frigate on the TV).", "signin": True}
+        if op in ("open", "media"):
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-frigate")
+    app.setApplicationDisplayName("Frigate")
+    app.setDesktopFileName("couchbox-frigate")      # Wayland app id: matches couchbox-frigate.desktop
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        from couchbox import player
+        qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")
+    else:                                            # no GPU off screen: a stand-in for the video
+        os.environ["COUCHBOX_NO_VIDEO"] = "1"
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    if os.environ.get("COUCHBOX_NO_VIDEO"):
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control(backend)
+    if "--shot" not in sys.argv:
+        control.start()
+    mpris = None
+    if not os.environ.get("COUCHBOX_NO_VIDEO") and not os.environ.get("COUCHBOX_NO_MPRIS"):
+        try:                                         # the remote's Home pauses what plays (couchbox-pause-all)
+            from couchbox import mpris as mpris_mod
+            mpris = mpris_mod.Mpris("couchbox_frigate", "Frigate", "couchbox-frigate")
+        except Exception as err:
+            print(f"MPRIS not available: {err}", flush=True)
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("mpris", mpris)
+    ctx.setContextProperty("demo", demo)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)                                   # don't wait for live streams in flight
+
+
+if __name__ == "__main__":
+    main()

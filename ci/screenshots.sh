@@ -18,5 +18,10 @@ shot() {  # shot NAME APP ARGS...
 for p in network home apps voice remote display time access security updates system; do
   shot "settings-$p" couchbox-settings --page "$p" --in
 done
+# the Frigate app with made-up cameras: dashboard, a camera full screen, review, sign-in
+shot frigate-live couchbox-frigate
+shot frigate-camera couchbox-frigate --keys down,ok
+shot frigate-review couchbox-frigate --open review
+shot frigate-signin couchbox-frigate --signin
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

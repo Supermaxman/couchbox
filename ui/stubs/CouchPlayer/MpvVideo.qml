@@ -13,6 +13,7 @@ Rectangle {
     property int subtitle: 0
     property string error: ""
     function load(url, start) { position = start; duration = 3600; paused = false; }
+    function loadLive(url) { position = 0; duration = 86400; paused = false; }
     function addSubtitle(url) {}
     function togglePause() { paused = !paused; }
     function setPaused(p) { paused = p; }
