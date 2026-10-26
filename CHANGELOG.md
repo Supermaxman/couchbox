@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.9](https://github.com/Supermaxman/couchbox/compare/v0.4.8...v0.4.9) (2026-10-26)
+
+
+### Fixed
+
+* **input:** find Couchbox's helpers for the remote's Power, Input and Home buttons ([#26](https://github.com/Supermaxman/couchbox/issues/26)) ([120c350](https://github.com/Supermaxman/couchbox/commit/120c350d98c0d653a9624e9d7bca6ad4a12a7024))
+
 ## [0.4.8](https://github.com/Supermaxman/couchbox/compare/v0.4.7...v0.4.8) (2026-10-26)
 
 
