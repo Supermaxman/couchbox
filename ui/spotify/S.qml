@@ -76,6 +76,13 @@ QtObject {
     property var liked: ({})                 // uri -> true, for hearts
     readonly property bool playing: now.status === "playing" || now.status === "buffering"
     readonly property string nowUri: (now.item && now.item.uri) || ""
+    // the song's length in seconds: the Web API's, else the player's own
+    readonly property real nowDur: (nowInfo.uri === nowUri && nowInfo.duration) || ((((now.item || {}).decorations || {}).playback || {}).duration_ms || 0) / 1000
+    function nowPos() {                      // seconds in, moving on from the player's last report
+        const n = now;
+        const p = !n.timestamp_ms ? (n.position_ms || 0) : n.position_ms + Math.max(0, Date.now() - n.timestamp_ms) * (n.speed || 0);
+        return Math.max(0, nowDur > 0 ? Math.min(nowDur, p / 1000) : p / 1000);
+    }
 
     function setLiked(uri, on) { const l = Object.assign({}, liked); if (on) l[uri] = true; else delete l[uri]; liked = l; }
     function check(uris) {                   // fill in hearts for these songs

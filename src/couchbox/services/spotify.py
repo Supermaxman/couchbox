@@ -85,10 +85,15 @@ def parse_callback(text: str) -> dict:
 
 # ------------------------------------------------------------------ normalized items
 def _img(images, want=300):
-    """The image closest to `want` pixels wide."""
+    """The smallest image at least `want` pixels wide (else the biggest): Spotify's are usually
+    640, 300 and 64, and one without a width (a playlist mosaic) counts as big enough."""
     if not images:
         return ""
-    return min(images, key=lambda i: abs((i.get("width") or want) - want)).get("url", "")
+    size = [((i.get("width") or 10_000), i) for i in images if i.get("url")]
+    if not size:
+        return ""
+    big = [x for x in size if x[0] >= want]
+    return (min(big, key=lambda x: x[0]) if big else max(size, key=lambda x: x[0]))[1]["url"]
 
 
 def norm_artist(a):
@@ -98,6 +103,7 @@ def norm_artist(a):
         "id": a.get("id", ""),
         "name": a.get("name", ""),
         "image": _img(a.get("images")),
+        "imageLarge": _img(a.get("images"), 640),
         "genres": a.get("genres") or [],
     }
 
@@ -111,6 +117,7 @@ def norm_album(a):
         "name": a.get("name", ""),
         "artists": [{"id": x.get("id", ""), "name": x.get("name", "")} for x in a.get("artists") or []],
         "image": _img(a.get("images")),
+        "imageLarge": _img(a.get("images"), 640),
         "year": (a.get("release_date") or "")[:4],
         "date": a.get("release_date") or "",
         "type": "single" if kind == "single" else "compilation" if kind == "compilation" else "album",
@@ -129,11 +136,25 @@ def norm_track(t, album=None):
         "name": t.get("name", ""),
         "artists": [{"id": x.get("id", ""), "name": x.get("name", "")} for x in t.get("artists") or []],
         "album": {"id": al.get("id", ""), "uri": al.get("uri", ""), "name": al.get("name", "")},
-        "image": _img(al.get("images"), 160),
+        "image": _img(al.get("images")),
+        "imageLarge": _img(al.get("images"), 640),
         "duration": round((t.get("duration_ms") or 0) / 1000),
         "explicit": bool(t.get("explicit")),
         "playable": t.get("is_playable", True) is not False,
     }
+
+
+def merge_info(web, player):
+    """A song from the Web API, with the player's details wherever the Web API left a gap."""
+
+    def empty(v):
+        return not v or (isinstance(v, dict) and not any(v.values()))
+
+    out = dict(player or {})
+    for k, v in (web or {}).items():
+        if not empty(v) or k not in out:
+            out[k] = v
+    return out
 
 
 def norm_playlist(p, me=""):
@@ -147,6 +168,7 @@ def norm_playlist(p, me=""):
         "owner": owner.get("display_name") or owner.get("id", ""),
         "owner_id": owner.get("id", ""),
         "image": _img(p.get("images")),
+        "imageLarge": _img(p.get("images"), 640),
         "total": total,
         "mine": bool(me) and owner.get("id") == me,
         "collaborative": bool(p.get("collaborative")),

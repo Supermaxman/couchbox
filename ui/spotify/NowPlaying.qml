@@ -11,18 +11,13 @@ FocusScope {
     property bool inQueue: false
     property int qIdx: 0
     readonly property var item: S.now.item || null
-    readonly property var info: S.nowInfo || ({})
-    readonly property real dur: info.duration || ((((S.now.item || {}).decorations || {}).playback || {}).duration_ms || 0) / 1000
+    readonly property var info: S.nowInfo.uri === S.nowUri ? S.nowInfo : ({})
+    readonly property real dur: S.nowDur
     property real pos: 0
     readonly property var controls: ["shuffle", "prev", "play", "next", "repeat", "like", "add"]
     readonly property bool liked: !!S.liked[S.nowUri]
 
-    Timer { interval: 500; repeat: true; running: np.visible; triggeredOnStart: true; onTriggered: np.pos = np.position() }
-    function position() {
-        const n = S.now;
-        if (!n.timestamp_ms) return (n.position_ms || 0) / 1000;
-        return Math.min(np.dur || 1e9, (n.position_ms + Math.max(0, Date.now() - n.timestamp_ms) * (n.speed || 0)) / 1000);
-    }
+    Timer { interval: 250; repeat: true; running: np.visible; triggeredOnStart: true; onTriggered: np.pos = S.nowPos() }
     function press(c) {
         if (c === "play") S.media("toggle");
         else if (c === "prev") S.media("previous");
@@ -55,7 +50,7 @@ FocusScope {
         id: cover
         x: 120 * S.u; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -40 * S.u
         width: 540 * S.u; height: width
-        item: ({kind: "album", name: (np.info.album || {}).name || np.info.name || "", image: np.info.imageLarge || np.info.image || ""})
+        item: ({kind: "album", name: (np.info.album || {}).name || np.info.name || "", image: np.info.image || "", imageLarge: np.info.imageLarge || ""})
     }
     Column {
         id: infoCol
@@ -126,16 +121,23 @@ FocusScope {
             model: S.now.queue || []
             currentIndex: np.qIdx
             highlightRangeMode: ListView.ApplyRange
-            preferredHighlightBegin: 0; preferredHighlightEnd: height - 80 * S.u
+            preferredHighlightBegin: 0; preferredHighlightEnd: height - 90 * S.u
             delegate: Rectangle {
                 required property var modelData
                 required property int index
-                width: ListView.view.width; height: 72 * S.u; radius: 10 * S.u
+                width: ListView.view.width; height: 84 * S.u; radius: 10 * S.u
                 color: np.inQueue && np.qIdx === index ? S.panel2 : "transparent"
                 border.color: np.inQueue && np.qIdx === index && np.activeFocus ? S.focus : "transparent"; border.width: 3 * S.u
-                Text { anchors { left: parent.left; right: parent.right; leftMargin: 16 * S.u; rightMargin: 16 * S.u; verticalCenter: parent.verticalCenter }
-                       text: modelData.name || modelData.uri; elide: Text.ElideRight
-                       color: modelData.source === "queue" ? S.accent : S.text2; font.family: S.font; font.pixelSize: S.tMeta }
+                Art { id: qArt; x: 12 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 60 * S.u; height: width
+                      item: ({kind: "album", name: (modelData.album || {}).name || modelData.name || "", image: modelData.image || "", imageLarge: modelData.imageLarge || ""}) }
+                Column {
+                    anchors { left: qArt.right; right: parent.right; leftMargin: 16 * S.u; rightMargin: 14 * S.u; verticalCenter: parent.verticalCenter }
+                    spacing: 2 * S.u
+                    Text { width: parent.width; text: modelData.name || modelData.uri; elide: Text.ElideRight
+                           color: modelData.source === "queue" ? S.accent : S.text; font.family: S.font; font.pixelSize: S.tMeta; font.weight: Font.DemiBold }
+                    Text { width: parent.width; text: S.artists(modelData); visible: text !== ""; elide: Text.ElideRight
+                           color: S.dim; font.family: S.font; font.pixelSize: S.tSmall }
+                }
             }
         }
     }
