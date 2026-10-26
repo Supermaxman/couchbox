@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/Supermaxman/couchbox/compare/v0.9.1...v0.10.0) (2026-10-26)
+
+
+### New
+
+* **weather:** air quality and pollen ([#52](https://github.com/Supermaxman/couchbox/issues/52)) ([24d1ef6](https://github.com/Supermaxman/couchbox/commit/24d1ef60d7330dcbf6c97d7e3cdf1e88f44ca8fe))
+* **weather:** rain radar page ([#49](https://github.com/Supermaxman/couchbox/issues/49)) ([f2f9035](https://github.com/Supermaxman/couchbox/commit/f2f903572aa1db81f0b9fd064e1be61d080e3f52))
+
 ## [0.9.1](https://github.com/Supermaxman/couchbox/compare/v0.9.0...v0.9.1) (2026-10-26)
 
 
