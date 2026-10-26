@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.8](https://github.com/Supermaxman/couchbox/compare/v0.4.7...v0.4.8) (2026-10-26)
+
+
+### Fixed
+
+* **updater:** on the stable channel, look past a latest release that is still being published ([#24](https://github.com/Supermaxman/couchbox/issues/24)) ([8612c2d](https://github.com/Supermaxman/couchbox/commit/8612c2d64c01ddc5ab2abb98179744c80350ae03))
+
 ## [0.4.7](https://github.com/Supermaxman/couchbox/compare/v0.4.6...v0.4.7) (2026-10-26)
 
 
