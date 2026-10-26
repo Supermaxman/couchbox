@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/Supermaxman/couchbox/compare/v0.5.2...v0.5.3) (2026-10-26)
+
+
+### Fixed
+
+* **frigate:** play from the timeline, and keep its picture in step ([#35](https://github.com/Supermaxman/couchbox/issues/35)) ([15ff7e7](https://github.com/Supermaxman/couchbox/commit/15ff7e784734927a70e76f6b6027690fdfa955af))
+
 ## [0.5.2](https://github.com/Supermaxman/couchbox/compare/v0.5.1...v0.5.2) (2026-10-26)
 
 
