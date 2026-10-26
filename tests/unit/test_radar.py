@@ -54,7 +54,7 @@ def test_the_lower_48_get_nexrad_and_everywhere_else_rainviewer():
     assert radar.pick_source(52.5, 13.4) == "rainviewer"  # Berlin
     assert radar.pick_source(53.5, -113.5) == "rainviewer"  # Edmonton
     assert radar.pick_source(19.4, -99.1) == "rainviewer"  # Mexico City
-    assert radar.pick_source(49.3, -123.1) == "nexrad"  # Vancouver, BC: US radars reach over the border
+    assert radar.pick_source(48.4, -123.4) == "nexrad"  # Victoria, BC: US radars reach over the border
 
 
 def test_iem_scans_become_a_frame_every_ten_minutes_for_two_hours():
