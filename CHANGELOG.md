@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Supermaxman/couchbox/compare/v0.5.3...v0.6.0) (2026-10-26)
+
+
+### New
+
+* **weather:** a Weather app for the TV, and the assistant's weather tool ([#37](https://github.com/Supermaxman/couchbox/issues/37)) ([fef7cd5](https://github.com/Supermaxman/couchbox/commit/fef7cd50dd98ae4942791a2c3aa22e501ac56e11))
+
 ## [0.5.3](https://github.com/Supermaxman/couchbox/compare/v0.5.2...v0.5.3) (2026-10-26)
 
 
