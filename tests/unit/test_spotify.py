@@ -317,13 +317,80 @@ def test_player_follows_soloist_events_and_sends_commands():
             ],
         }
     )
-    assert p.state["queue"] == [{"uri": "spotify:track:t2", "name": "Next", "source": "queue"}]
+    q = p.state["queue"]
+    assert len(q) == 1 and (q[0]["uri"], q[0]["name"], q[0]["source"]) == ("spotify:track:t2", "Next", "queue")
     p.ws.sent.clear()
     p.toggle()
     p.repeat("track")
     p.play("spotify:album:x")
     assert [c["command"] for c in p.ws.sent] == ["pause", "set_repeat_context", "set_repeat_track", "play"]
     assert p.ws.sent[-1]["uri"] == "spotify:album:x" and "playback_state" in changes
+
+
+# What Soloist sent for a song on a real box (Oct 2026): cover, album, artists and length
+# come with the item, so Now Playing has them without the Web API.
+PIG = {
+    "uri": "spotify:track:0NXrWVLbcAvgcHUNF0OFcP",
+    "entity_type": "track",
+    "decorations": {
+        "identity": {"name": "Pig"},
+        "visual_identity": {
+            "cover": [
+                {"url": "https://i.scdn.co/image/small64", "size": "small"},
+                {"url": "https://i.scdn.co/image/default300", "size": "default"},
+                {"url": "https://i.scdn.co/image/large640", "size": "large"},
+                {"url": "https://i.scdn.co/image/large640", "size": "xlarge"},
+            ]
+        },
+        "parent": {
+            "entity": {
+                "uri": "spotify:album:4QFVTCWyZRSok12D5aUeoW",
+                "entity_type": "album",
+                "decorations": {"identity": {"name": "Animals"}},
+            }
+        },
+        "creators": [
+            {
+                "entity": {
+                    "uri": "spotify:artist:5TUa95aB5Vu2CzwCnZd6t0",
+                    "entity_type": "artist",
+                    "decorations": {"identity": {"name": "TTNG"}},
+                }
+            }
+        ],
+        "playback": {"duration_ms": 228853, "content_ratings": []},
+    },
+}
+
+
+def test_the_players_own_details_fill_now_playing():
+    i = soloist.info_of(PIG)
+    assert i["name"] == "Pig" and [a["name"] for a in i["artists"]] == ["TTNG"]
+    assert i["artists"][0]["id"] == "5TUa95aB5Vu2CzwCnZd6t0" and i["album"]["name"] == "Animals"
+    assert i["image"].endswith("default300") and i["imageLarge"].endswith("large640") and i["duration"] == 229
+    bare = soloist.info_of({"uri": "spotify:track:x", "decorations": {"identity": {"name": "X"}}})
+    assert bare["name"] == "X" and bare["artists"] == [] and bare["image"] == "" and bare["duration"] == 0
+    assert soloist.info_of(None)["uri"] == ""
+    p = soloist.Player()
+    p.handle({"type": "queue_changed", "upcoming": [{"uid": "u", "source": "context", "item": PIG}]})
+    assert p.state["queue"][0]["imageLarge"].endswith("large640") and p.state["queue"][0]["artists"][0]["name"] == "TTNG"
+
+
+def test_covers_are_big_enough_for_the_screen():
+    imgs = [{"url": "640", "width": 640}, {"url": "300", "width": 300}, {"url": "64", "width": 64}]
+    assert spotify._img(imgs) == "300" and spotify._img(imgs, 640) == "640" and spotify._img(imgs, 1000) == "640"
+    assert spotify._img([{"url": "mosaic", "width": None}]) == "mosaic" and spotify._img([]) == ""
+    t = spotify.norm_track({"uri": "spotify:track:t", "album": {"images": imgs}})
+    assert (t["image"], t["imageLarge"]) == ("300", "640")  # not the 64 px one, blurry on a TV
+
+
+def test_the_web_api_adds_to_the_players_details():
+    web = spotify.norm_track(
+        {"uri": PIG["uri"], "name": "Pig", "artists": [{"id": "a", "name": "TTNG"}], "duration_ms": 228853, "explicit": True}
+    )
+    m = spotify.merge_info(web, soloist.info_of(PIG))
+    assert m["explicit"] is True and m["image"].endswith("default300") and m["imageLarge"].endswith("large640")
+    assert m["album"]["name"] == "Animals"  # an empty album from the Web API doesn't win
 
 
 # ------------------------------------------------------------------ playing on this TV

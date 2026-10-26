@@ -1,12 +1,16 @@
 // Cover art, or (no picture yet, demo data, a playlist without one) a coloured square with a
-// note or the first letter. Round for artists.
+// note or the first letter. Round for artists. The picture is the one that fits its size on the
+// screen in real pixels (the TV may run at 1.5x): Spotify's ~300 px one, or the 640 px one.
 import QtQuick
+import QtQuick.Window
 
 Item {
     id: art
     property var item: ({})
     property bool round: item && item.kind === "artist"
     readonly property bool ready: img.status === Image.Ready
+    readonly property real px: Math.round(width * Screen.devicePixelRatio)   // its width in screen pixels
+    readonly property string url: !item ? "" : px > 320 && item.imageLarge ? item.imageLarge : (item.image || item.imageLarge || "")
 
     Rectangle {
         anchors.fill: parent
@@ -34,8 +38,8 @@ Item {
     Image {
         id: img
         anchors.fill: parent
-        source: art.item && art.item.image ? art.item.image : ""
-        sourceSize.width: Math.round(art.width)
+        source: art.url
+        sourceSize.width: art.px
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         visible: art.ready && !art.round
@@ -46,7 +50,7 @@ Item {
         radius: width / 2
         clip: true
         color: "transparent"
-        Image { anchors.fill: parent; source: img.source; sourceSize.width: Math.round(art.width); fillMode: Image.PreserveAspectCrop; asynchronous: true
+        Image { anchors.fill: parent; source: img.source; sourceSize.width: art.px; fillMode: Image.PreserveAspectCrop; asynchronous: true
                 layer.enabled: true; layer.smooth: true }
         layer.enabled: true
     }

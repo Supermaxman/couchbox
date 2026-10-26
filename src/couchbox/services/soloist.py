@@ -385,10 +385,7 @@ class Player:
         elif t == "queue_changed":
             self._set(
                 t,
-                queue=[
-                    {"uri": (e.get("item") or {}).get("uri", ""), "name": name_of(e.get("item")), "source": e.get("source", "")}
-                    for e in m.get("upcoming") or []
-                ][:20],
+                queue=[dict(info_of(e.get("item")), source=e.get("source", "")) for e in m.get("upcoming") or []][:20],
             )
         elif t == "error":
             self._set("error", last_error=m.get("message", ""))
@@ -453,3 +450,30 @@ def name_of(entity):
 
 def duration_of(entity):
     return ((((entity or {}).get("decorations") or {}).get("playback") or {}).get("duration_ms") or 0) / 1000
+
+
+def _ref(entity):
+    """{uri, id, name} of a related entity (an album, an artist) from its decorations."""
+    uri = (entity or {}).get("uri", "")
+    return {"uri": uri, "id": uri.rsplit(":", 1)[-1] if uri else "", "name": name_of(entity)}
+
+
+def info_of(entity):
+    """What the player says about a song or episode, in the shape of spotify.norm_track: the
+    name, artists, album, cover (about 300 px, and 640 px) and length. Soloist sends these with
+    every item, so Now Playing doesn't have to wait for (or be signed in to) the Web API."""
+    entity = entity or {}
+    d = entity.get("decorations") or {}
+    covers = {c.get("size"): c.get("url", "") for c in (d.get("visual_identity") or {}).get("cover") or [] if c.get("url")}
+    parent = (d.get("parent") or {}).get("entity") or {}
+    return {
+        "kind": "track" if entity.get("entity_type", "track") == "track" else entity.get("entity_type", ""),
+        "uri": entity.get("uri", ""),
+        "id": entity.get("uri", "").rsplit(":", 1)[-1] if entity.get("uri") else "",
+        "name": name_of(entity),
+        "artists": [_ref(c.get("entity")) for c in d.get("creators") or [] if c.get("entity")],
+        "album": _ref(parent) if parent else {"uri": "", "id": "", "name": ""},
+        "image": covers.get("default") or covers.get("large") or covers.get("xlarge") or covers.get("small", ""),
+        "imageLarge": covers.get("xlarge") or covers.get("large") or covers.get("default") or covers.get("small", ""),
+        "duration": round(duration_of(entity)),
+    }

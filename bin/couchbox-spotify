@@ -14,6 +14,7 @@
 
 See docs/design/spotify.md: why the user brings their own developer app and Soloist key.
 """
+
 import json
 import os
 import signal
@@ -27,20 +28,31 @@ from concurrent.futures import ThreadPoolExecutor
 from couchbox import paths  # noqa: E402
 
 QML = os.environ.get("COUCHBOX_SPOTIFY_QML", str(paths.share() / "ui/spotify/Main.qml"))
-TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))  # CouchKit: the keyboard pop-up
 SITE = "spotify"
 CONNECT_SITE = "spotify-connect"
-os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"          # CouchKit reads the phone page's address
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"  # CouchKit reads the phone page's address
 
 from couchbox.services import soloist, spotify, spotify_tv  # noqa: E402
 
 
 def demo_now():
     t = spotify.demo_home()["top_tracks"][0]
-    return {"connected": True, "logged_in": True, "status": "playing", "item": {"uri": t["uri"], "decorations": {"identity": {"name": t["name"]},
-            "playback": {"duration_ms": t["duration"] * 1000}}}, "context": {"uri": "spotify:album:al0", "decorations": {"identity": {"name": "Neon Harbor"}}},
-            "position_ms": 83000, "timestamp_ms": 0, "speed": 0, "volume": 60, "is_active": True, "shuffle": True, "repeat": "off",
-            "queue": [{"uri": x["uri"], "name": x["name"], "source": "context"} for x in spotify.demo_home()["top_tracks"][1:]]}
+    return {
+        "connected": True,
+        "logged_in": True,
+        "status": "playing",
+        "item": {"uri": t["uri"], "decorations": {"identity": {"name": t["name"]}, "playback": {"duration_ms": t["duration"] * 1000}}},
+        "context": {"uri": "spotify:album:al0", "decorations": {"identity": {"name": "Neon Harbor"}}},
+        "position_ms": 83000,
+        "timestamp_ms": 0,
+        "speed": 0,
+        "volume": 60,
+        "is_active": True,
+        "shuffle": True,
+        "repeat": "off",
+        "queue": [dict(x, source="context") for x in spotify.demo_home()["top_tracks"][1:]],
+    }
 
 
 # ================================================================== the TV app
@@ -58,6 +70,7 @@ def app_main():
     class Backend(QObject):
         """QML's way to the back end: call(id, op, args) answers later with reply(id, json);
         player(json) whenever this TV's player changes, nowInfo(json) for the song playing."""
+
         reply = Signal(int, str)
         player = Signal(str)
         nowInfo = Signal(str)
@@ -81,15 +94,20 @@ def app_main():
                 self.pool.submit(self._info, uri)
 
         def _info(self, uri):
+            """The player's own details first (they come with every item), then the Web API's
+            on top when signed in (it knows a little more, e.g. explicit)."""
+            base = soloist.info_of(self.pl.state.get("item"))
+            if base["uri"] != uri:  # it moved on already
+                base = soloist.info_of({"uri": uri})
+            self.nowInfo.emit(json.dumps(base))
             if not uri.startswith("spotify:track:"):
-                self.nowInfo.emit(json.dumps({"uri": uri, "name": soloist.name_of(self.pl.state.get("item"))}))
                 return
             try:
                 t = self.sp.track(uri.rsplit(":", 1)[-1])
-                self.nowInfo.emit(json.dumps(t))
-            except Exception:  # noqa: BLE001 - not signed in: just the name
-                self.nowInfo.emit(json.dumps({"uri": uri, "name": soloist.name_of(self.pl.state.get("item")),
-                                              "duration": soloist.duration_of(self.pl.state.get("item"))}))
+            except Exception:  # noqa: BLE001 - not signed in: the player's details stay
+                return
+            if uri == self._now_uri:
+                self.nowInfo.emit(json.dumps(spotify.merge_info(t, base)))
 
         def first_paint(self):
             if demo:
@@ -100,11 +118,20 @@ def app_main():
         def status(self):
             if demo:
                 st = self.sp.status()
-                st.update(device="Living Room", redirect_tailscale="https://livingroom.example.ts.net/spotify/callback",
-                          redirect_loopback=spotify.LOOPBACK_REDIRECT, user_id="demo",
-                          player={"installed": True, "version": "1.0", "days_left": 71, "key": True, "running": True, "logged_in": True})
+                st.update(
+                    device="Living Room",
+                    redirect_tailscale="https://livingroom.example.ts.net/spotify/callback",
+                    redirect_loopback=spotify.LOOPBACK_REDIRECT,
+                    user_id="demo",
+                    player={"installed": True, "version": "1.0", "days_left": 71, "key": True, "running": True, "logged_in": True},
+                )
                 if "--setup" in sys.argv:
-                    st.update(signedIn=False, user="", player={"installed": False, "key": True, "running": False, "logged_in": False}, client_id="0123456789abcdef0123456789abcdef")
+                    st.update(
+                        signedIn=False,
+                        user="",
+                        player={"installed": False, "key": True, "running": False, "logged_in": False},
+                        client_id="0123456789abcdef0123456789abcdef",
+                    )
                 return st
             self.sp.client_id = spotify_tv.client_id()
             return spotify_tv.status(self.sp, self.pl)
@@ -129,7 +156,7 @@ def app_main():
                 soloist.ensure(force=not soloist.build_info())
                 spotify_tv.service("enable")
                 spotify_tv.service("restart")
-                for _ in range(20):                       # wait for it to come up
+                for _ in range(20):  # wait for it to come up
                     if pl.state.get("connected"):
                         break
                     time.sleep(0.5)
@@ -181,8 +208,9 @@ def app_main():
             if op == "play":
                 if demo:
                     return {"ok": True}
-                spotify_tv.play_on_tv(sp, pl, context=a.get("context", ""), offset=a.get("offset", ""),
-                                      uris=a.get("uris"), shuffle=a.get("shuffle"))
+                spotify_tv.play_on_tv(
+                    sp, pl, context=a.get("context", ""), offset=a.get("offset", ""), uris=a.get("uris"), shuffle=a.get("shuffle")
+                )
                 return {"ok": True}
             if op == "media":
                 return self.media(a.get("action", ""), a.get("value", 0), a.get("uri", ""))
@@ -203,8 +231,17 @@ def app_main():
                 while not demo and off < min(j["total"], 500):
                     items += self.sp.liked_tracks(off, 50)["items"]
                     off += 50
-                return {"kind": "liked", "uri": "liked", "id": "liked", "name": "Liked Songs", "owner": self.sp.status().get("user", ""),
-                        "tracks": items, "context": "liked", "total": j["total"], "image": ""}
+                return {
+                    "kind": "liked",
+                    "uri": "liked",
+                    "id": "liked",
+                    "name": "Liked Songs",
+                    "owner": self.sp.status().get("user", ""),
+                    "tracks": items,
+                    "context": "liked",
+                    "total": j["total"],
+                    "image": "",
+                }
             raise spotify.SpotifyError(f"Can't open a {kind}.")
 
         def media(self, action, value=0, uri=""):
@@ -239,13 +276,17 @@ def app_main():
                     traceback.print_exc()
                     out = {"error": str(err) or err.__class__.__name__}
                 self.reply.emit(rid, json.dumps(out))
+
             self.pool.submit(work)
 
         @Slot(str, result=str)
         def qr(self, text):
             import base64
+
             try:
-                png = subprocess.run(["qrencode", "-t", "PNG", "-s", "10", "-m", "1", "-o", "-", text], capture_output=True, check=True).stdout
+                png = subprocess.run(
+                    ["qrencode", "-t", "PNG", "-s", "10", "-m", "1", "-o", "-", text], capture_output=True, check=True
+                ).stdout
             except (OSError, subprocess.CalledProcessError):
                 return ""
             return "data:image/png;base64," + base64.b64encode(png).decode()
@@ -253,6 +294,7 @@ def app_main():
     class Control(QObject):
         """The control socket: a second launch hands --open here; the phone page finishes
         sign-in through it (call login_url / login_finish)."""
+
         command = Signal(str)
 
         def __init__(self, backend):
@@ -263,6 +305,7 @@ def app_main():
 
         def start(self):
             from couchbox import appctl
+
             try:
                 self.server = appctl.Server(SITE, self.handle)
                 self.server.start()
@@ -297,6 +340,7 @@ def app_main():
 
     class Shooter(QObject):
         """--shot: save the window to a PNG; --keys: remote key presses."""
+
         window = None
 
         @Slot(str)
@@ -310,8 +354,16 @@ def app_main():
         def press(self, name):
             from PySide6.QtCore import QCoreApplication, QEvent, Qt
             from PySide6.QtGui import QKeyEvent
-            key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
-                   "ok": Qt.Key_Return, "back": Qt.Key_Escape, "menu": Qt.Key_Menu}.get(name)
+
+            key = {
+                "up": Qt.Key_Up,
+                "down": Qt.Key_Down,
+                "left": Qt.Key_Left,
+                "right": Qt.Key_Right,
+                "ok": Qt.Key_Return,
+                "back": Qt.Key_Escape,
+                "menu": Qt.Key_Menu,
+            }.get(name)
             if key is None:
                 return
             for t in (QEvent.KeyPress, QEvent.KeyRelease):
@@ -322,7 +374,7 @@ def app_main():
         sys.exit(0)
     app.setApplicationName("couchbox-spotify")
     app.setApplicationDisplayName("Spotify")
-    app.setDesktopFileName("couchbox-spotify")      # Wayland app id: matches couchbox-spotify.desktop
+    app.setDesktopFileName("couchbox-spotify")  # Wayland app id: matches couchbox-spotify.desktop
     engine = QQmlApplicationEngine()
     engine.addImportPath(TVKIT)
     backend = Backend()
@@ -351,6 +403,7 @@ def app_main():
 
 def forward_to_running():
     from couchbox import appctl
+
     if "--shot" in sys.argv or not appctl.running(SITE):
         return False
     target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
@@ -392,13 +445,20 @@ def connect_main():
     def publish(st):
         try:
             item = st.get("item") or {}
-            mpris.update(bool(item), st.get("status") != "playing", soloist.name_of(item), soloist.name_of(st.get("context")) or "Spotify",
-                         soloist.duration_of(item), player.position())
+            mpris.update(
+                bool(item),
+                st.get("status") != "playing",
+                soloist.name_of(item),
+                soloist.name_of(st.get("context")) or "Spotify",
+                soloist.duration_of(item),
+                player.position(),
+            )
         except Exception:  # noqa: BLE001
             pass
 
     try:
         from couchbox import mpris as mpris_mod
+
         mpris = mpris_mod.Mpris("couchbox_spotify", "Spotify", "couchbox-spotify")
         mpris.command.connect(lambda action, seconds: media(action, seconds))
     except Exception as err:  # noqa: BLE001
@@ -428,16 +488,30 @@ def connect_main():
             return {"ok": True, "site": CONNECT_SITE}
         if op == "state":
             st = dict(player.state)
-            return {"site": "Spotify", "playing": st.get("status") == "playing", "title": soloist.name_of(st.get("item")),
-                    "context": soloist.name_of(st.get("context")), "logged_in": st.get("logged_in"), "device": name}
+            return {
+                "site": "Spotify",
+                "playing": st.get("status") == "playing",
+                "title": soloist.name_of(st.get("item")),
+                "context": soloist.name_of(st.get("context")),
+                "logged_in": st.get("logged_in"),
+                "device": name,
+            }
         if op == "media":
             media(req.get("action", ""), float(req.get("seconds") or 0))
             return {"ok": True}
         if op == "voice":
             sp.client_id = spotify_tv.client_id()
-            return {"result": voice.run(req.get("action", ""), req.get("query", ""), req.get("kind", ""), req.get("name", ""),
-                                        req.get("songs") or [], req.get("play", True))}
-        if op == "call" and req.get("fn") in ("login_url", "login_finish"):   # the phone page, when the app is closed
+            return {
+                "result": voice.run(
+                    req.get("action", ""),
+                    req.get("query", ""),
+                    req.get("kind", ""),
+                    req.get("name", ""),
+                    req.get("songs") or [],
+                    req.get("play", True),
+                )
+            }
+        if op == "call" and req.get("fn") in ("login_url", "login_finish"):  # the phone page, when the app is closed
             sp.client_id = spotify_tv.client_id()
             a = req.get("args") or {}
             try:
@@ -468,8 +542,9 @@ def connect_main():
             for f in ("ws.port", "ws.addr"):
                 (soloist.state_dir() / f).unlink(missing_ok=True)
             started = time.time()
-            proc = subprocess.Popen(soloist.command(name), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, bufsize=1, errors="replace")
+            proc = subprocess.Popen(
+                soloist.command(name), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors="replace"
+            )
             child["proc"] = proc
             threading.Thread(target=soloist.relay_output, args=(proc.stdout,), daemon=True).start()
             code = proc.wait()
@@ -484,7 +559,7 @@ def connect_main():
             time.sleep(backoff)
 
     threading.Thread(target=supervise, daemon=True).start()
-    tick = QTimer()                                   # keep MPRIS's position fresh, let Python see signals
+    tick = QTimer()  # keep MPRIS's position fresh, let Python see signals
     tick.timeout.connect(lambda: publish(player.state) if mpris is not None else None)
     tick.start(5000)
     code = app.exec()
