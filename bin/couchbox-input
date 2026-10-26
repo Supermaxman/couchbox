@@ -11,6 +11,10 @@ once per press, "run-repeat:couchbox-tv volume-up" also keeps running while the 
 OK clicks, Rewind and Fast-forward scroll; it switches itself off after 2 minutes unused.
 "voice-or:KEY_ESC" (the Back button) first asks couchbox-voice to cancel: if the voice assistant
 was busy or showing something, it's dismissed and the press ends there; otherwise KEY_ESC.
+"media:playpause" (and play, pause, stop, next, previous, rewind, forward) goes to
+couchbox-mediakeys, which plays or pauses whatever is playing (the app in front's player, else
+the one playing, else the one paused last) over MPRIS; with nothing to control, or if that
+service isn't running, the key itself goes on (Plasma's media controller, as before).
 Devices come and go (Bluetooth remotes sleep), so the device list is rescanned
 every few seconds. Every key press is logged (journalctl -u couchbox-input) with what it did,
 and touches /run/couchbox/last-key (couchbox-memory reads it to tell whether the app in front is in use).
@@ -66,6 +70,8 @@ MOUSE_NAME = "couchbox-input-mouse"
 MOUSE_SPEED = (250, 1400)    # pointer speed in mouse mode, px/s: when an arrow is pressed, after MOUSE_RAMP
 MOUSE_RAMP = 1.2             # seconds held to reach full speed
 MOUSE_IDLE_OFF = 120         # mouse mode switches itself off after this long unused
+MEDIA_ACTIONS = ("playpause", "play", "pause", "stop", "next", "previous", "rewind", "forward")
+MEDIA_REPEAT_SECONDS = 0.4   # Rewind / Fast-forward held: another step this often
 
 
 def keycode(name):
@@ -93,6 +99,11 @@ def load_sections(path):
                 target = ("mouse",)
             elif dst.startswith("voice-or:"):
                 target = ("voice", keycode(dst.split(":", 1)[1]))
+            elif dst.startswith("media:"):
+                action = dst.split(":", 1)[1]
+                if action not in MEDIA_ACTIONS:
+                    sys.exit(f"{CONFIG}: unknown media action {action!r}")
+                target = ("media", action, keycode(src) if src.upper().startswith("KEY_") else None)
             elif "+run:" in dst:                              # the key, and a command on press
                 key, cmd = dst.split("+run:", 1)
                 target = ("also", keycode(key), tuple(shlex.split(cmd)))
@@ -197,6 +208,25 @@ def voice_cancel():
         return False
 
 
+def media_key(action):
+    """Hand a media key to couchbox-mediakeys (the TV user's): {"player", "identity", "did",
+    "why"}. "pass" when the key itself should go on: nothing to control, or the service isn't
+    running (not when it was slow to answer: it may still have acted)."""
+    try:
+        from couchbox import appctl
+    except ImportError as err:
+        return {"player": None, "why": str(err), "pass": True}
+    try:
+        r = appctl.call("mediakeys", {"op": "key", "action": action}, timeout=2)
+    except appctl.NotRunning:
+        return {"player": None, "why": "couchbox-mediakeys isn't running", "pass": True}
+    except Exception as err:  # noqa: BLE001 - logged with the key
+        return {"player": None, "why": f"couchbox-mediakeys: {err.__class__.__name__} {err}".strip(), "pass": False}
+    if not isinstance(r, dict):
+        return {"player": None, "why": "couchbox-mediakeys: no answer", "pass": False}
+    return dict(r, **{"pass": not r.get("player")})
+
+
 def run(sections):
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)   # reap commands started by keys
     all_keys = [c for c in e.keys if isinstance(c, int) and 0 < c < 0x2ff]
@@ -293,6 +323,31 @@ def run(sections):
                     print(f"cannot run {' '.join(cmd)}: {err}", flush=True)
             ui.write(e.EV_KEY, code, value)
             ui.syn()
+            return
+        if isinstance(target, tuple) and target[0] == "media":
+            _, action, code = target
+            if mouse["on"] and code is not None and mouse_key(code, value):   # Rewind / FF scroll
+                if value == 1:
+                    print(f"key {label} -> mouse", flush=True)
+                return
+            t = time.monotonic()
+            held = value == 2 and action in ("rewind", "forward") and t - last_run.get(action, 0) >= MEDIA_REPEAT_SECONDS
+            if value != 1 and not held:
+                return
+            last_run[action] = t
+            r = media_key(action)
+            if r.get("player"):
+                if value == 1:
+                    print(f"key {label} -> {action}: {r.get('did')} {r.get('identity') or r['player']} ({r.get('why')})", flush=True)
+                return
+            if value == 1 and not r["pass"]:
+                print(f"key {label} -> {action}: {r.get('why')}", flush=True)
+            elif value == 1:   # nothing to control: the key itself, as before
+                print(f"key {label} -> {keyname(code) if code is not None else 'dropped'} ({r.get('why')})", flush=True)
+                if code is not None:
+                    for v in (1, 0):
+                        ui.write(e.EV_KEY, code, v)
+                        ui.syn()
             return
         if isinstance(target, tuple) and target[0] == "voice":
             code = target[1]
