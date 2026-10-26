@@ -52,7 +52,6 @@ FocusScope {
             radius: W.radius
             color: cur ? W.panel2 : index % 2 ? "transparent" : Qt.rgba(1, 1, 1, 0.025)
             border.color: cur ? W.focus : "transparent"; border.width: W.ring
-            scale: cur ? 1.01 : 1
 
             Column {
                 id: dayCol

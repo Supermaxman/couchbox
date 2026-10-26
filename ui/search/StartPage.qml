@@ -70,8 +70,6 @@ FocusScope {
                 width: parent.width; height: 74 * S.u; radius: 12 * S.u
                 color: sel ? S.panel2 : "transparent"
                 border.color: sel ? S.focus : "transparent"; border.width: 3 * S.u
-                scale: sel ? 1.02 : 1
-                Behavior on scale { NumberAnimation { duration: 120 } }
                 Image { id: clock; x: 26 * S.u; anchors.verticalCenter: parent.verticalCenter; width: 30 * S.u; height: width; sourceSize: Qt.size(width, height); source: "icons/history.svg"; opacity: 0.6 }
                 Text {
                     anchors { left: clock.right; leftMargin: 22 * S.u; right: parent.right; rightMargin: 26 * S.u; verticalCenter: parent.verticalCenter }

@@ -14,14 +14,16 @@ FocusScope {
 
     Flickable {
         id: flick
-        anchors.fill: parent
+        readonly property real pad: 20 * S.u        // room for a focused card at the left edge to grow
+        anchors { fill: parent; leftMargin: -pad }
         contentHeight: col.height + page.bottomPad
         interactive: false
         clip: page.clipContent
         Behavior on contentY { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Item {
             id: col
-            width: flick.width
+            x: flick.pad
+            width: flick.width - flick.pad
             height: childrenRect.height
         }
     }

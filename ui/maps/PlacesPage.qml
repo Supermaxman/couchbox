@@ -51,7 +51,8 @@ FocusScope {
 
     Flickable {
         id: flick
-        anchors { fill: parent; leftMargin: 60 * M.u; rightMargin: M.edge }
+        readonly property real pad: 18 * M.u        // room for a focused card to grow at the sides
+        anchors { fill: parent; leftMargin: 60 * M.u - pad; rightMargin: M.edge - pad }
         contentHeight: body.implicitHeight + 80 * M.u
         clip: true
         interactive: false
@@ -65,7 +66,8 @@ FocusScope {
 
         Column {
             id: body
-            width: flick.width
+            x: flick.pad
+            width: flick.width - 2 * flick.pad
             topPadding: 56 * M.u
             spacing: 22 * M.u
             Row {
