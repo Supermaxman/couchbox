@@ -1,0 +1,19 @@
+singleton S 1.0 S.qml
+Art 1.0 Art.qml
+Card 1.0 Card.qml
+Shelf 1.0 Shelf.qml
+TrackRow 1.0 TrackRow.qml
+TrackList 1.0 TrackList.qml
+Sections 1.0 Sections.qml
+SButton 1.0 SButton.qml
+HomePage 1.0 HomePage.qml
+SearchPage 1.0 SearchPage.qml
+LibraryPage 1.0 LibraryPage.qml
+DetailPage 1.0 DetailPage.qml
+ArtistPage 1.0 ArtistPage.qml
+NowPlaying 1.0 NowPlaying.qml
+MiniPlayer 1.0 MiniPlayer.qml
+Rail 1.0 Rail.qml
+ActionMenu 1.0 ActionMenu.qml
+PlaylistPicker 1.0 PlaylistPicker.qml
+SetupPage 1.0 SetupPage.qml

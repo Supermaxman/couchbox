@@ -42,5 +42,17 @@ shot search-results couchbox-search --open "search:eiffel tower height"
 shot search-toolbar couchbox-search --open "search:eiffel tower height" --keys up
 shot search-reader couchbox-search --open reader
 shot search-summary couchbox-search --open summary
+# the Spotify app with made-up music: home, search, library, an album, a playlist Spotify won't
+# list, an artist, Now Playing, the song menu, adding to a playlist, setup
+shot spotify-home couchbox-spotify
+shot spotify-search couchbox-spotify --open search:midnight --keys down
+shot spotify-library couchbox-spotify --open library
+shot spotify-album couchbox-spotify --open album:al0 --keys right,right,right,down
+shot spotify-playlist-made-for-you couchbox-spotify --open playlist:pl10
+shot spotify-artist couchbox-spotify --open artist:ar1 --keys down
+shot spotify-now-playing couchbox-spotify --open now
+shot spotify-menu couchbox-spotify --open menu
+shot spotify-add-to-playlist couchbox-spotify --open picker
+shot spotify-setup couchbox-spotify --setup --keys down,down,down,down
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 exit $fail

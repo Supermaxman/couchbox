@@ -11,7 +11,7 @@ def ids(row):
 
 def test_default_row_hides_apps_that_need_setup():
     row = ids(apps.home_row())
-    assert row == ["youtube", "dropout", "2ndtry", "nebula", "twitch", "search", "settings"]
+    assert row == ["youtube", "spotify", "dropout", "2ndtry", "nebula", "twitch", "search", "settings"]
     assert "jellyfin" not in row and "seerr" not in row  # no server set
     assert "fcast" not in row and "twitch-web" not in row  # hidden by default
 
@@ -26,7 +26,7 @@ def test_user_order_hidden_names_and_disabled():
         {"home.layout": ["twitch", "youtube"], "home.hidden": ["nebula"], "home.names": {"youtube": "YT"}, "apps.disabled": ["dropout"]}
     )
     row = apps.home_row()
-    assert ids(row) == ["twitch", "youtube", "2ndtry", "search", "settings"]
+    assert ids(row) == ["twitch", "youtube", "spotify", "2ndtry", "search", "settings"]
     assert row[1].name == "YT"
 
 

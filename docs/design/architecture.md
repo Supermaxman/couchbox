@@ -49,7 +49,7 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
-| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
+| Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |
 | `CouchKit` QML module | QML | tv | Shared TV controls: keyboard popup with QR, buttons, pages | `tvkit/MtvKit` |
 
 ### Voice assistant
@@ -64,6 +64,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `frigate`: shows a camera live (by spoken name), all cameras, the alerts, or the last day's timeline (of a camera or all), through the Frigate app's control socket.
   - `weather`: the forecast as text for the model to answer from (now, a spoken day such as "this weekend", or the fortnight), fetched by the tool itself (Open-Meteo); `show` also opens the Weather app at that day.
   - `search`: shows Google's results for a query, opens an address, or reads the page in front as text (so the assistant can summarize it or answer about it), through the Search app's control socket.
+  - `spotify`: plays a song, artist, album or one of your playlists on this TV, what's playing, like, add to a playlist, and a new playlist from songs the model picks, through `couchbox-spotify --connect`'s control socket (`spotify-connect`). See [spotify.md](spotify.md).
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.
@@ -152,7 +153,7 @@ couchbox/
 ├─ docs/                    user guides (install, settings, troubleshooting) + design/
 ├─ src/couchbox/            Python package
 │  ├─ settings/  ipc/  daemon/  cli/  updater/  input/  cec/  voice/  phone/  memory/
-│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts)
+│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player)
 ├─ apps/                    QML apps (each: main.py + qml/)
 │  ├─ settings/  setup/  seerr/  frigate/  weather/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
 │  └─ CouchKit/             shared QML module (keyboard + QR, buttons, pages)
