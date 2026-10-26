@@ -282,3 +282,23 @@ def test_movies_answers_and_opens_the_app(monkeypatch, tmp_path):
     assert opened[-1] == "person:303:Directing"
     assert tools.movies_tool("top", type="tv").startswith("Top rated shows: 1. Saltmarsh (2022, 8.6)")
     assert opened[-1] == "top:tv"
+
+
+def test_movie_facts_get_a_nudge_to_the_movies_tool():
+    from couchbox.voice import agent
+
+    a = agent.Agent("http://x", "m", "k", lambda *_: None)
+    a.tool_list = [{"function": {"name": n}} for n in ("movies", "jellyfin")]
+    for q in (
+        "who directed Arrival",
+        "what's the IMDb rating of Severance",
+        "what else has Florence Pugh been in",
+        "show me Denis Villeneuve's movies",
+        "who plays Mark in Severance",
+        "top rated shows",
+    ):
+        assert "movies tool" in a.hint(q), q
+    for q in ("play Severance", "pause", "cast this to the TV", "what's the weather tomorrow"):
+        assert a.hint(q) == "", q
+    a.tool_list = [{"function": {"name": "jellyfin"}}]  # no Movies & TV app: nothing to nudge to
+    assert a.hint("who directed Arrival") == ""
