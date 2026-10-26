@@ -3,7 +3,9 @@
 
 Serves a small page on port 8791 (home network and tailnet only). Phones pair by scanning the
 QR code on the TV: its address carries a token (#t=..., kept by the page; Settings → Remote
-access → New pairing code signs phones out). Without the token the page can't send anything. Text sent from it goes
+access → New pairing code signs phones out). Phones that can't scan (an iPhone home-screen
+app keeps its own storage) type the 8-character code shown under the QR instead; /pair trades
+it for the token. Without the token the page can't send anything. Text sent from it goes
 into whatever field is selected on the TV: web apps, YouTube and Jellyfin through DevTools
 (any characters), anything else (the home screen, our TV apps) as key presses (US keyboard).
 The page also has the remote's buttons: arrows, OK, Back, Home, Play/Pause.
@@ -37,6 +39,9 @@ PORT = 8791
 LAST_KEY = "/run/couchbox/last-key"      # couchbox-memory: someone is using the TV
 PHONE_DIR = "/run/couchbox/phone"           # phone.url, phone.png (systemd RuntimeDirectory)
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
+PAIR_TRIES = 5            # wrong pairing codes allowed per minute, from anyone
+_pair_fails: list[float] = []
+_pair_lock = threading.Lock()
 
 # US layout: character -> (key, shift)
 CHARS = {c: (getattr(e, f"KEY_{c.upper()}"), c.isupper()) for c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}
@@ -75,18 +80,34 @@ def used():
         pass
 
 
+# Apps read keys from the Wayland compositor at frame rate: a press and release in the same
+# instant, or the next key right behind, can be lost (double letters and Shift first). Hold each
+# key for a moment and leave a gap; about 25 characters a second.
+HOLD, GAP = 0.012, 0.028
+_keys = threading.Lock()       # one key at a time
+_typing = threading.Lock()     # one text at a time, so two sends never interleave
+
+
 def tap(key, shift=False, ctrl=False):
     mods = [m for m, on in ((e.KEY_LEFTSHIFT, shift), (e.KEY_LEFTCTRL, ctrl)) if on]
     k = ui()
-    for m in mods:
-        k.write(e.EV_KEY, m, 1)
-    k.write(e.EV_KEY, key, 1)
-    k.syn()
-    k.write(e.EV_KEY, key, 0)
-    for m in mods:
-        k.write(e.EV_KEY, m, 0)
-    k.syn()
-    time.sleep(0.012)
+    with _keys:
+        if mods:
+            for m in mods:
+                k.write(e.EV_KEY, m, 1)
+            k.syn()
+            time.sleep(HOLD)
+        k.write(e.EV_KEY, key, 1)
+        k.syn()
+        time.sleep(HOLD)
+        k.write(e.EV_KEY, key, 0)
+        k.syn()
+        if mods:
+            time.sleep(HOLD)
+            for m in mods:
+                k.write(e.EV_KEY, m, 0)
+            k.syn()
+        time.sleep(GAP)
 
 
 def type_text(text):
@@ -104,9 +125,10 @@ def type_text(text):
         except Exception:
             pass
     missing = sorted({c for c in text if c not in CHARS})
-    for c in text:
-        if c in CHARS:
-            tap(*CHARS[c])
+    with _typing:
+        for c in text:
+            if c in CHARS:
+                tap(*CHARS[c])
     return "typed" + (f" (couldn't type {''.join(missing)})" if missing else "")
 
 
@@ -182,7 +204,23 @@ PAGE = r"""<!doctype html>
   .keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; width: 100%; max-width: 340px; }
   .keys div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
   .keys button { width: 58px; height: 58px; min-height: 0; border-radius: 50%; }
+  #pair { display: none; flex-direction: column; gap: 12px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 18px; padding: 16px; }
+  #pair.on { display: flex; }
+  #pair p { margin: 0; color: var(--dim); font-size: 15px; }
+  #pair b { color: var(--text); font-size: 17px; }
+  #pair input { width: 100%; font: inherit; font-size: 24px; letter-spacing: .12em; text-transform: uppercase; text-align: center;
+                color: var(--text); background: var(--bg); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px;
+                outline: none; -webkit-user-select: text; user-select: text; }
+  #pair input:focus { border-color: var(--accent); }
 </style></head><body><main>
+<form id="pair" onsubmit="event.preventDefault(); pairWithCode()">
+  <b>Pair this phone</b>
+  <p>Scan the QR code on the TV, or type the code shown under it (TV Settings → Remote access).</p>
+  <input id="code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="characters" autocorrect="off"
+         spellcheck="false" maxlength="12" placeholder="ABCD-EFGH" enterkeyhint="go">
+  <button class="primary" type="submit">Pair</button>
+</form>
 <div class="field">
   <input id="t" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
          enterkeyhint="send" placeholder="Text for the selected box">
@@ -224,13 +262,26 @@ function say(text) {
   msg.textContent = text; msg.style.opacity = 1;
   clearTimeout(msgTimer); msgTimer = setTimeout(() => { msg.style.opacity = 0; }, 2500);
 }
-if (!window.TOKEN) say("Scan the QR code on the TV to pair this phone.");
+const pairBox = document.getElementById("pair"), code = document.getElementById("code");
+function needPairing(text) { pairBox.classList.add("on"); if (text) say(text); }
+if (!window.TOKEN) needPairing();
+async function pairWithCode() {
+  if (!code.value.trim()) { code.focus(); return; }
+  try {
+    const r = await fetch("/pair", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code: code.value})});
+    const res = await r.json();
+    if (!res.token) { say(res.result); return; }
+    window.TOKEN = res.token;
+    try { localStorage.setItem("couchbox-token", res.token); } catch (e) {}
+    code.value = ""; code.blur(); pairBox.classList.remove("on"); say("Paired.");
+  } catch (err) { say("The TV isn't answering."); }
+}
 async function post(path, body, quiet) {
-  if (!window.TOKEN) { say("Scan the QR code on the TV to pair this phone."); return; }
+  if (!window.TOKEN) { needPairing("Pair this phone first."); return; }
   try {
     const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-Couchbox-Token": window.TOKEN},
                                  body: JSON.stringify(body)});
-    if (r.status === 401) { say("This phone isn't paired any more. Scan the code on the TV."); return; }
+    if (r.status === 401) { needPairing("This phone isn't paired any more. Scan the QR code or type the code from the TV."); return; }
     const res = (await r.json()).result;
     if (!quiet || res !== "Sent.") say(res);
   } catch (err) { say("The TV isn't answering."); }
@@ -294,8 +345,33 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(401, {"result": "Not paired."})
         return False
 
+    def pair(self):
+        """POST /pair {code}: the code from Settings → Remote access, for phones that can't
+        scan the QR (an iPhone home-screen app). Replies with the token. Wrong codes are
+        limited to PAIR_TRIES a minute so nobody can guess through them."""
+        with _pair_lock:
+            now = time.monotonic()
+            _pair_fails[:] = [t for t in _pair_fails if now - t < 60]
+            if len(_pair_fails) >= PAIR_TRIES:
+                return self.reply(429, {"result": "Too many tries. Wait a minute."})
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 1024)) or b"{}")
+            except ValueError:
+                body = {}
+            token = secrets.check_pair_code(str(body.get("code", "")))
+            if not token:
+                _pair_fails.append(now)
+                print(f"{self.client_address[0]} /pair wrong code", flush=True)
+                return self.reply(403, {"result": "That code doesn't match. Check Settings → Remote access on the TV."})
+        print(f"{self.client_address[0]} /pair paired", flush=True)
+        self.reply(200, {"result": "Paired.", "token": token})
+
     def do_POST(self):
-        if not self.allowed() or not self.paired():
+        if not self.allowed():
+            return
+        if self.path == "/pair":
+            return self.pair()
+        if not self.paired():
             return
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")

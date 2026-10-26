@@ -135,7 +135,7 @@ Services that need settings read the files themselves and reload on `SIGHUP`. co
 |---|---|
 | Least privilege | Only couchboxd, the input mapper, CEC, the updater and voice (hidraw) run as root. Apps run as `tv`. The phone page runs as its own user and talks to couchboxd and the session over narrow calls |
 | No secret leaves the box through the UI | Secrets are write-only through the API. Settings shows "set" or "not set" |
-| Phone page pairing | The QR code on the TV holds `https://<name>/#t=<token>`. The token is random, stored root-only and can be rotated in Settings. Without the token the page shows "Scan the code on the TV". The token lives in the fragment, so it never reaches proxies or logs |
+| Phone page pairing | The QR code on the TV holds `https://<name>/#t=<token>`. The token is random, stored root-only and can be rotated in Settings. Without the token the page asks to pair: scan the QR, or type the 8-character code shown under it (derived from the token, so New pairing code changes it; wrong codes are limited to 5 a minute). That covers an iPhone home-screen app, which keeps its own storage and can't scan. The token lives in the fragment, so it never reaches proxies or logs |
 | Localhost services | Every HTTP endpoint the prototype had on localhost (voice, typing) either moves to the Unix socket or requires the token, plus an `Origin` check against browser cross-site requests |
 | SSH | Off by default. When on: keys only (from a GitHub user or pasted), modern ciphers, no root login |
 | AirPlay | Optional PIN in Settings |

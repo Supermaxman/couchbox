@@ -134,3 +134,15 @@ def test_secret_names_are_checked():
 def test_phone_token_is_made_once():
     t = secrets.ensure_token()
     assert len(t) >= 20 and secrets.ensure_token() == t
+
+
+def test_pairing_code_comes_from_the_token_and_changes_with_it():
+    t = secrets.ensure_token()
+    code = secrets.pair_code(t)
+    assert len(code) == 9 and code[4] == "-" and set(code.replace("-", "")) <= set(secrets.PAIR_ALPHABET)
+    assert secrets.check_pair_code(code) == t
+    assert secrets.check_pair_code(code.lower().replace("-", " ")) == t  # typed loosely
+    assert secrets.check_pair_code("") == "" and secrets.check_pair_code("AAAA-AAAA") == ""
+    secrets.clear("phone.token")
+    assert secrets.check_pair_code(code) == ""  # no token, no code
+    assert secrets.pair_code(secrets.ensure_token()) != code  # New pairing code changes it
