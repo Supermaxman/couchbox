@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/Supermaxman/couchbox/compare/v0.4.4...v0.4.5) (2026-10-26)
+
+
+### Fixed
+
+* **twitch:** keep the sign-in: finish a code entered after Back, survive token rotation, refresh weekly ([#16](https://github.com/Supermaxman/couchbox/issues/16)) ([f4e40fe](https://github.com/Supermaxman/couchbox/commit/f4e40fead9469606288969ce37136b0343750f02))
+
 ## [0.4.4](https://github.com/Supermaxman/couchbox/compare/v0.4.3...v0.4.4) (2026-10-25)
 
 
