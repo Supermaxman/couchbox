@@ -313,6 +313,10 @@ ApplicationWindow {
     // The app quits after an hour without use; the music keeps playing (couchbox-spotify --connect).
     onActiveFocusItemChanged: idle.restart()
     Timer { id: idle; interval: 60 * 60 * 1000; running: true; onTriggered: Qt.quit() }
+    Timer {                                  // not a Spotify speaker yet: watch for a refused key or a login
+        interval: 5000; repeat: true; running: win.mode === "app" && !S.now.logged_in
+        onTriggered: S.call("status", {}, s => S.status = s)
+    }
 
     // --shot FILE [--open now | search:TEXT | album:ID | artist:ID | playlist:ID | liked | library | menu | picker] [--setup] [--keys k1,k2,...]
     Timer {

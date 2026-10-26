@@ -22,6 +22,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import threading
 import time
@@ -80,6 +81,58 @@ def set_api_key(key: str) -> None:
     with os.fdopen(fd, "w") as f:
         f.write(key + "\n")
     os.replace(tmp, key_file())
+    clear_login_error()
+
+
+# A wrong key (an app's client secret, say) starts fine: Soloist only finds out when a phone picks
+# this TV, logs "login failed: make sure --api-key is valid" and stays up, and the phone just says
+# "Connecting…". couchbox-spotify --connect reads the player's output for that line and leaves the
+# reason in a file, so the app (another process) can show it until a login works or the key changes.
+KEY_REFUSED = (
+    "Spotify refused the Soloist key. Make a new one at developer.spotify.com/dashboard/soloist "
+    "(not your app's client ID or secret) and type it in step 2."
+)
+
+
+def login_error_file() -> Path:
+    return data_dir() / "login_error"
+
+
+def login_error() -> str:
+    try:
+        return login_error_file().read_text().strip()
+    except OSError:
+        return ""
+
+
+def set_login_error(text: str) -> None:
+    try:
+        login_error_file().write_text(text + "\n")
+    except OSError:
+        pass
+
+
+def clear_login_error() -> None:
+    login_error_file().unlink(missing_ok=True)
+
+
+def note_output(line: str) -> None:
+    """One line of the player's output: remember a refused login."""
+    if "login failed" in line.lower():
+        set_login_error(KEY_REFUSED)
+
+
+def relay_output(stream, out=None) -> None:
+    """Copy the player's output to ours (the journal) line by line, noting what matters. Runs on
+    its own thread until the player exits; a bad line never stops it, so the pipe never fills."""
+    out = out or sys.stdout
+    for line in stream:
+        try:
+            out.write(line)
+            out.flush()
+            note_output(line)
+        except Exception:  # noqa: BLE001, S112 - keep draining
+            continue
 
 
 def arch() -> str:

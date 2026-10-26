@@ -421,3 +421,40 @@ def test_voice_likes_the_song_playing_and_needs_setup(fake):
     fake.routes["PUT /me/library"] = {}
     assert spotify_tv.Voice(sp, FakePlayer()).run("like") == "Added Song to your Liked Songs."
     assert spotify_tv.Voice(spotify.Spotify(""), FakePlayer()).run("now").startswith("Spotify isn't set up")
+
+
+# ------------------------------------------------------------------ a key Spotify refuses
+def test_a_refused_login_is_kept_until_the_key_changes(fake):
+    assert soloist.login_error() == ""
+    soloist.note_output("2026-10-26 08:22:12.387: running\n")
+    assert soloist.login_error() == ""
+    soloist.note_output("2026-10-26 08:22:12.387: login failed: make sure --api-key is valid\n")
+    assert "dashboard/soloist" in soloist.login_error()
+    soloist.set_api_key("a-new-soloist-key-0001")
+    assert soloist.login_error() == ""
+
+
+def test_the_player_output_is_relayed_and_watched(fake):
+    out = io.StringIO()
+    lines = ["ready, device_name=TV\n", "W login failed while API key is configured (action_id=1)\n"]
+    soloist.relay_output(iter(lines), out=out)
+    assert out.getvalue() == "".join(lines)
+    assert soloist.login_error() == soloist.KEY_REFUSED
+
+
+def test_status_shows_the_refused_key_only_while_not_logged_in(fake):
+    sp = spotify.Spotify(CLIENT)
+    soloist.set_login_error(soloist.KEY_REFUSED)
+    player = type("P", (), {"state": {"connected": True, "logged_in": False}})()
+    assert spotify_tv.status(sp, player)["player"]["login_error"] == soloist.KEY_REFUSED
+    player.state["logged_in"] = True
+    assert spotify_tv.status(sp, player)["player"]["login_error"] == ""
+
+
+def test_the_client_id_is_not_taken_as_the_soloist_key(fake):
+    spotify_tv.set_client_id(CLIENT)
+    with pytest.raises(spotify.SpotifyError, match="client ID"):
+        spotify_tv.set_key(CLIENT.upper())
+    assert soloist.api_key() == ""
+    spotify_tv.set_key("a-real-soloist-key-0001")
+    assert soloist.api_key() == "a-real-soloist-key-0001"

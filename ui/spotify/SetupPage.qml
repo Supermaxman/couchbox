@@ -21,7 +21,8 @@ FocusScope {
             {id: "player", label: "3. Spotify's player on this TV", ok: !!pl.installed && !!pl.running,
              value: busy ? "Downloading from Spotify…" : !pl.installed ? "Not downloaded yet" : !pl.running ? "Downloaded, starting…"
                     : "Ready" + (pl.days_left !== null && pl.days_left !== undefined ? " · updates itself (" + Math.round(pl.days_left) + " days left on this build)" : "")},
-            {id: "pair", label: "4. Pick this TV in the Spotify app", value: pl.logged_in ? "Done: this TV is a Spotify speaker" : "Not yet", ok: !!pl.logged_in},
+            {id: "pair", label: "4. Pick this TV in the Spotify app", value: pl.logged_in ? "Done: this TV is a Spotify speaker" : pl.login_error ? "Spotify refused the Soloist key: see step 2" : "Not yet",
+             ok: !!pl.logged_in, bad: !pl.logged_in && !!pl.login_error},
             {id: "signin", label: "5. Sign in to your Spotify account", value: st.signedIn ? "Signed in as " + st.user : "Not signed in", ok: !!st.signedIn},
             {id: "paste", label: "Phone ended on a page that won't load?", value: "Type its address here", ok: false, minor: true}
         ];
@@ -97,7 +98,7 @@ FocusScope {
                     Text { width: parent.width; text: modelData.label; elide: Text.ElideRight; horizontalAlignment: modelData.primary ? Text.AlignHCenter : Text.AlignLeft
                            color: modelData.primary ? "#000000" : modelData.minor ? S.dim : S.text; font.family: S.font; font.pixelSize: S.tBody; font.weight: Font.DemiBold }
                     Text { width: parent.width; visible: !!modelData.value; text: modelData.value || ""; elide: Text.ElideRight
-                           color: !!modelData.ok ? S.accent : S.dim; font.family: S.font; font.pixelSize: S.tMeta }
+                           color: !!modelData.ok ? S.accent : modelData.bad ? S.danger : S.dim; font.family: S.font; font.pixelSize: S.tMeta }
                 }
             }
         }
@@ -127,9 +128,10 @@ FocusScope {
                           + "• Which API: <b>Web API</b><br>"
                           + "Save, open its Settings and copy the <b>Client ID</b>. Press OK here and type or paste it (the phone remote page types for you).<br><br>"
                           + "Others in your home can use it too: add their Spotify e-mail under the app's User Management (up to 5 people).",
-                    key: "<b>Soloist</b> is Spotify's own player for devices like this one. At developer.spotify.com, open <b>Spotify Soloist API Key</b> and press <b>Generate</b> (it needs Premium). Press OK here and type or paste it. It's kept only on this TV.",
+                    key: "<b>Soloist</b> is Spotify's own player for devices like this one. Its key has its own page: <b>developer.spotify.com/dashboard/soloist</b> (in the dashboard, <b>Spotify Soloist API Key</b>, not inside your app). Press <b>Generate</b> (it needs Premium). It's not your app's Client ID or Client secret. Press OK here and type or paste it. It's kept only on this TV.",
                     player: "Downloads <b>Spotify Soloist</b> from Spotify and starts it. Spotify's builds last 90 days, so the TV fetches a new one by itself. By using it you accept Spotify's Terms and Conditions of Use.",
-                    pair: "On your phone, on the same Wi-Fi: open the Spotify app, play anything, tap the <b>speaker icon</b> and choose <b>" + page.device + "</b>. The TV remembers it. After that, phones can also send music here.",
+                    pair: (page.pl.login_error && !page.pl.logged_in ? "<font color='" + S.danger + "'><b>" + page.pl.login_error + "</b></font><br><br>" : "")
+                        + "On your phone, on the same Wi-Fi: open the Spotify app, play anything, tap the <b>speaker icon</b> and choose <b>" + page.device + "</b>. The TV remembers it. After that, phones can also send music here.",
                     signin: page.qr ? "<b>Scan this with your phone</b> and sign in to Spotify. When it's done, this TV shows your music.<br><br>Not on Tailscale? Your phone ends on a page that won't load: copy its address and use the next step."
                                     : "Press OK for a QR code to sign in with your phone.",
                     paste: "If your phone isn't on your tailnet, Spotify sends it to <b>http://127.0.0.1:8792/callback?code=…</b>, which won't load on a phone. Copy that whole address from the phone's address bar, press OK here and type or paste it.",
