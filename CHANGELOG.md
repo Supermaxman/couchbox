@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.1](https://github.com/Supermaxman/couchbox/compare/v0.11.0...v0.11.1) (2026-10-26)
+
+
+### Fixed
+
+* the remote's Back key goes back again (Movies, Twitch/Dropout/Nebula, Spotify) ([#61](https://github.com/Supermaxman/couchbox/issues/61)) ([e8645d0](https://github.com/Supermaxman/couchbox/commit/e8645d0d54b3cf9b4e1e6f344b96bb622230a5da))
+* **ui:** focused cards and rows no longer get cut off at the edges ([#58](https://github.com/Supermaxman/couchbox/issues/58)) ([63d7600](https://github.com/Supermaxman/couchbox/commit/63d76008bc7581a96e73af9d7eb77ad923f9ea1c))
+* **ui:** sharp icons, posters and thumbnails when the TV runs scaled ([#62](https://github.com/Supermaxman/couchbox/issues/62)) ([23a64a2](https://github.com/Supermaxman/couchbox/commit/23a64a27df6d37ce368a5fc2b403ec08b32106d1))
+
 ## [0.11.0](https://github.com/Supermaxman/couchbox/compare/v0.10.1...v0.11.0) (2026-10-26)
 
 
