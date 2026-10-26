@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Supermaxman/couchbox/compare/v0.4.9...v0.5.0) (2026-10-26)
+
+
+### New
+
+* **frigate:** a native TV app for Frigate cameras: live dashboard, full-screen live, review and recordings ([#28](https://github.com/Supermaxman/couchbox/issues/28)) ([f029100](https://github.com/Supermaxman/couchbox/commit/f0291001d80d1b374fc3c7c76e10c0ec83611aad))
+
 ## [0.4.9](https://github.com/Supermaxman/couchbox/compare/v0.4.8...v0.4.9) (2026-10-26)
 
 
