@@ -61,7 +61,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `youtube`: VacuumTube over DevTools.
   - `jellyfin`: the web client's API over DevTools.
   - `seerr`: its API.
-  - `frigate`: shows a camera live (by spoken name), all cameras, or the alerts, through the Frigate app's control socket.
+  - `frigate`: shows a camera live (by spoken name), all cameras, the alerts, or the last day's timeline (of a camera or all), through the Frigate app's control socket.
   - `dropout`, `second_try`, `nebula`, `twitch`: the native apps, through their control socket.
   - `page`: web apps.
   - `media`, `remote`, `tv` and `say`.

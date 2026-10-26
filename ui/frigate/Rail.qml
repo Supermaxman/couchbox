@@ -1,15 +1,16 @@
-// The sidebar, like Frigate's: Live with the camera groups, Review, and the account.
+// The sidebar, like Frigate's: Live with the camera groups, Review, Timeline, and the account.
 // Up/Down move, OK opens, Right goes to the page.
 import QtQuick
 
 FocusScope {
     id: rail
-    property int section: 0                  // 0 live, 1 review
+    property int section: 0                  // 0 live, 1 review, 2 timeline
     property int group: 0
     property int unreviewed: 0               // alerts not looked at yet (the Review badge)
     readonly property var entries: {
         const e = F.groups.map((g, i) => ({kind: "group", index: i, label: g.name, count: g.cameras.length}));
-        e.push({kind: "review", label: "Review", count: 0});
+        e.push({kind: "review", label: "Review", count: 0, icon: "object"});
+        e.push({kind: "timeline", label: "Timeline", count: 0, icon: "timeline"});
         e.push({kind: "signout", label: "Sign out", count: 0});
         return e;
     }
@@ -17,7 +18,7 @@ FocusScope {
     signal chosen(var entry)
     signal toPage()
 
-    function sync() { idx = section === 1 ? entries.length - 2 : Math.min(group, entries.length - 1); }
+    function sync() { idx = section === 1 ? entries.length - 3 : section === 2 ? entries.length - 2 : Math.min(group, entries.length - 1); }
     onActiveFocusChanged: if (activeFocus) sync()
     Keys.onUpPressed: idx = Math.max(0, idx - 1)
     Keys.onDownPressed: idx = Math.min(entries.length - 1, idx + 1)
@@ -53,18 +54,27 @@ FocusScope {
                 width: parent.width
                 spacing: 6 * F.u
                 Item {                           // a gap before Review and Sign out
-                    width: 1; height: entryCol.modelData.kind === "review" ? 30 * F.u : entryCol.modelData.kind === "signout" ? 60 * F.u : 0
+                    width: 1; height: entryCol.modelData.kind === "review" ? 30 * F.u : entryCol.modelData.kind === "signout" ? 50 * F.u : 0
                 }
                 Rectangle {
                     readonly property bool sel: (entryCol.modelData.kind === "group" && rail.section === 0 && rail.group === entryCol.modelData.index)
                                                 || (entryCol.modelData.kind === "review" && rail.section === 1)
+                                                || (entryCol.modelData.kind === "timeline" && rail.section === 2)
                     readonly property bool cur: rail.activeFocus && rail.idx === entryCol.index
                     width: parent.width; height: 68 * F.u; radius: 12 * F.u
                     color: cur ? F.panel2 : sel ? F.panel : "transparent"
                     border.color: cur ? F.focus : "transparent"; border.width: 3 * F.u
                     Rectangle { visible: parent.sel; x: 0; anchors.verticalCenter: parent.verticalCenter; width: 5 * F.u; height: 34 * F.u; radius: 3 * F.u; color: F.accent }
+                    Image {
+                        id: entryIcon
+                        visible: !!entryCol.modelData.icon
+                        x: 22 * F.u; anchors.verticalCenter: parent.verticalCenter
+                        width: 30 * F.u; height: width; sourceSize: Qt.size(width, height)
+                        source: entryCol.modelData.icon ? F.icon(entryCol.modelData.icon) : ""
+                        opacity: parent.sel || parent.cur ? 1 : 0.7
+                    }
                     Text {
-                        anchors { left: parent.left; leftMargin: 22 * F.u; right: badge.left; rightMargin: 10 * F.u; verticalCenter: parent.verticalCenter }
+                        anchors { left: parent.left; leftMargin: entryIcon.visible ? 66 * F.u : 22 * F.u; right: badge.left; rightMargin: 10 * F.u; verticalCenter: parent.verticalCenter }
                         text: entryCol.modelData.label
                         color: parent.sel || parent.cur ? F.text : entryCol.modelData.kind === "signout" ? F.faint : F.text2
                         font.family: F.font; font.pixelSize: 27 * F.u; font.weight: parent.sel ? Font.DemiBold : Font.Normal

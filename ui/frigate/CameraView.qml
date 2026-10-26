@@ -1,5 +1,6 @@
 // A camera full screen: live video (through the relay's MSE bridge, in mpv). Left/Right: the
-// previous or next camera in the group. Down: this camera's recent activity (OK plays it).
+// previous or next camera in the group. Down: this camera's timeline and recent activity (OK
+// opens the timeline or plays the item).
 // Back: the strip, then the dashboard. If live video doesn't start, its picture refreshes
 // every second instead.
 import QtQuick
@@ -18,6 +19,7 @@ FocusScope {
     property int si: 0
     signal closed()
     signal openReview(var r, var list)
+    signal openTimeline(string name)
 
     function start() {
         connecting = true; stills = false; lastPos = -1; strip = false; recent = [];
@@ -51,12 +53,14 @@ FocusScope {
     }
     Timer { id: watchdog; interval: 15000; onTriggered: if (view.visible && !demo) stalled.fail() }
 
+    // the strip: 0 is the timeline, then the recent items
+    function activate() { if (si === 0) openTimeline(cam.name); else openReview(recent[si - 1], recent); }
     Keys.onLeftPressed: { if (strip) si = Math.max(0, si - 1); else step(-1); }
-    Keys.onRightPressed: { if (strip) si = Math.min(recent.length - 1, si + 1); else step(1); }
-    Keys.onDownPressed: { if (recent.length) { strip = true; si = 0; } }
+    Keys.onRightPressed: { if (strip) si = Math.min(recent.length, si + 1); else step(1); }
+    Keys.onDownPressed: { strip = true; si = recent.length ? 1 : 0; }
     Keys.onUpPressed: strip = false
-    Keys.onReturnPressed: { if (strip && recent.length) openReview(recent[si], recent); else if (!strip && recent.length) { strip = true; si = 0; } }
-    Keys.onEnterPressed: { if (strip && recent.length) openReview(recent[si], recent); }
+    Keys.onReturnPressed: { if (strip) activate(); else { strip = true; si = recent.length ? 1 : 0; } }
+    Keys.onEnterPressed: { if (strip) activate(); else { strip = true; si = recent.length ? 1 : 0; } }
     Keys.onEscapePressed: { if (strip) strip = false; else closed(); }
     Keys.onBackPressed: { if (strip) strip = false; else closed(); }
 
@@ -89,10 +93,11 @@ FocusScope {
         Row {
             x: 60 * F.u; y: 44 * F.u
             spacing: 20 * F.u
-            Text { text: view.cam.label || ""; color: "white"; font.family: F.font; font.pixelSize: 44 * F.u; font.weight: Font.Bold }
+            Text { width: Math.min(implicitWidth, view.width - 700 * F.u); elide: Text.ElideRight
+                   text: view.cam.label || ""; color: "white"; font.family: F.font; font.pixelSize: 44 * F.u; font.weight: Font.Bold }
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                width: liveRow.implicitWidth + 28 * F.u; height: 40 * F.u; radius: 8 * F.u
+                width: liveRow.implicitWidth + 28 * F.u; height: liveRow.implicitHeight + 14 * F.u; radius: 8 * F.u
                 color: view.stills ? F.panel2 : view.connecting ? F.panel2 : F.alert
                 Row {
                     id: liveRow
@@ -101,6 +106,10 @@ FocusScope {
                     Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10 * F.u; height: width; radius: width / 2; color: "white"; visible: !view.stills }
                     Text { text: view.stills ? "PICTURES" : "LIVE"; color: "white"; font.family: F.font; font.pixelSize: 20 * F.u; font.weight: Font.Bold }
                 }
+            }
+            Repeater {                           // what's there right now
+                model: (F.activeKinds[view.cam.name] || []).slice(0, 4)
+                delegate: KindBadge { required property var modelData; anchors.verticalCenter: parent.verticalCenter; kind: modelData; size: 48 * F.u; fill: "#cc" + F.alert.toString().slice(1) }
             }
         }
         Text {
@@ -112,41 +121,65 @@ FocusScope {
     Text {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 34 * F.u }
         visible: !view.strip
-        text: view.stills ? "Live video isn't coming through: showing a picture every second." : view.recent.length ? "▼  Recent activity" : ""
+        text: view.stills ? "Live video isn't coming through: showing a picture every second." : "▼  Timeline and recent activity"
         color: F.text2; font.family: F.font; font.pixelSize: 24 * F.u
         style: Text.Outline; styleColor: "#80000000"
     }
 
     Rectangle {                                  // Down: this camera's recent activity
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        height: 360 * F.u
+        height: stripList.height + 150 * F.u
         visible: view.strip
         gradient: Gradient {
             GradientStop { position: 0; color: "#00000000" }
             GradientStop { position: 0.25; color: "#d0000000" }
             GradientStop { position: 1; color: "#f0000000" }
         }
-        Text { x: 60 * F.u; y: 40 * F.u; text: "Recent activity"; color: F.text; font.family: F.font; font.pixelSize: 28 * F.u; font.weight: Font.DemiBold }
+        Text { x: 60 * F.u; y: 40 * F.u; text: "Timeline and recent activity"; color: F.text; font.family: F.font; font.pixelSize: F.tHead - 2 * F.u; font.weight: Font.DemiBold }
+        ReviewCard { id: probe; visible: false; width: 330 * F.u; showCamera: false }
         ListView {
-            x: 60 * F.u; y: 90 * F.u
+            id: stripList
+            x: 60 * F.u; y: 100 * F.u
             width: parent.width - 60 * F.u - F.edge
-            height: 230 * F.u
+            height: probe.implicitHeight
             orientation: ListView.Horizontal
-            spacing: 22 * F.u
+            spacing: F.gap
             interactive: false
-            model: view.recent
+            model: [null].concat(view.recent)
             currentIndex: view.si
             highlightRangeMode: ListView.ApplyRange
             preferredHighlightBegin: 0
-            preferredHighlightEnd: width - 320 * F.u
+            preferredHighlightEnd: width - 340 * F.u
             highlightMoveDuration: 180
-            delegate: ReviewCard {
+            delegate: Loader {
                 required property var modelData
                 required property int index
-                width: 310 * F.u; height: 230 * F.u
-                r: modelData
-                showCamera: false
-                current: view.si === index
+                width: 330 * F.u; height: probe.implicitHeight
+                sourceComponent: index === 0 ? timelineCard : itemCard
+                Component {
+                    id: itemCard
+                    ReviewCard { r: modelData; showCamera: false; current: view.si === index }
+                }
+                Component {
+                    id: timelineCard
+                    Item {
+                        Rectangle {
+                            anchors.fill: parent; radius: F.radius
+                            color: view.si === 0 ? F.panel2 : F.panel
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 16 * F.u
+                                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 84 * F.u; height: width; sourceSize: Qt.size(width, height); source: F.icon("timeline") }
+                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Timeline"; color: F.text; font.family: F.font; font.pixelSize: F.tBody; font.weight: Font.DemiBold }
+                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "The last 24 hours"; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta }
+                            }
+                        }
+                        Rectangle { anchors.fill: parent; anchors.margins: -F.ring; radius: F.radius + F.ring; color: "transparent"
+                                    border.color: F.focus; border.width: F.ring; visible: view.si === 0 }
+                        scale: view.si === 0 ? F.lift : 1
+                        Behavior on scale { NumberAnimation { duration: 120 } }
+                    }
+                }
             }
         }
     }

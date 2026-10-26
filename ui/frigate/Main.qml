@@ -26,7 +26,7 @@ ApplicationWindow {
     onUChanged: F.u = u
 
     property string mode: "starting"         // starting | signin | app
-    property int section: 0                  // 0 live, 1 review
+    property int section: 0                  // 0 live, 1 review, 2 timeline
     property int group: 0
     property var alerts: []
     property string overlay: ""              // "" | camera | player
@@ -48,7 +48,7 @@ ApplicationWindow {
     }
     function refresh() {
         if (mode !== "app") return;
-        F.call("active", {}, r => F.activeCams = r.cameras);
+        F.call("active", {}, r => { F.activeKinds = r.kinds || {}; F.activeCams = r.cameras; });
         F.call("reviews", {severity: "alert", hours: 24, unreviewed: true, limit: 16}, r => win.alerts = r.items);
     }
     Timer { interval: 10000; repeat: true; running: win.mode === "app" && win.overlay === ""; onTriggered: win.refresh() }
@@ -65,10 +65,11 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ navigation
-    function focusPage() { (section === 0 ? live : review).forceActiveFocus(); }
+    function focusPage() { [live, review, timeline][section].forceActiveFocus(); }
     function choose(e) {
         if (e.kind === "group") { group = e.index; section = 0; focusPage(); }
         else if (e.kind === "review") { section = 1; focusPage(); }
+        else if (e.kind === "timeline") { section = 2; focusPage(); }
         else if (e.kind === "signout") F.call("signout", {}, s => { F.status = s; mode = "signin"; signin.user = ""; signin.forceActiveFocus(); });
     }
     function openCamera(cams, i) {
@@ -91,10 +92,17 @@ ApplicationWindow {
     function closePlayer() {
         player.stop();
         if (playerFrom === "camera") { overlay = "camera"; camera.forceActiveFocus(); camera.start(); }
+        else if (playerFrom === "timeline") { overlay = ""; timeline.forceActiveFocus(); }
         else { overlay = ""; focusPage(); refresh(); if (section === 1) review.load(); }
         updateState();
     }
     function closeCamera() { camera.stop(); overlay = ""; focusPage(); refresh(); updateState(); }
+    function openTimeline(name) {
+        stopVideo(); overlay = ""; section = 2;
+        timeline.show(name);
+        timeline.forceActiveFocus();
+        updateState();
+    }
     function stopVideo() { camera.stop(); player.stop(); }
     function openFromArgs() {
         const o = arg("--open");
@@ -111,12 +119,19 @@ ApplicationWindow {
         } else if (o === "review" || o === "alerts" || o === "detections") {
             stopVideo(); overlay = ""; section = 1; review.tab = o === "detections" ? 1 : 0; focusPage();
         } else if (o === "live") { stopVideo(); overlay = ""; section = 0; focusPage(); }
+        else if (o === "timeline" || o.startsWith("timeline:")) {
+            const name = o.slice(9).toLowerCase();
+            const c = F.cameras.find(x => x.name === name || x.label.toLowerCase() === name);
+            if (name && !c) return toast.show("There's no camera called " + o.slice(9) + ".");
+            if (c) group = 0;
+            openTimeline(c ? c.name : "");
+        }
     }
     function updateState() {
-        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : section === 1 ? "review" : "live",
+        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : ["live", "review", "timeline"][section],
                     group: (F.groups[group] || {}).name || ""};
         if (overlay === "camera") st.camera = camera.cam.label;
-        if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + (player.r.objects || []).join(", ");
+        if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + F.seen(player.r);
         control.setState(JSON.stringify(st));
         if (mpris) {
             const on = overlay !== "";
@@ -192,6 +207,15 @@ ApplicationWindow {
             Keys.onEscapePressed: { win.section = 0; win.focusPage(); }
             Keys.onBackPressed: { win.section = 0; win.focusPage(); }
         }
+        TimelinePage {
+            id: timeline
+            anchors { left: rail.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+            visible: win.section === 2
+            group: win.group
+            onPlay: item => win.openReview(item, [item], "timeline")
+            onToRail: rail.forceActiveFocus()
+            onLeave: { win.section = 0; win.focusPage(); }
+        }
     }
     CameraView {
         id: camera
@@ -200,6 +224,7 @@ ApplicationWindow {
         video: video
         onClosed: win.closeCamera()
         onOpenReview: (r, list) => win.openReview(r, list, "camera")
+        onOpenTimeline: name => win.openTimeline(name)
         onIndexChanged: win.updateState()
     }
     PlayerView {

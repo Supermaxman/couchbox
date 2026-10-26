@@ -2,14 +2,15 @@
 """couchbox-frigate: Frigate (the NVR) as a TV app, laid out like Frigate's own web UI: the
 camera groups in a sidebar, the live dashboard (recent alerts across the top, then every
 camera's picture, refreshing), a camera full screen (live, Left/Right for the next camera,
-Down for its recent activity) and Review (alerts and detections, played from the recordings).
+Down for its recent activity and timeline), Review (alerts and detections, played from the
+recordings) and Timeline (the last day of a camera or a group, played from any point).
 
 Sign-in: Frigate's user name and password, typed with the remote's keyboard pop-up or a phone.
 The server is Settings → Apps → Frigate server (media.frigate.url). The Python side
 (couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
 the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
 
-  couchbox-frigate [--open camera:NAME | review | alerts]
+  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA]]
   couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...]
                                      render once off screen (made-up cameras, no server)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1.
@@ -61,6 +62,7 @@ class Backend(QObject):
             "viewed": lambda: f.mark_viewed(a["ids"]),
             "live": lambda: f.live(a["stream"]),
             "recording": lambda: f.recording(a["camera"], a["start"], a.get("end", 0)),
+            "timeline": lambda: f.timeline(a["cameras"], a.get("hours", 24)),
         }
         return ops[op]()
 
@@ -81,6 +83,11 @@ class Backend(QObject):
     def snapshot(self, camera, height):
         """The relay's address of a camera's latest picture (the QML adds a cache-buster)."""
         return self.f.snapshot(camera, height)
+
+    @Slot(str, float, int, result=str)
+    def frame(self, camera, t, height):
+        """The relay's address of the recorded picture at time t (the timeline)."""
+        return self.f.frame(camera, t, height)
 
 
 class Control(QObject):
