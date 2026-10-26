@@ -3,7 +3,12 @@
   browsing   gql.twitch.tv (the website's GraphQL, anonymous with its web Client-ID): top
              streams, categories, a category's streams, channels with their videos, search
   sign-in    the TV device flow (id.twitch.tv/oauth2/device with Twitch's TV app Client-ID):
-             a code to enter at twitch.tv/activate; the token is kept (and refreshed)
+             a code to enter at twitch.tv/activate. The app keeps checking for the whole life of
+             the code (30 min), even after Back, so a code entered later still signs the TV in.
+             The token is kept and refreshed. Twitch's refresh tokens are single-use and expire
+             after 30 days unused, so refreshes take a lock and re-read the file (another
+             process may have refreshed first), and keep_alive() (daily, couchbox-clean-caches)
+             refreshes a week-old token even if nobody opens Twitch
   following  api.twitch.tv/helix/streams/followed and channels/followed (with the token)
   video      a playback access token (GQL) -> usher.ttvnw.net HLS; the best stream up to 1080p.
              Live streams go through AdFilter, a local playlist proxy that leaves out Twitch's
@@ -15,6 +20,7 @@ Everything comes out as the same "cards" as vhx.py. Ids: "live:<login>", "vod:<i
 channels by login, categories as "cat:<name>".
 """
 
+import fcntl
 import json
 import os
 import random
@@ -77,6 +83,7 @@ class Twitch:
         except (OSError, ValueError):
             pass
         self.device = None
+        self.device_state = {"state": "expired"}
         self.emotes = {}  # channel login -> {name: url}
         self.chat = None
         self.on_event = lambda name, data: None  # set by the launcher: chat messages, ad breaks
@@ -98,28 +105,50 @@ class Twitch:
     def signed_in(self):
         return bool(self.auth.get("access_token"))
 
-    def token(self):
+    def _reload(self):
+        try:
+            self.auth = json.load(open(self.session_file))
+        except (OSError, ValueError):
+            self.auth = {}
+
+    def token(self, force=False):
         """The user's access token, refreshed when it's near expiry ("" when signed out)."""
         if not self.signed_in:
             return ""
-        if time.time() > self.auth.get("expires_at", 0) - 300 and self.auth.get("refresh_token"):
-            r = self.s.post(
-                "https://id.twitch.tv/oauth2/token",
-                data={"client_id": TV_CLIENT, "grant_type": "refresh_token", "refresh_token": self.auth["refresh_token"]},
-                timeout=TIMEOUT,
-            )
-            if r.ok:
-                j = r.json()
-                self.auth.update(
-                    access_token=j["access_token"],
-                    refresh_token=j.get("refresh_token", self.auth["refresh_token"]),
-                    expires_at=time.time() + int(j.get("expires_in") or 3600),
+        if (force or time.time() > self.auth.get("expires_at", 0) - 300) and self.auth.get("refresh_token"):
+            with open(os.path.join(self.dir, ".lock"), "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                mine = self.auth.get("refresh_token")
+                self._reload()  # another process (the app, keep_alive) may have refreshed already
+                if not self.signed_in:
+                    return ""
+                if self.auth.get("refresh_token") != mine and time.time() < self.auth.get("expires_at", 0) - 300:
+                    return self.auth["access_token"]
+                r = self.s.post(
+                    "https://id.twitch.tv/oauth2/token",
+                    data={"client_id": TV_CLIENT, "grant_type": "refresh_token", "refresh_token": self.auth["refresh_token"]},
+                    timeout=TIMEOUT,
                 )
-                self._save()
-            elif r.status_code in (400, 401):
-                self.sign_out()
-                return ""
+                if r.ok:
+                    j = r.json()
+                    self.auth.update(
+                        access_token=j["access_token"],
+                        refresh_token=j.get("refresh_token", self.auth["refresh_token"]),
+                        expires_at=time.time() + int(j.get("expires_in") or 3600),
+                        refreshed_at=time.time(),
+                    )
+                    self._save()
+                elif r.status_code in (400, 401):  # revoked, password changed, or 30 days unused
+                    print(f"twitch: refresh refused ({r.status_code} {r.text[:120]}): signed out", flush=True)
+                    self.sign_out()
+                    return ""
         return self.auth.get("access_token", "")
+
+    def keep_alive(self, every=7 * 86400):
+        """Refresh a token that hasn't been refreshed for a week (Twitch drops it after 30 days unused)."""
+        if self.signed_in and time.time() - self.auth.get("refreshed_at", self.auth.get("signed_in_at", 0)) > every:
+            return bool(self.token(force=True))
+        return self.signed_in
 
     def status(self):
         out = {"state": "ok", "site": self.cfg["name"], "signedIn": self.signed_in}
@@ -130,9 +159,11 @@ class Twitch:
     def device_start(self):
         r = self.s.post("https://id.twitch.tv/oauth2/device", data={"client_id": TV_CLIENT, "scopes": SCOPES}, timeout=TIMEOUT)
         r.raise_for_status()
-        self.device = r.json()
-        self.device["started"] = time.time()
-        full = f"{self.device['verification_uri']}?device-code={self.device['user_code']}"
+        self.device = dev = r.json()
+        dev["started"] = time.time()
+        self.device_state = {"state": "waiting"}
+        threading.Thread(target=self._wait_device, args=(dev,), daemon=True).start()
+        full = f"{dev['verification_uri']}?device-code={dev['user_code']}"
         qr = os.path.join(self.dir, "activate.png")
         try:  # a QR code of the activation link, for a phone
             import subprocess
@@ -141,46 +172,69 @@ class Twitch:
         except Exception:
             qr = ""
         return {
-            "code": self.device["user_code"],
-            "url": self.device["verification_uri"],
+            "code": dev["user_code"],
+            "url": dev["verification_uri"],
             "full": full,
             "qr": qr,
-            "expires": int(self.device.get("expires_in") or 1800),
+            "expires": int(dev.get("expires_in") or 1800),
         }
 
-    def device_poll(self):
-        """ "waiting", "ok" (signed in), or "expired"."""
-        if not self.device:
-            return {"state": "expired"}
+    def _exchange(self, dev):
+        """One check of a device code: "waiting", "ok" (signed in and saved) or "expired"."""
         r = self.s.post(
             "https://id.twitch.tv/oauth2/token",
             data={
                 "client_id": TV_CLIENT,
                 "scopes": SCOPES,
-                "device_code": self.device["device_code"],
+                "device_code": dev["device_code"],
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             },
             timeout=TIMEOUT,
         )
         if r.ok:
             j = r.json()
-            self.auth = {
+            auth = {
                 "access_token": j["access_token"],
                 "refresh_token": j.get("refresh_token", ""),
                 "expires_at": time.time() + int(j.get("expires_in") or 3600),
+                "signed_in_at": time.time(),
             }
             v = self.s.get(
                 "https://id.twitch.tv/oauth2/validate", headers={"Authorization": f"OAuth {j['access_token']}"}, timeout=TIMEOUT
             ).json()
-            self.auth.update(login=v.get("login", ""), user_id=v.get("user_id", ""))
+            auth.update(login=v.get("login", ""), user_id=v.get("user_id", ""))
+            self.auth = auth
             self._save()
-            self.device = None
-            return {"state": "ok", "user": self.auth["login"]}
+            return {"state": "ok", "user": auth["login"]}
         msg = (r.json() or {}).get("message", "") if r.headers.get("content-type", "").startswith("application/json") else ""
-        if "pending" in msg:
+        if "pending" in msg or "slow_down" in msg:
             return {"state": "waiting"}
-        self.device = None
         return {"state": "expired", "message": msg}
+
+    def _wait_device(self, dev):
+        """Checks a code until it's used or expires, whether or not the sign-in page is still open."""
+        end = dev["started"] + int(dev.get("expires_in") or 1800)
+        while self.device is dev and time.time() < end:
+            time.sleep(max(int(dev.get("interval") or 5), 2))
+            if self.device is not dev:
+                return
+            try:
+                st = self._exchange(dev)
+            except (requests.RequestException, ValueError):
+                continue  # offline for a moment: keep trying until the code expires
+            if st["state"] != "waiting":
+                break
+        else:
+            st = {"state": "expired"}
+        if self.device is dev:
+            self.device = None
+            self.device_state = st
+            if st["state"] == "ok":
+                self.on_event("signedIn", json.dumps({"user": st["user"]}))
+
+    def device_poll(self):
+        """ "waiting", "ok" (signed in), or "expired" (the check runs in _wait_device)."""
+        return {"state": "waiting"} if self.device else self.device_state
 
     def sign_out(self):
         self.auth = {}

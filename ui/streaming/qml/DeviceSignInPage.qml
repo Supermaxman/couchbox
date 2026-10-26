@@ -1,5 +1,7 @@
 // Signing in with a code (Twitch): go to twitch.tv/activate on a phone or computer (or scan
 // the QR code) and enter the code shown; this page checks every few seconds until it's done.
+// Back leaves the page, but the app keeps checking until the code expires (twitch.py), so a
+// code entered afterwards still signs the TV in (Main.qml shows a toast).
 import QtQuick
 
 FocusScope {

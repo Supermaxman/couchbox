@@ -6,6 +6,11 @@ set -euo pipefail
 # shellcheck source=/dev/null
 . /etc/couchbox/couchbox.env
 home=$(getent passwd "$COUCHBOX_TV_USER" | cut -d: -f6)
+
+# Twitch forgets a sign-in after 30 days unused: refresh it weekly even if nobody opens Twitch
+if [[ -s $home/.local/share/couchbox-twitch/session.json ]]; then
+  runuser -u "$COUCHBOX_TV_USER" -- env HOME="$home" /usr/lib/couchbox/bin/couchbox-streaming --site twitch --keep-signed-in || true
+fi
 [[ -d $home/.var/app ]] || exit 0
 
 if pgrep -u "$COUCHBOX_TV_USER" -f 'chromium|VacuumTube|vacuumtube|jellyfin|fcast' >/dev/null; then
