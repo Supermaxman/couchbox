@@ -195,6 +195,8 @@ def test_weather_needs_a_town_and_answers_from_the_forecast(monkeypatch):
     tools.weather_tool("week", show=True)
     assert calls[-1][1] == {"op": "open", "target": "week"}
     assert "Today" in tools.weather_tool("now")
+    out = tools.weather_tool("radar")
+    assert calls[-1][1] == {"op": "open", "target": "radar"} and "radar is on the TV" in out and "Today" in out
 
 
 def test_search_tool_searches_and_reads_the_page(monkeypatch):

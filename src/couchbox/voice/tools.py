@@ -988,7 +988,10 @@ def _schemas(st=None):
             "weather",
             "The forecast where this TV is (14 days). Answer from what it returns; show: also put it on the TV.",
             s(
-                action=act(["now", "day", "week"], "now: now and the rest of today · day: the day(s) in day · week: a line a day"),
+                action=act(
+                    ["now", "day", "week", "radar"],
+                    "now: now and the rest of today · day: the day(s) in day · week: a line a day · radar: put the rain radar on the TV",
+                ),
                 day={"type": "string", "description": "today, tomorrow, a weekday, this/next weekend, or YYYY-MM-DD"},
                 show={"type": "boolean"},
             ),
@@ -1153,7 +1156,9 @@ def status_text(name, args):
         "tv": lambda: "TV " + str(a.get("action", "")).replace("_", " "),
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
         "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
-        "weather": lambda: "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
+        "weather": lambda: "Showing the radar"
+        if a.get("action") == "radar"
+        else "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
         "search": lambda: {"search": f"Googling “{a.get('query')}”", "read": "Reading the page"}.get(a.get("action"), "Opening the page"),
         "spotify": lambda: {
             "play": f"Finding “{a.get('query')}” on Spotify" if a.get("query") else "Playing",
@@ -1229,7 +1234,7 @@ _weather = None
 
 def weather_tool(action, day=None, show=False):
     """The forecast as text for the model to answer from; show=True also opens the Weather app
-    there (today, the fortnight, or the day asked about)."""
+    there (today, the fortnight, or the day asked about); action "radar" opens its radar loop."""
     global _weather
     place = weather.place_from_settings()
     if not place:
@@ -1238,9 +1243,10 @@ def weather_tool(action, day=None, show=False):
     data = _weather.get(place, clock24=place["clock24"])
     if action == "day" and not day:
         action = "now"
-    out = weather.voice_report(data, action, day)
-    if show:
-        target = {"now": "today", "week": "week"}.get(action, "today")
+    radar = action == "radar"
+    out = weather.voice_report(data, "now" if radar else action, day)
+    if show or radar:
+        target = {"now": "today", "week": "week", "radar": "radar"}.get(action, "today")
         if action == "day":
             picked = weather.pick_days(data["days"], day)
             target = f"day:{picked[0]['date']}" if len(picked) == 1 else "week" if picked else "today"
@@ -1248,7 +1254,7 @@ def weather_tool(action, day=None, show=False):
         streaming.ensure("weather", start=lambda: open_app(a.name, wait=False))
         appctl.call("weather", {"op": "open", "target": target})
         raise_window(a.desktop, a.name)
-        out += "\n(Shown on the TV.)"
+        out += "\n(The rain radar is on the TV.)" if radar else "\n(Shown on the TV.)"
     return out
 
 

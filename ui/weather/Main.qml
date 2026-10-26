@@ -1,6 +1,6 @@
 // couchbox-weather: the weather where the TV is (started by /usr/lib/couchbox/bin/couchbox-weather):
-// the sidebar (Today, the next 14 days, alerts), Today, the fortnight, a day hour by hour, and
-// the alerts in full. Remote: arrows move, OK opens, Back goes back (and leaves the app from a
+// the sidebar (Today, the next 14 days, the radar, alerts), Today, the fortnight, the radar loop,
+// a day hour by hour, and the alerts in full. Remote: arrows move, OK opens, Back goes back (and leaves the app from a
 // page). The forecast refreshes every 15 minutes while the app is open.
 import QtQuick
 import QtQuick.Controls.Basic
@@ -24,7 +24,7 @@ ApplicationWindow {
 
     property string mode: "starting"         // starting | problem | app
     property string problem: ""
-    property int section: 0                  // 0 today, 1 week
+    property int section: 0                  // 0 today, 1 week, 2 radar
     property string overlay: ""              // "" | day | alerts
     property string pending: arg("--open")    // a target to open once the forecast is in
 
@@ -44,10 +44,11 @@ ApplicationWindow {
     Timer { interval: 15 * 60 * 1000; repeat: true; running: win.mode === "app"; onTriggered: win.load(true) }
 
     // ------------------------------------------------------------------ navigation
-    function focusPage() { [today, week][section].forceActiveFocus(); updateState(); }
+    function focusPage() { [today, week, radar][section].forceActiveFocus(); updateState(); }
     function choose(e) {
         if (e.kind === "today") { section = 0; focusPage(); }
         else if (e.kind === "week") { section = 1; focusPage(); }
+        else if (e.kind === "radar") { section = 2; focusPage(); }
         else if (e.kind === "alerts") openAlerts();
     }
     function openDay(date, hour) {
@@ -79,6 +80,7 @@ ApplicationWindow {
         if (mode !== "app") { pending = o; return; }
         if (o === "today" || o === "") { overlay = ""; section = 0; focusPage(); }
         else if (o === "week") { overlay = ""; section = 1; focusPage(); }
+        else if (o === "radar") { overlay = ""; section = 2; focusPage(); }
         else if (o === "alerts") openAlerts();
         else if (o.startsWith("day:")) {
             const date = findDay(o.slice(4));
@@ -87,7 +89,7 @@ ApplicationWindow {
         }
     }
     function updateState() {
-        const st = {page: overlay || ["today", "week"][section]};
+        const st = {page: overlay || ["today", "week", "radar"][section]};
         if (overlay === "day" && day.day) st.day = day.day.name + " " + day.day.date;
         control.setState(JSON.stringify(st));
     }
@@ -131,6 +133,13 @@ ApplicationWindow {
             onToRail: rail.forceActiveFocus()
             Keys.onEscapePressed: { win.section = 0; win.focusPage(); }
             Keys.onBackPressed: { win.section = 0; win.focusPage(); }
+        }
+        RadarPage {
+            id: radar
+            anchors { left: rail.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+            visible: win.section === 2
+            Keys.onEscapePressed: rail.forceActiveFocus()
+            Keys.onBackPressed: rail.forceActiveFocus()
         }
     }
     DayPage {
@@ -195,7 +204,7 @@ ApplicationWindow {
     onActiveFocusItemChanged: idle.restart()
     Timer { id: idle; interval: 30 * 60 * 1000; running: true; onTriggered: Qt.quit() }
 
-    // --shot FILE [--open today | week | day:... | alerts] [--keys k1,k2,...]
+    // --shot FILE [--open today | week | radar | day:... | alerts] [--keys k1,k2,...]
     Timer {
         running: !!win.shot
         interval: 2000

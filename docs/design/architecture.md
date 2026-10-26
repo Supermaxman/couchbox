@@ -62,7 +62,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
   - `jellyfin`: the web client's API over DevTools.
   - `seerr`: its API.
   - `frigate`: shows a camera live (by spoken name), all cameras, the alerts, or the last day's timeline (of a camera or all), through the Frigate app's control socket.
-  - `weather`: the forecast as text for the model to answer from (now, a spoken day such as "this weekend", or the fortnight), fetched by the tool itself (Open-Meteo); `show` also opens the Weather app at that day.
+  - `weather`: the forecast as text for the model to answer from (now, a spoken day such as "this weekend", or the fortnight), fetched by the tool itself (Open-Meteo); `show` also opens the Weather app at that day, and `radar` opens its rain radar.
   - `search`: shows Google's results for a query, opens an address, or reads the page in front as text (so the assistant can summarize it or answer about it), through the Search app's control socket.
   - `spotify`: plays a song, artist, album or one of your playlists on this TV, what's playing, like, add to a playlist, and a new playlist from songs the model picks, through `couchbox-spotify --connect`'s control socket (`spotify-connect`). See [spotify.md](spotify.md).
   - `maps`: drive time to a saved place or any place ("how long to get to work"), directions, when to leave to arrive by a time, place search; it answers in words and opens the route in the Maps app (its control socket).
@@ -155,7 +155,7 @@ couchbox/
 ├─ docs/                    user guides (install, settings, troubleshooting) + design/
 ├─ src/couchbox/            Python package
 │  ├─ settings/  ipc/  daemon/  cli/  updater/  input/  cec/  voice/  phone/  memory/
-│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player), maps.py (Google Maps Platform with a key, else Photon + FOSSGIS OSRM + OSM tiles; places; a tile relay with a cache), movies.py (TMDB via Seerr or a key, IMDb ratings index)
+│  └─ services/             unofficial clients: vhx.py, nebula.py, twitch.py (+ adfilter), seerr.py, frigate.py (sign-in + a local relay: pictures, recordings, live MSE → fMP4), weather.py (Open-Meteo, NWS alerts), radar.py (NEXRAD via IEM or RainViewer; a tile relay with a cache), spotify.py + soloist.py + spotify_tv.py (Web API with PKCE, Spotify's Soloist player), maps.py (Google Maps Platform with a key, else Photon + FOSSGIS OSRM + OSM tiles; places; a tile relay with a cache), movies.py (TMDB via Seerr or a key, IMDb ratings index)
 ├─ apps/                    QML apps (each: main.py + qml/)
 │  ├─ settings/  setup/  seerr/  frigate/  weather/  maps/  movies/  streaming/ (Dropout, 2nd Try, Nebula, Twitch)  voice-overlay/
 │  └─ CouchKit/             shared QML module (keyboard + QR, buttons, pages)
@@ -204,3 +204,14 @@ The Maps app (`couchbox-maps`, `services/maps.py`) works with no account and get
 | Leave by | arrival minus the drive time | the traffic expected at the departure it works out (a few `computeRoutes` calls); transit by arrival time |
 
 The free services are run by volunteers for light use. Couchbox sends an identifying User-Agent, only asks for what's on screen (no pre-fetching), keeps tiles on the box for a week (150 MB at most), caches the places board's drive times for four minutes, and credits OpenStreetMap and OSRM on the map. The Google key is a root-only secret; the TV user's app gets it from couchboxd (`maps.google_key`, a write method like `phone.pairing`). Saved places and recent destinations are the TV user's (`~/.local/share/couchbox-maps/places.json`); Home starts as Settings → Time → Location (a town) until its address is set in Maps.
+
+## Weather radar: where its pictures come from
+
+The Weather app's Radar page (`services/radar.py`) loops the last two hours of rain over a darkened OpenStreetMap, centred on Settings → Time → Location. Neither source needs a key:
+
+| Where | Source | Detail | Limits |
+|---|---|---|---|
+| The lower 48 US states | NWS NEXRAD base reflectivity mosaic (`USCOMP-N0Q`) as tiles from the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/) | about 1 km; a scan every 5 minutes, the loop takes one every 10 | public domain; radar tiles asked for up to zoom 8 |
+| Everywhere else (and Alaska, Hawaii) | [RainViewer](https://www.rainviewer.com/api.html)'s public Weather Maps API | 512 px tiles in its Universal Blue colours; a frame every 10 minutes, future frames when it has them (it stopped publishing them in 2026) | personal use; zoom 7 at most; 100 requests a minute per address |
+
+The page asks only for the tiles on screen, newest frame first, and plays what's in while the older frames arrive. Radar tiles are fetched one or two zooms out from the map's and drawn larger (fewer requests; the data is coarser than the map anyway). Tiles go through a relay on 127.0.0.1 with a cache in `~/.cache/couchbox-weather/tiles`: radar frames never change and are kept six hours, the map a week, 120 MB at most. The relay keeps RainViewer under its rate limit.

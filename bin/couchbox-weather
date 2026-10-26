@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 """couchbox-weather: the weather where the TV is, made for the couch: Today (now, the next
-hours, the day's numbers), the next two weeks, and a day in detail (hour-by-hour temperature,
-rain and wind). Data from Open-Meteo (no key) for the town in Settings → Time, US National
-Weather Service alerts where they apply; with the voice assistant set up, a one-line "today
-at a glance" from its model (couchboxd's weather.glance). The QML is in
-/usr/share/couchbox/ui/weather; the data side is couchbox.services.weather.
+hours, the day's numbers), the next two weeks, a day in detail (hour-by-hour temperature,
+rain and wind), and the rain radar (the last two hours as a loop). Data from Open-Meteo (no
+key) for the town in Settings → Time, US National Weather Service alerts where they apply;
+radar from NEXRAD (the lower 48) or RainViewer; with the voice assistant set up, a one-line
+"today at a glance" from its model (couchboxd's weather.glance). The QML is in
+/usr/share/couchbox/ui/weather; the data side is couchbox.services.weather and .radar.
 
-  couchbox-weather [--open today | week | day:YYYY-MM-DD | day:tomorrow | day:saturday]
+  couchbox-weather [--open today | week | radar | day:YYYY-MM-DD | day:tomorrow | day:saturday]
   couchbox-weather --demo --shot FILE [--open ...] [--keys down,ok,...]
                                      render once off screen (a made-up fortnight, no network)
 """
@@ -26,7 +27,7 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (so the window comes back as one: grabWindow)
 
-from couchbox.services import weather  # noqa: E402
+from couchbox.services import radar, weather  # noqa: E402
 
 
 class Backend(QObject):
@@ -37,6 +38,7 @@ class Backend(QObject):
         super().__init__()
         self.demo = demo
         self.w = weather.Weather(demo=demo)
+        self.radar = radar.Radar(demo=demo)
         self.pool = ThreadPoolExecutor(max_workers=3)
 
     def place(self):
@@ -49,6 +51,14 @@ class Backend(QObject):
         if not p:
             raise weather.WeatherError("Set your town in Settings → Time to see the weather.")
         return self.w.get(p, clock24=p.get("clock24", False), force=force)
+
+    def radar_frames(self, force=False):
+        p = self.place()
+        tz = None
+        if not self.demo:
+            from couchbox import settings
+            tz = settings.load()["time.timezone"]
+        return self.radar.frames(p, clock24=bool(p and p.get("clock24")), force=force, tz=tz)
 
     def glance(self):
         if self.demo:
@@ -64,6 +74,7 @@ class Backend(QObject):
         ops = {
             "forecast": lambda: self.forecast(bool(a.get("force"))),
             "glance": lambda: self.glance(),
+            "radar": lambda: self.radar_frames(bool(a.get("force"))),
             "report": lambda: weather.voice_report(self.forecast(), a.get("action", "now"), a.get("day")),
         }
         return ops[op]()
@@ -73,7 +84,7 @@ class Backend(QObject):
         def work():
             try:
                 out = self.run(op, json.loads(args or "{}"))
-            except weather.WeatherError as err:
+            except (weather.WeatherError, radar.RadarError) as err:
                 out = {"error": str(err)}
             except Exception as err:
                 traceback.print_exc()
@@ -117,7 +128,7 @@ class Control(QObject):
         if op == "call":
             try:
                 return self.backend.run(req["fn"], req.get("args") or {})
-            except weather.WeatherError as err:
+            except (weather.WeatherError, radar.RadarError) as err:
                 return {"error": str(err)}
         if op == "open":
             self.command.emit(json.dumps(req))

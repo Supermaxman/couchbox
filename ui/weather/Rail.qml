@@ -1,13 +1,13 @@
-// The sidebar: Today, the next two weeks, the alerts (when there are any); the place and when
-// the forecast was made at the bottom. Up/Down move, OK opens, Right goes to the page.
+// The sidebar: Today, the next two weeks, the radar, the alerts (when there are any); the place
+// and when the forecast was made at the bottom. Up/Down move, OK opens, Right goes to the page.
 import QtQuick
 
 FocusScope {
     id: rail
-    property int section: 0                  // 0 today, 1 week
+    property int section: 0                  // 0 today, 1 week, 2 radar
     readonly property int alertCount: W.data ? W.data.alerts.length : 0
     readonly property var entries: {
-        const e = [{kind: "today", label: "Today", icon: "today"}, {kind: "week", label: "Next 14 days", icon: "week"}];
+        const e = [{kind: "today", label: "Today", icon: "today"}, {kind: "week", label: "Next 14 days", icon: "week"}, {kind: "radar", label: "Radar", icon: "radar"}];
         if (alertCount) e.push({kind: "alerts", label: alertCount > 1 ? alertCount + " alerts" : "Alert", icon: "alert"});
         return e;
     }
@@ -42,7 +42,7 @@ FocusScope {
                 id: entry
                 required property var modelData
                 required property int index
-                readonly property bool sel: (modelData.kind === "today" && rail.section === 0) || (modelData.kind === "week" && rail.section === 1)
+                readonly property bool sel: ["today", "week", "radar"].indexOf(modelData.kind) === rail.section
                 readonly property bool cur: rail.activeFocus && rail.idx === index
                 readonly property bool warn: modelData.kind === "alerts"
                 width: parent.width; height: 68 * W.u; radius: 12 * W.u
