@@ -23,9 +23,10 @@ FocusScope {
                r => { items = r.items; loading = false; ci = Math.min(ci, Math.max(0, items.length - 1)); },
                e => { problem = e; loading = false; });
     }
-    onGroupChanged: { ci = 0; load(); }
-    onTabChanged: { ci = 0; load(); }
-    Component.onCompleted: load()
+    // only while it's showing (and so signed in): it isn't loaded behind the sign-in page
+    onGroupChanged: { ci = 0; if (visible) load(); }
+    onTabChanged: { ci = 0; if (visible) load(); }
+    onVisibleChanged: if (visible) load()
 
     function ensureVisible() {
         const item = grid.children[ci];

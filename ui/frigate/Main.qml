@@ -56,9 +56,10 @@ ApplicationWindow {
     Connections {
         target: F
         function onSignInNeeded(why) {
+            const was = win.mode;                    // signed out while in use: say why
             win.stopVideo();
             win.overlay = "";
-            F.call("status", {}, s => { F.status = s; win.mode = "signin"; signin.problem = why; signin.forceActiveFocus(); });
+            F.call("status", {}, s => { F.status = s; win.mode = "signin"; signin.problem = was === "app" ? why : ""; signin.forceActiveFocus(); });
         }
         function onToast(text) { toast.show(text); }
     }
