@@ -81,6 +81,11 @@ jobs:
             set -e; cp -r /src /tmp/b; cd /tmp/b; rm -rf .git build
             dpkg-buildpackage -us -uc -b
             lintian --fail-on error ../couchbox_*.deb
+            # the updater runs dpkg from these units: an upgrade (preinst, postinst) that stops or
+            # restarts them kills dpkg half-way (prerm stops them only on remove)
+            mkdir ctl && dpkg-deb -e ../couchbox_*.deb ctl
+            if grep -n -E "couchbox-(updater|updater-now|reencrypt)\.service" ctl/preinst ctl/postinst | grep -E "invoke|stop|restart"; then
+              echo "::error::package scripts stop or restart the updater on upgrade"; exit 1; fi
             mkdir -p /src/build && cp ../couchbox_*.deb /src/build/'
       - name: install into a clean Ubuntu 26.10
         run: docker run --rm -v "$PWD/build:/debs" ubuntu:26.10 sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /debs/couchbox_*.deb >/tmp/apt.log 2>&1 || { tail -40 /tmp/apt.log; exit 1; }; couchbox doctor --container && couchbox config set voice.mode dictation && couchbox config get voice.mode && apt-get purge -y -qq couchbox >/dev/null && test ! -e /etc/couchbox'
