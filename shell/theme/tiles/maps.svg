@@ -1,0 +1,30 @@
+<svg data-couchbox-glow="#10b981" xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <!-- couchbox home tile: Maps (places, directions, drive times). Rendered to PNG by
+       couchbox-home (rsvg-convert). An original mark (a folded map with a route and a pin),
+       not any map company's logo. -->
+  <defs>
+    <clipPath id="r"><rect width="800" height="450" rx="36"/></clipPath>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="0.3" cy="0.3" r="1">
+      <stop offset="0" stop-color="#123329"/><stop offset="0.55" stop-color="#0e1a17"/><stop offset="1" stop-color="#09090b"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.95" r="0.6">
+      <stop offset="0" stop-color="#10b981" stop-opacity="0.32"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="800" height="450" fill="url(#bg)"/>
+    <rect width="800" height="450" fill="url(#glow)"/>
+    <g transform="translate(140 150)">
+      <path d="M0 22 L50 0 L110 22 L160 0 L160 128 L110 150 L50 128 L0 150 Z" fill="#10b981"/>
+      <path d="M50 0 L50 128 M110 22 L110 150" stroke="#0b6b4c" stroke-width="5"/>
+      <path d="M18 120 C 40 90, 70 110, 88 80 S 120 50, 138 44" stroke="#fff" stroke-width="9" fill="none" stroke-linecap="round" stroke-dasharray="1 16"/>
+      <path d="M138 62 C138 62 120 41 120 28 a18 18 0 0 1 36 0 c0 13 -18 34 -18 34 z" fill="#ef4444" stroke="#fff" stroke-width="4"/>
+      <circle cx="138" cy="28" r="6.5" fill="#fff"/>
+    </g>
+    <text x="345" y="258" font-family="Inter, DejaVu Sans, sans-serif" font-size="96" font-weight="700" fill="#fafafa">Maps</text>
+    <rect width="800" height="450" fill="url(#sheen)"/>
+  </g>
+</svg>

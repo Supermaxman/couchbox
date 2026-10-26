@@ -1,0 +1,209 @@
+#!/usr/bin/python3
+"""couchbox-maps: maps on the TV. Saved places with the drive time from Home to each right now,
+search, directions (car, transit, walking, cycling; route alternatives, the route on a map you
+can move and zoom with the remote, the turns) and "leave by": when to set off to arrive on time.
+
+Google Maps Platform (traffic, transit) when Settings → Apps → Maps has an API key, else free
+OpenStreetMap services (no traffic or transit). The QML is in /usr/share/couchbox/ui/maps; the
+back end is couchbox.services.maps.
+
+  couchbox-maps [--open places | search[:QUERY] | to:JSON | leave:JSON]
+  couchbox-maps --demo --shot FILE [--open ...] [--keys down,ok,...]
+                                     render once off screen (made-up places, no network)
+"""
+import json
+import os
+import sys
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_MAPS_QML", str(paths.share() / "ui/maps/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
+SITE = "maps"
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+
+from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (the window is a QQuickWindow: grabWindow)
+
+from couchbox.services import maps  # noqa: E402
+
+
+def google_key():
+    """The Google key from couchboxd (secrets are root's; the TV user may ask for this one)."""
+    try:
+        from couchbox import ipc
+        return (ipc.call("maps.google_key", timeout=5) or {}).get("key", "")
+    except Exception:
+        return ""
+
+
+class KeyCache:
+    """Ask couchboxd at most once a minute (a key set in Settings shows up without a restart)."""
+
+    def __init__(self):
+        self.value, self.at = "", 0.0
+
+    def __call__(self):
+        if time.time() - self.at > 60:
+            self.value, self.at = google_key(), time.time()
+        return self.value
+
+
+class Backend(QObject):
+    """QML's way to maps.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        s = settings.load()
+        units = settings.derived(s)["units"]
+        home = {"name": s["location.name"], "lat": s["location.lat"], "lon": s["location.lon"]} if s["location.name"] else {}
+        self.keys = KeyCache()
+        self.m = maps.Maps(home=home, units=units, key_source=self.keys, demo=demo)
+        self.pool = ThreadPoolExecutor(max_workers=4)
+
+    def run(self, op, a):
+        m = self.m
+        if op == "status" and a.get("fresh"):
+            self.keys.at = 0
+        ops = {
+            "status": lambda: m.status(),
+            "places": lambda: m.places.all(),
+            "etas": lambda: m.etas(),
+            "search": lambda: m.search(a["query"]),
+            "directions": lambda: m.directions(a["to"], a.get("from"), a.get("mode", "drive"), a.get("depart")),
+            "leave_by": lambda: m.leave_by(a["to"], a["arrive"], a.get("from"), a.get("mode", "drive")),
+            "save": lambda: m.places.save(a["place"], a.get("kind", "place"), a.get("name", "")),
+            "rename": lambda: m.places.rename(a["id"], a["name"]),
+            "remove": lambda: m.places.remove(a["id"]),
+            "clear_recent": lambda: m.places.clear_recent(),
+            "resolve": lambda: m.resolve(a["query"]),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except maps.MapsError as err:
+                out = {"error": str(err)}
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): the voice assistant asks for drive times and
+    opens directions; a second launch hands its --open to this one."""
+    command = Signal(str)
+
+    def __init__(self, backend):
+        super().__init__()
+        self.backend = backend
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Maps")
+        if op == "call":                             # the voice assistant: places, routes, leave-by
+            try:
+                return self.backend.run(req["fn"], req.get("args") or {})
+            except maps.MapsError as err:
+                return {"error": str(err)}
+        if op == "open":
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    app = QGuiApplication(sys.argv)
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-maps")
+    app.setApplicationDisplayName("Maps")
+    app.setDesktopFileName("couchbox-maps")         # Wayland app id: matches couchbox-maps.desktop
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(TVKIT)
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control(backend)
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demo", demo)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,9 @@
+{
+  "id": "maps",
+  "name": "Maps",
+  "desktop": "couchbox-maps.desktop",
+  "kind": "native",
+  "tile": "maps",
+  "default_order": 110,
+  "settings_page": "apps/maps"
+}

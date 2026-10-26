@@ -25,6 +25,6 @@ Depends: ${misc:Depends}, ${python3:Depends},
 Recommends: couchbox-media, tailscale, openssh-server, rpi-eeprom, raspi-utils-core, evtest
 Description: open-source TV box for the Raspberry Pi 5
  Couchbox turns a Raspberry Pi 5 into a TV box: KDE Plasma Bigscreen with a
- customizable home screen, native TV apps (Seerr, Frigate, Twitch, Nebula, Dropout,
+ customizable home screen, native TV apps (Seerr, Frigate, Maps, Twitch, Nebula, Dropout,
  2nd Try), YouTube, Jellyfin, AirPlay, HDMI-CEC TV control, Fire TV remote
  support with voice, and Settings for everything on the TV.
