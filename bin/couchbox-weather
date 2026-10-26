@@ -2,7 +2,8 @@
 """couchbox-weather: the weather where the TV is, made for the couch: Today (now, the next
 hours, the day's numbers), the next two weeks, a day in detail (hour-by-hour temperature,
 rain and wind), and the rain radar (the last two hours as a loop). Data from Open-Meteo (no
-key) for the town in Settings → Time, US National Weather Service alerts where they apply;
+key) for the town in Settings → Time, US National Weather Service alerts where they apply,
+air quality and pollen from Google with the Google Maps Platform key (else Open-Meteo);
 radar from NEXRAD (the lower 48) or RainViewer; with the voice assistant set up, a one-line
 "today at a glance" from its model (couchboxd's weather.glance). The QML is in
 /usr/share/couchbox/ui/weather; the data side is couchbox.services.weather and .radar.
@@ -14,6 +15,7 @@ radar from NEXRAD (the lower 48) or RainViewer; with the voice assistant set up,
 import json
 import os
 import sys
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,6 +32,24 @@ from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (so the window come
 from couchbox.services import radar, weather  # noqa: E402
 
 
+class KeyCache:
+    """The Google Maps Platform key (air quality and pollen) from couchboxd, asked at most once a
+    minute: secrets are root's, the TV user may ask for this one. "" when there's none."""
+
+    def __init__(self):
+        self.value, self.at = "", 0.0
+
+    def __call__(self):
+        if time.time() - self.at > 60:
+            self.at = time.time()
+            try:
+                from couchbox import ipc
+                self.value = (ipc.call("weather.google_key", timeout=5) or {}).get("key", "")
+            except Exception:
+                self.value = ""
+        return self.value
+
+
 class Backend(QObject):
     """QML's way to weather.py: call(id, op, args) answers later with reply(id, json)."""
     reply = Signal(int, str)
@@ -37,7 +57,7 @@ class Backend(QObject):
     def __init__(self, demo):
         super().__init__()
         self.demo = demo
-        self.w = weather.Weather(demo=demo)
+        self.w = weather.Weather(demo=demo, key_source=None if demo else KeyCache())
         self.radar = radar.Radar(demo=demo)
         self.pool = ThreadPoolExecutor(max_workers=3)
 

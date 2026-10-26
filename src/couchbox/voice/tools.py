@@ -986,11 +986,12 @@ def _schemas(st=None):
         ),
         fn(
             "weather",
-            "The forecast where this TV is (14 days). Answer from what it returns; show: also put it on the TV.",
+            "The forecast where this TV is (14 days), air quality and pollen. Answer from what it returns; show: also put it on the TV.",
             s(
                 action=act(
-                    ["now", "day", "week", "radar"],
-                    "now: now and the rest of today · day: the day(s) in day · week: a line a day · radar: put the rain radar on the TV",
+                    ["now", "day", "week", "radar", "air", "pollen"],
+                    "now: now and the rest of today · day: the day(s) in day · week: a line a day · radar: put the rain radar on the TV"
+                    " · air: air quality now and the next days · pollen: tree, grass and weed pollen (today, or day)",
                 ),
                 day={"type": "string", "description": "today, tomorrow, a weekday, this/next weekend, or YYYY-MM-DD"},
                 show={"type": "boolean"},
@@ -1156,9 +1157,9 @@ def status_text(name, args):
         "tv": lambda: "TV " + str(a.get("action", "")).replace("_", " "),
         "seerr": lambda: f"Searching Seerr for “{a.get('query')}”" if a.get("action") == "search" else "Requesting it",
         "frigate": lambda: f"Showing the {a.get('query')} camera" if a.get("action") == "camera" else "Showing the cameras",
-        "weather": lambda: "Showing the radar"
-        if a.get("action") == "radar"
-        else "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else ""),
+        "weather": lambda: {"radar": "Showing the radar", "air": "Checking the air quality", "pollen": "Checking the pollen"}.get(
+            a.get("action"), "Checking the forecast" + (f" for {a.get('day')}" if a.get("day") else "")
+        ),
         "search": lambda: {"search": f"Googling “{a.get('query')}”", "read": "Reading the page"}.get(a.get("action"), "Opening the page"),
         "spotify": lambda: {
             "play": f"Finding “{a.get('query')}” on Spotify" if a.get("query") else "Playing",
@@ -1239,7 +1240,7 @@ def weather_tool(action, day=None, show=False):
     place = weather.place_from_settings()
     if not place:
         return "No town is set (Settings → Time), so there's no forecast."
-    _weather = _weather or weather.Weather()
+    _weather = _weather or weather.Weather(key_source=lambda: secrets.get("apps.maps.google_api_key"))
     data = _weather.get(place, clock24=place["clock24"])
     if action == "day" and not day:
         action = "now"
