@@ -107,6 +107,10 @@ ApplicationWindow {
             keyboard.open(text, win.activeFocusItem);
         }
     }
+    Connections {                             // Twitch signed in after the sign-in page was left
+        target: backend
+        function onEvent(name, data) { if (name === "signedIn") toast.show("Signed in as " + JSON.parse(data).user + "."); }
+    }
 
     // keys the pages didn't use: Up -> the top bar, Back -> back
     FocusScope {

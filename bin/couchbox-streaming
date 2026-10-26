@@ -14,6 +14,8 @@ player.py) next to it.
 
   couchbox-streaming
   couchbox-streaming --shot FILE [--open series:ID | search:TEXT | ...]   render once (testing)
+  couchbox-streaming --site twitch --keep-signed-in   refresh a week-old Twitch sign-in (daily, from
+                                                      couchbox-clean-caches: Twitch drops it after 30 days unused)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_REPORT=1 (no progress sent to Dropout), COUCHBOX_NO_MPRIS=1 (don't
 take the remote's media keys).
 """
@@ -197,7 +199,17 @@ class Shooter(QObject):
         print(f"key {name} -> focus {type(f).__name__} {f.objectName() if f else ''}", flush=True)
 
 
+def keep_signed_in(site):
+    from couchbox.services import twitch
+    t = twitch.Twitch(site)
+    ok = t.keep_alive()
+    print(f"{site}: " + (f"signed in as {t.auth.get('login', '')}" if ok else "not signed in"))
+    return 0
+
+
 def main():
+    if "--keep-signed-in" in sys.argv:
+        sys.exit(keep_signed_in(sys.argv[sys.argv.index("--site") + 1] if "--site" in sys.argv else "twitch"))
     if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
     if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
