@@ -13,8 +13,9 @@ Built and shipped in release assets (corresponding source attached to each relea
 - Jellyfin Desktop (https://github.com/jellyfin/jellyfin-desktop), GPL (see its LICENSE).
 
 Installed from their own sources at install time, not redistributed here:
-Ubuntu, KDE Plasma, Qt, PySide6, mpv, UxPlay, Tailscale, VacuumTube, Chromium, FCast Receiver.
+Ubuntu, KDE Plasma, Qt, PySide6, mpv, UxPlay, Tailscale, VacuumTube, Chromium, FCast Receiver,
+Spotify Soloist (downloaded from Spotify by the user's box when they set Spotify up).
 
-Trademarks: YouTube, Google, Jellyfin, Seerr, Frigate, Twitch, Nebula, Dropout, 2nd Try, Fire TV, Raspberry Pi,
+Trademarks: YouTube, Google, Jellyfin, Seerr, Frigate, Spotify, Twitch, Nebula, Dropout, 2nd Try, Fire TV, Raspberry Pi,
 Tailscale and other names and logos belong to their owners. They are used only to identify
 the services and devices Couchbox works with. Couchbox is not affiliated with or endorsed by them.

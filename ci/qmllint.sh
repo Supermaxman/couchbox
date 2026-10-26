@@ -5,7 +5,7 @@ set -eu
 Q=/usr/lib/qt6/bin/qmllint
 export LANG=C.UTF-8
 $Q --unqualified disable --missing-property disable --max-warnings 0 -I ui -I ui/stubs \
-  ui/streaming/qml/*.qml ui/seerr/*.qml ui/frigate/*.qml ui/weather/*.qml ui/search/*.qml ui/CouchKit/*.qml ui/voice-overlay/*.qml ui/settings/*.qml ui/setup/*.qml
+  ui/streaming/qml/*.qml ui/seerr/*.qml ui/frigate/*.qml ui/weather/*.qml ui/search/*.qml ui/spotify/*.qml ui/CouchKit/*.qml ui/voice-overlay/*.qml ui/settings/*.qml ui/setup/*.qml
 # the home screen, laid over the real Plasma Bigscreen home screen (as couchbox.home does)
 S=/usr/share/plasma/plasmoids/org.kde.bigscreen.homescreen
 if [ -d $S ]; then
