@@ -17,13 +17,19 @@ Out-of-memory order (oom_score_adj, re-applied every check), killed first to las
   (couchbox-input and couchbox-voice set theirs in their units; system services stay at 0.)
 Swap: an 8 GB swap file on the SSD (couchbox-swap) gives the kernel room before it has to kill.
 
+Open files, checked every 10 s. Any TV app past FD_RAISE open files gets its full allowance
+(the hard limit), and one still climbing past half of that is logged. libmpv leaks a GL fence
+(an open file) per video frame; our player and Jellyfin's delete them, but a leak like it
+crashed apps every few minutes at the usual limit ("MESA: error: Export failed", then SIGSEGV).
+
   couchbox-memory                 run (systemd: couchbox-memory.service), checking every 30 s
-  couchbox-memory --status        each app's state and idle time, memory and swap
+  couchbox-memory --status        each app's state and idle time, open files, memory and swap
   couchbox-memory --close NAME    close one app now, as an idle timeout would (youtube, jellyfin, dropout, ...)
 """
 import json
 import os
 import pwd
+import resource
 import signal
 import subprocess
 import sys
@@ -36,6 +42,8 @@ CONF = "/etc/couchbox/couchbox.env"
 LAST_KEY = "/run/couchbox/last-key"
 STATE = "/run/couchbox/memory/state.json"
 CHECK_SECONDS = 30
+FILES_SECONDS = 10
+FD_RAISE = 256       # more open files than any app needs: a leak, so give it the full allowance
 
 OOM_BACKGROUND, OOM_SESSION, OOM_ACTIVE = 900, 200, 100
 OOM_CORE = {"kwin_wayland": -900, "kwin_wayland_wr": -900, "Xwayland": -900, "pipewire": -900,
@@ -153,6 +161,48 @@ def stop(pid, name, log):
         pass
 
 
+# ------------------------------------------------------------------ open files
+
+def fd_table(pid):
+    """Size of pid's file table: at least its highest open file. Cheap, unlike counting them."""
+    with open(f"/proc/{pid}/status") as f:
+        for line in f:
+            if line.startswith("FDSize:"):
+                return int(line.split()[1])
+    return 0
+
+
+def open_files(pid):
+    return len(os.listdir(f"/proc/{pid}/fd"))
+
+
+def guard_files(uid, plist, warned, log):
+    """Give the TV user's processes past FD_RAISE open files their hard limit; log any past half
+    of it (again at each further 20%). Returns {pid: (name, files, limit)} of those checked."""
+    out = {}
+    for pid, _, comm, u in plist:
+        if u != uid:
+            continue
+        try:
+            if fd_table(pid) <= FD_RAISE:
+                continue
+            n = open_files(pid)
+            soft, hard = resource.prlimit(pid, resource.RLIMIT_NOFILE)
+            if n > FD_RAISE and soft < hard:
+                resource.prlimit(pid, resource.RLIMIT_NOFILE, (hard, hard))
+                log(f"{comm} ({pid}) has {n} open files: raised its limit from {soft} to {hard}")
+                soft = hard
+            if n > soft // 2 and n > warned.get(pid, 0) * 1.2:
+                log(f"{comm} ({pid}) has {n} of {soft} open files: leaking? it will crash at the limit")
+                warned[pid] = n
+            out[pid] = (comm, n, soft)
+        except (OSError, ValueError):
+            pass        # gone, or a process we can't touch
+    for pid in [p for p in warned if p not in out]:
+        del warned[pid]
+    return out
+
+
 # ------------------------------------------------------------------ apps
 
 def probe():
@@ -195,6 +245,8 @@ class Memory:
         self.uid = pwd.getpwnam(c.get("COUCHBOX_TV_USER") or "tv").pw_uid
         self.last_active = {}       # app key -> time it was last active
         self.last_key = self.key_time()
+        self.warned = {}            # pid -> open files when last logged
+        self.files = {}
 
     @staticmethod
     def key_time():
@@ -244,17 +296,21 @@ class Memory:
 
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE + ".tmp", "w") as f:
-            json.dump({"t": now, "idle_limit": self.idle, "apps": apps}, f)
+            json.dump({"t": now, "idle_limit": self.idle, "apps": apps, "files": self.files}, f)
         os.replace(STATE + ".tmp", STATE)
 
     def run(self):
         self.log(f"couchbox-memory: closing apps idle for {self.idle // 60} min; checking every {CHECK_SECONDS} s")
+        tick = 0
         while True:
             try:
-                self.check()
+                self.files = guard_files(self.uid, procs(), self.warned, self.log)
+                if tick % (CHECK_SECONDS // FILES_SECONDS) == 0:
+                    self.check()
             except Exception as err:      # never stop: log and try again next time
                 self.log(f"check failed: {err!r}")
-            time.sleep(CHECK_SECONDS)
+            tick += 1
+            time.sleep(FILES_SECONDS)
 
 
 def status():
@@ -268,6 +324,10 @@ def status():
         print(f"  {a['name']:<12} {what:<10} idle {a['idle'] // 60} min" + ("  (closed)" if a.get("closed") else ""))
     if not s["apps"]:
         print("  none open")
+    if s.get("files"):
+        print(f"\nopen files (processes past {FD_RAISE}):")
+        for pid, (comm, n, limit) in sorted(s["files"].items(), key=lambda kv: -kv[1][1]):
+            print(f"  {comm:<16} {pid:>8}  {n} of {limit}")
     print()
     subprocess.run(["free", "-h"])
 
