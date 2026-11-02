@@ -25,6 +25,7 @@ src=/build/jellyfin-desktop
 [[ -d $src ]] || git clone -q --depth 1 --branch "$JD_TAG" --recurse-submodules --shallow-submodules "$JD_REPO" "$src"
 cd "$src"
 git checkout -q -- src/ui/webview.qml src/player/PlayerComponent.cpp native/nativeshell.js   # re-apply patches cleanly
+git -C external/mpvqt checkout -q -- src/mpvrenderer.cpp
 # (MpvQt: the copy bundled with this release; Ubuntu's newer one changed its API.)
 # mpv's "auto" skips the Pi's drm hwdec, so name it first. Copy mode (the default) converts
 # the decoder's SAND frames to normal ones; Enabled hands them to the GPU directly.
@@ -32,6 +33,59 @@ perl -0pi -e 's/(== "enabled"\)\s*\n\s*hwdecMode = )"auto";/$1"drm,auto";/;
               s/hwdecMode = "auto-copy";/hwdecMode = "drm-copy,auto-copy";/' src/player/PlayerComponent.cpp
 grep -q '"drm-copy,auto-copy"' src/player/PlayerComponent.cpp && grep -q '"drm,auto"' src/player/PlayerComponent.cpp \
   || { echo "hwdec patch did not apply"; exit 1; }
+# libmpv 0.41's OpenGL render API makes a GL fence at the end of every frame and keeps it for
+# a buffer swap that only its own windows do (fixed upstream after 0.41), so it never deletes
+# it. On the Pi each fence holds a file descriptor (a sync_file): Jellyfin used about 23 a
+# second and crashed at the open-file limit ("MESA: error: Export failed", then SEGV) every
+# ~6 minutes of video. Same fix as Couchbox's own player (src/couchbox/player.py): MpvQt's
+# get_proc_address hands mpv a glFenceSync that notes the newest fence, and after each frame
+# the renderer deletes the frame's last one, the end-of-frame fence (mpv makes it last).
+python3 - external/mpvqt/src/mpvrenderer.cpp <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+helpers = """// Couchbox: delete libmpv 0.41's leaked end-of-frame GL fence (see build-jellyfin.sh).
+typedef void *(*couchbox_fence_fn)(unsigned int, unsigned int);
+typedef void (*couchbox_delete_fn)(void *);
+static couchbox_fence_fn couchbox_real_fence = nullptr;
+static couchbox_delete_fn couchbox_real_delete = nullptr;
+static void *couchbox_last_fence = nullptr;
+
+static void *couchbox_fence_sync(unsigned int condition, unsigned int flags)
+{
+    void *fence = couchbox_real_fence(condition, flags);
+    couchbox_last_fence = fence;
+    return fence;
+}
+
+static void *get_proc_address_mpv(void *ctx, const char *name)"""
+edits = [
+    ("static void *get_proc_address_mpv(void *ctx, const char *name)", helpers),
+    ("    return reinterpret_cast<void *>(glctx->getProcAddress(QByteArray(name)));",
+     """    void *addr = reinterpret_cast<void *>(glctx->getProcAddress(QByteArray(name)));
+    if (addr && qstrcmp(name, "glFenceSync") == 0) {
+        couchbox_real_fence = reinterpret_cast<couchbox_fence_fn>(addr);
+        return reinterpret_cast<void *>(&couchbox_fence_sync);
+    }
+    if (addr && qstrcmp(name, "glDeleteSync") == 0) {
+        couchbox_real_delete = reinterpret_cast<couchbox_delete_fn>(addr);
+    }
+    return addr;"""),
+    ("    mpv_render_context_render(m_mpvAItem->d_ptr->m_mpv_gl, params);",
+     """    couchbox_last_fence = nullptr;
+    mpv_render_context_render(m_mpvAItem->d_ptr->m_mpv_gl, params);
+    if (couchbox_last_fence && couchbox_real_delete) {
+        couchbox_real_delete(couchbox_last_fence);
+    }
+    couchbox_last_fence = nullptr;"""),
+]
+for a, b in edits:
+    if s.count(a) != 1:
+        sys.exit("mpvrenderer fence patch did not apply: " + a.strip()[:60])
+    s = s.replace(a, b)
+open(p, "w").write(s)
+PY
+grep -q "couchbox_real_delete(couchbox_last_fence)" external/mpvqt/src/mpvrenderer.cpp || { echo "fence patch did not apply"; exit 1; }
 # Qt 6.11 no longer converts the plain JS object webview.qml assigns to userScripts.collection,
 # so the native shell (NativeShell, mpv player plugin) was never injected and the web client
 # used its HTML5 player. Build the script with the documented WebEngine.script() instead.
