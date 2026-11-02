@@ -15,6 +15,7 @@ Set COUCHBOX_MUTE=1 to play without sound (tests while the TV is in use).
 
 import ctypes
 import os
+import resource
 
 import mpv
 from PySide6.QtCore import Property, Qt, Signal, Slot
@@ -25,6 +26,13 @@ try:
     from PySide6.QtQuick import QQuickOpenGLUtils
 except ImportError:  # older PySide6
     QQuickOpenGLUtils = None
+
+# Video can hold many files open (see the fence leak below): take the full allowance up front,
+# rather than crashing at the usual 1024. couchbox-memory also raises it for any app past 256.
+try:
+    resource.setrlimit(resource.RLIMIT_NOFILE, (resource.getrlimit(resource.RLIMIT_NOFILE)[1],) * 2)
+except (OSError, ValueError):
+    pass
 
 _egl = ctypes.CDLL("libEGL.so.1")
 _egl.eglGetProcAddress.restype = ctypes.c_void_p
