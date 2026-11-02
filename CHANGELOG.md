@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/Supermaxman/couchbox/compare/v0.11.2...v0.11.3) (2026-11-02)
+
+
+### Fixed
+
+* **memory:** give any app leaking open files its full limit, and log it ([#69](https://github.com/Supermaxman/couchbox/issues/69)) ([d374dcb](https://github.com/Supermaxman/couchbox/commit/d374dcb18387752a88a23658ad4142ef194cdbe7))
+
 ## [0.11.2](https://github.com/Supermaxman/couchbox/compare/v0.11.1...v0.11.2) (2026-11-02)
 
 
