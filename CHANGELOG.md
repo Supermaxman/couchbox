@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.2](https://github.com/Supermaxman/couchbox/compare/v0.11.1...v0.11.2) (2026-11-02)
+
+
+### Fixed
+
+* **jellyfin:** raise the open-file limit so movies don't crash every few minutes ([#64](https://github.com/Supermaxman/couchbox/issues/64)) ([de33685](https://github.com/Supermaxman/couchbox/commit/de33685a84a4ae18f74a75fc4d202b8796efd6b7))
+* **jellyfin:** silence shellcheck's POSIX ulimit warning (dash supports it) ([#67](https://github.com/Supermaxman/couchbox/issues/67)) ([4c6a10e](https://github.com/Supermaxman/couchbox/commit/4c6a10ed5d22375ada2e9585dc67b437277838f6))
+* **media:** stop Jellyfin Desktop leaking a GL fence per frame ([#65](https://github.com/Supermaxman/couchbox/issues/65)) ([be61ca4](https://github.com/Supermaxman/couchbox/commit/be61ca4820a912ecc5c592989f50edc0a5dc2098))
+
 ## [0.11.1](https://github.com/Supermaxman/couchbox/compare/v0.11.0...v0.11.1) (2026-10-26)
 
 
