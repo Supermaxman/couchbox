@@ -45,7 +45,7 @@ jobs:
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           mkdir -p dist
-          run=$(gh run list -R "$GITHUB_REPOSITORY" -w media.yml -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          run=$(gh run list -R "$GITHUB_REPOSITORY" -w media.yml -b main -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
           if [ -n "$run" ]; then gh run download "$run" -R "$GITHUB_REPOSITORY" -n couchbox-media -D dist || true; fi
           ls -la dist
       - uses: actions/upload-artifact@v4
