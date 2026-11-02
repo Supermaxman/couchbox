@@ -48,6 +48,9 @@ hdr-compute-peak=no"
   # DevTools on 127.0.0.1:9224 so couchbox-voice can drive it (search, play) as text
   QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9224
   export QTWEBENGINE_REMOTE_DEBUGGING
+  # libmpv 0.41 leaks a GL fence (one file descriptor) per frame (see player.py). At the
+  # default 8192 that crashed Jellyfin every ~6 minutes of video; the hard limit gives hours.
+  ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
   LD_LIBRARY_PATH=/opt/couchbox/ffmpeg-rpi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
   export LD_LIBRARY_PATH
   exec "$app" --fullscreen --tv "$@"
