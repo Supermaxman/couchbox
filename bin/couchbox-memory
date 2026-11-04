@@ -1,12 +1,14 @@
 #!/usr/bin/python3
 """couchbox-memory: keep the box's 8 GB for what's being watched.
 
-Idle apps. Every app (YouTube, Jellyfin, each web app such as Dropout) is closed after
-COUCHBOX_APPS_IDLE_MINUTES (couchbox.env, default 60) without activity. An app counts as active
-while something plays in it, or while it's in front and the remote is being pressed
-(couchbox-input touches /run/couchbox/last-key). Closing: web apps close their Chromium window;
-YouTube and Jellyfin quit (SIGTERM, then SIGKILL). Their tiles start them fresh, and the
-voice assistant's resume picks up where they were.
+Idle apps. Every app is closed after COUCHBOX_APPS_IDLE_MINUTES (couchbox.env, default 60)
+without activity: YouTube, Jellyfin, each web app such as Dropout, and any other app started
+from the home screen (Twitch, Spotify, Settings, ...: each runs in its own app-*.service or
+app-*.scope). An app counts as active while something plays in it, or while it's in front and
+the remote is being pressed (couchbox-input touches /run/couchbox/last-key). Closing: web apps
+close their Chromium window; the others quit (SIGTERM, then SIGKILL). Their tiles start them
+fresh, and the voice assistant's resume picks up where they were. For the other apps, what's in
+front and what's playing come from couchbox-mediakeys; while it can't be asked, none is closed.
 
 Out-of-memory order (oom_score_adj, re-applied every check), killed first to last:
   900  apps in the background
@@ -24,11 +26,12 @@ crashed apps every few minutes at the usual limit ("MESA: error: Export failed",
 
   couchbox-memory                 run (systemd: couchbox-memory.service), checking every 30 s
   couchbox-memory --status        each app's state and idle time, open files, memory and swap
-  couchbox-memory --close NAME    close one app now, as an idle timeout would (youtube, jellyfin, dropout, ...)
+  couchbox-memory --close NAME    close one app now, as an idle timeout would (youtube, jellyfin, dropout, twitch, ...)
 """
 import json
 import os
 import pwd
+import re
 import resource
 import signal
 import subprocess
@@ -135,6 +138,71 @@ def app_procs(uid, plist):
     return out
 
 
+def unit_of(pid):
+    """The systemd unit pid runs in (the last part of its cgroup)."""
+    try:
+        with open(f"/proc/{pid}/cgroup") as f:
+            return f.read().strip().rsplit("/", 1)[-1]
+    except OSError:
+        return ""
+
+
+def unit_app(unit):
+    """The app id of a unit the home screen started an app in (app-couchbox\\x2dtwitch@<id>.service,
+    app-flatpak-<id>-<n>.scope), else "" (KDE's own, autostarted, or not an app)."""
+    if not unit.startswith("app-") or "@autostart." in unit or unit.startswith("app-org.kde."):
+        return ""
+    if unit.endswith(".scope"):
+        name = unit[len("app-"):-len(".scope")]
+        name = name.removeprefix("flatpak-").rsplit("-", 1)[0]
+    elif unit.endswith(".service") and "@" in unit:
+        name = unit[len("app-"):].split("@", 1)[0]
+    else:
+        return ""
+    return re.sub(r"\\x([0-9a-f]{2})", lambda m: chr(int(m.group(1), 16)), name)
+
+
+def launched_apps(uid, plist, covered):
+    """{unit: (app id, main pid, [pids])} of the TV user's other apps: those not in `covered`
+    (YouTube, Jellyfin and the web apps, which are watched more closely)."""
+    parent = {p: pp for p, pp, _, _ in plist}
+    pids_of = {}
+    for pid, _, _, u in plist:
+        if u == uid:
+            unit = unit_of(pid)
+            if unit_app(unit):
+                pids_of.setdefault(unit, []).append(pid)
+    out = {}
+    for unit, pids in pids_of.items():
+        if covered.intersection(pids):
+            continue
+        roots = [p for p in pids if parent.get(p) not in pids]
+        out[unit] = (unit_app(unit), min(roots or pids), sorted(pids))
+    return out
+
+
+def front_and_players(uid):
+    """(unit in front, {unit: playing}) from couchbox-mediakeys, or None if it can't be asked."""
+    from couchbox import appctl
+
+    try:
+        os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+        st = appctl.call("mediakeys", {"op": "state"}, timeout=5)
+    except Exception:
+        return None
+    playing = {}
+    for p in st.get("players") or []:
+        if p.get("unit"):
+            playing[p["unit"]] = playing.get(p["unit"], False) or p.get("effective") == "Playing"
+    return (st.get("window") or {}).get("unit", ""), playing
+
+
+def app_name(app_id):
+    """couchbox-twitch -> Twitch, org.example.Foo -> Foo"""
+    name = app_id.removeprefix("couchbox-").rsplit(".", 1)[-1]
+    return name[:1].upper() + name[1:]
+
+
 def set_oom(pid, value):
     try:
         with open(f"/proc/{pid}/oom_score_adj", "r+") as f:
@@ -228,6 +296,22 @@ def probe():
     return out
 
 
+def open_apps(uid, plist):
+    """Every open app as ({key: {name, focus, playing}}, {key: (main pid, [pids])})."""
+    groups = app_procs(uid, plist)
+    apps = probe()
+    covered = {p for _, pids in groups.values() for p in pids}
+    others = launched_apps(uid, plist, covered)
+    seen = front_and_players(uid) if others else None
+    front, playing = seen or ("", {})
+    for unit, (app_id, main, pids) in others.items():
+        k = "app:" + unit
+        # couchbox-mediakeys not answering: count it as playing, so nothing is closed blind
+        apps[k] = {"name": app_name(app_id), "focus": front == unit, "playing": seen is None or playing.get(unit, False)}
+        groups[k] = (main, pids)
+    return apps, groups
+
+
 def close(key, app, main_pids, log):
     if key.startswith("web:"):
         try:
@@ -262,7 +346,8 @@ class Memory:
         now = time.time()
         key = self.key_time()
         pressed, self.last_key = key > self.last_key, key
-        apps = probe()
+        plist = procs()
+        apps, groups = open_apps(self.uid, plist)
         for k in list(self.last_active):
             if k not in apps:
                 del self.last_active[k]
@@ -271,8 +356,6 @@ class Memory:
                 self.last_active[k] = now
             a["idle"] = int(now - self.last_active[k])
 
-        plist = procs()
-        groups = app_procs(self.uid, plist)
         mains = {n: g[0] for n, g in groups.items()}
         for k, a in apps.items():
             if a["idle"] > self.idle:
@@ -333,9 +416,9 @@ def status():
 
 
 def close_now(name):
-    plist = procs()
-    mains = {n: g[0] for n, g in app_procs(pwd.getpwnam(conf().get("COUCHBOX_TV_USER") or "tv").pw_uid, plist).items()}
-    hits = [(k, a) for k, a in probe().items() if a["name"].lower() == name.lower()]
+    apps, groups = open_apps(pwd.getpwnam(conf().get("COUCHBOX_TV_USER") or "tv").pw_uid, procs())
+    mains = {n: g[0] for n, g in groups.items()}
+    hits = [(k, a) for k, a in apps.items() if a["name"].lower() == name.lower()]
     if not hits:
         sys.exit(f"{name} isn't open")
     for k, a in hits:

@@ -14,7 +14,7 @@ Item {
     property bool current: false
     property bool dimmed: false
     property bool lifted: false         // being moved along the row
-    signal options()
+    signal options(bool held)           // held: OK is still down (it opened them)
     signal dropped()
 
     readonly property real radius: Math.round(width * 0.045)
@@ -39,7 +39,7 @@ Item {
     // OK launches; held for half a second it opens the tile's options (as does Menu).
     // While the tile is being moved, OK drops it instead.
     property bool held: false
-    Timer { id: hold; interval: 550; onTriggered: { tile.held = true; tile.options(); } }
+    Timer { id: hold; interval: 550; onTriggered: { tile.held = true; tile.options(true); } }
     function press(event) {
         if (event.isAutoRepeat) return;
         if (tile.lifted) { tile.dropped(); return; }
@@ -52,7 +52,7 @@ Item {
     }
     Keys.onPressed: (event) => {
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) { press(event); event.accepted = true; }
-        else if (event.key === Qt.Key_Menu && !tile.lifted) { tile.options(); event.accepted = true; }
+        else if (event.key === Qt.Key_Menu && !tile.lifted) { tile.options(false); event.accepted = true; }
     }
     Keys.onReleased: (event) => {
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) { release(event); event.accepted = true; }

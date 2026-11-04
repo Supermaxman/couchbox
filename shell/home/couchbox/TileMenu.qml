@@ -18,7 +18,11 @@ FocusScope {
         {label: "More in Settings", act: () => { run("/usr/lib/couchbox/bin/couchbox-settings"); close(); }},
     ]
 
-    function open(a, from) { app = a; returnTo = from; list.currentIndex = 0; visible = true; list.forceActiveFocus(); }
+    // Opened by holding OK, the key is still down: its repeats (and its release) must not pick
+    // "Move" straight away. OK works once it has been let go.
+    property bool armed: true
+    function open(a, from, held) { app = a; returnTo = from; armed = !held; list.currentIndex = 0; visible = true; list.forceActiveFocus(); }
+    function isOk(key) { return key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Select; }
     function close() { visible = false; if (returnTo) returnTo.forceActiveFocus(); }
     function run(cmd) { exec.connectSource(cmd); }
 
@@ -68,8 +72,14 @@ FocusScope {
                         font.family: Style.font; font.pixelSize: 26; font.weight: parent.cur ? Font.Bold : Font.Normal
                     }
                 }
-                Keys.onReturnPressed: menu.options[currentIndex].act()
-                Keys.onEnterPressed: menu.options[currentIndex].act()
+                Keys.onPressed: (event) => {
+                    if (!menu.isOk(event.key)) return;
+                    event.accepted = true;
+                    if (!event.isAutoRepeat && menu.armed) menu.options[currentIndex].act();
+                }
+                Keys.onReleased: (event) => {
+                    if (menu.isOk(event.key) && !event.isAutoRepeat) { menu.armed = true; event.accepted = true; }
+                }
             }
         }
     }

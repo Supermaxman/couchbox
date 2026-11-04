@@ -97,7 +97,7 @@ FocusScope {
             current: ListView.isCurrentItem && row.activeFocus
             dimmed: row.activeFocus && !ListView.isCurrentItem
             lifted: root.moving && ListView.isCurrentItem
-            onOptions: if (!root.moving) tileMenu.open(modelData, row)
+            onOptions: (held) => { if (!root.moving) tileMenu.open(modelData, row, held); }
             onDropped: root.drop(true)
         }
 
