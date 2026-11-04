@@ -16,6 +16,9 @@ Set COUCHBOX_MUTE=1 to play without sound (tests while the TV is in use).
 import ctypes
 import os
 import resource
+import threading
+import time
+import weakref
 
 import mpv
 from PySide6.QtCore import Property, Qt, Signal, Slot
@@ -76,6 +79,49 @@ def _drop_frame_fence():
 
 
 _proc_fn = mpv.MpvGlGetProcAddressFn(_get_proc_address)
+
+# How mpv draws each frame (Settings → Display and sound → Video drawing). mpv's own defaults
+# use scaling filters made for desktop graphics cards: on 1080p60 Twitch they kept the Pi 5's
+# GPU ~86% busy, so frames missed their slot (stutter) and the chip ran hot (fan at full).
+# "fast" is mpv's fast profile plus bilinear chroma; "quality" puts back mpv's defaults.
+FAST = {
+    "scale": "bilinear",
+    "dscale": "bilinear",
+    "cscale": "bilinear",
+    "dither": "no",
+    "correct-downscaling": "no",
+    "linear-downscaling": "no",
+    "sigmoid-upscaling": "no",
+    "hdr-compute-peak": "no",
+}
+_players = weakref.WeakSet()
+_drawing = {"mode": None}
+
+
+def _setting_drawing():
+    try:
+        from couchbox import settings
+
+        return settings.load().get("video.drawing", "fast")
+    except Exception:  # noqa: BLE001
+        return "fast"
+
+
+def _watch_drawing():
+    """Follow the setting while the app runs, so a change shows on the playing video."""
+    from couchbox import ipc
+
+    while True:
+        try:
+            for ev in ipc.subscribe(["settings"]):
+                mode = (ev.get("data") or {}).get("video.drawing")
+                if mode:
+                    _drawing["mode"] = mode
+                    for p in list(_players):
+                        p.set_drawing(mode)
+        except Exception:  # noqa: BLE001  (daemon restarting): try again
+            pass
+        time.sleep(10)
 
 
 class _Renderer(QQuickFramebufferObject.Renderer):
@@ -163,6 +209,18 @@ class MpvVideo(QQuickFramebufferObject):
         self._tracks = []
         self._sid = 0
         self._error = ""
+        self._quality = {}  # mpv's defaults, as text for "set" (cscale's default "" reads back as 0)
+        for k in FAST:
+            try:
+                v = self.mpv[k]
+                self._quality[k] = "yes" if v is True else "no" if v is False else str(v or "")
+            except Exception:  # noqa: BLE001  (an mpv without the option)
+                pass
+        if _drawing["mode"] is None:
+            _drawing["mode"] = _setting_drawing()
+            threading.Thread(target=_watch_drawing, daemon=True).start()
+        _players.add(self)
+        self.set_drawing(_drawing["mode"])
         self.frameReady.connect(self.update, Qt.QueuedConnection)
         self._prop.connect(self._on_prop, Qt.QueuedConnection)
         for name in ("time-pos", "duration", "pause", "paused-for-cache", "eof-reached", "track-list", "sid"):
@@ -209,6 +267,15 @@ class MpvVideo(QQuickFramebufferObject):
         elif name == "error":
             self._error = value
             self.errorChanged.emit()
+
+    def set_drawing(self, mode):
+        for k, v in (FAST if mode == "fast" else self._quality).items():
+            if k in self._quality:
+                try:
+                    self.mpv.command("set", k, v)
+                except Exception:  # noqa: BLE001
+                    pass
+        self.frameReady.emit()  # redraw (from any thread)
 
     # ------------------------------------------------------------------ QML API
     @Slot(str, float)

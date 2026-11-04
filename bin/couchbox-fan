@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# couchbox-fan: the Pi 5 fan curve (COUCHBOX_SYSTEM_FAN in couchbox.env, default quiet).
+#   quiet   fan steps at 60 / 70 / 77 / 82 °C: the chip runs warmer, the fan stays slow
+#   normal  the Pi's own curve, 50 / 60 / 67.5 / 75 °C
+# The Pi slows itself down only at 85 °C. Run at boot (couchbox-fan.service) and when the setting changes.
+#   sudo couchbox-fan
+set -euo pipefail
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+# shellcheck source=/dev/null
+. /etc/couchbox/couchbox.env
+case ${COUCHBOX_SYSTEM_FAN:-quiet} in
+  normal) temps=(50000 60000 67500 75000) ;;
+  *) temps=(60000 70000 77000 82000) ;;
+esac
+zone=/sys/class/thermal/thermal_zone0
+for i in 1 2 3 4; do   # the Pi 5's fan steps: four writable "active" trip points
+  [[ -w $zone/trip_point_${i}_temp && $(cat "$zone/trip_point_${i}_type") == active ]] || { echo "fan: no Pi 5 fan curve here"; exit 0; }
+done
+# keep the steps in order while moving them: raise from the top, lower from the bottom
+order=(4 3 2 1)
+(( temps[0] < $(cat "$zone/trip_point_1_temp") )) && order=(1 2 3 4)
+for i in "${order[@]}"; do echo "${temps[i - 1]}" > "$zone/trip_point_${i}_temp"; done
+echo "fan: ${COUCHBOX_SYSTEM_FAN:-quiet} (steps at ${temps[*]} m°C)"
