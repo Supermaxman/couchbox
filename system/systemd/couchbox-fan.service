@@ -1,0 +1,10 @@
+[Unit]
+Description=Couchbox fan: the Pi 5 fan curve from Settings → System → Fan
+Documentation=file:///usr/lib/couchbox/bin/couchbox-fan
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-fan
+
+[Install]
+WantedBy=multi-user.target

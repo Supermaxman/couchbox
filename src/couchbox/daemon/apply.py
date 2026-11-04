@@ -122,6 +122,7 @@ STEPS: list[tuple[tuple[str, ...], Callable[[dict[str, Any]], None], str]] = [
     (("appearance.theme",), lambda s: tool("theme"), "Theme applied."),
     (("appearance.scale", "display."), lambda s: tool("display"), "Display updated."),
     (("system.swap_gb",), lambda s: tool("swap"), ""),
+    (("system.fan",), lambda s: tool("fan"), ""),
 ]
 
 
