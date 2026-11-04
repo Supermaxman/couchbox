@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/Supermaxman/couchbox/compare/v0.11.3...v0.12.0) (2026-11-04)
+
+
+### New
+
+* quiet fan curve and lighter video drawing, both in Settings ([#71](https://github.com/Supermaxman/couchbox/issues/71)) ([22588aa](https://github.com/Supermaxman/couchbox/commit/22588aa70be0354d8105c3eeec99709639466af7))
+
 ## [0.11.3](https://github.com/Supermaxman/couchbox/compare/v0.11.2...v0.11.3) (2026-11-02)
 
 
