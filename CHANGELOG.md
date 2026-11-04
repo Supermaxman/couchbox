@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/Supermaxman/couchbox/compare/v0.12.0...v0.12.1) (2026-11-04)
+
+
+### Fixed
+
+* holding OK on a tile opens its menu without picking the tile up; idle cleanup closes every app ([#73](https://github.com/Supermaxman/couchbox/issues/73)) ([5e3585d](https://github.com/Supermaxman/couchbox/commit/5e3585ddb8a57ce150d3329601c3f1b08df6a2b4))
+
 ## [0.12.0](https://github.com/Supermaxman/couchbox/compare/v0.11.3...v0.12.0) (2026-11-04)
 
 
