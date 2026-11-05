@@ -15,8 +15,8 @@
 │  │                                   settings, Menu-key tile options)               │
 │  ├─ couchbox-setup ...... first-boot wizard (QML), then never again                 │
 │  ├─ couchbox-settings ... Settings app (QML)                                        │
-│  ├─ native apps ......... Seerr, Twitch, Nebula, Dropout, 2nd Try (QML + libmpv)    │
-│  ├─ Flatpak apps ........ YouTube (VacuumTube), Chromium web apps, Jellyfin, FCast  │
+│  ├─ native apps ......... YouTube, Seerr, Twitch, Nebula, Dropout... (QML + libmpv) │
+│  ├─ Flatpak apps ........ Chromium web apps, Jellyfin, FCast, VacuumTube (fallback) │
 │  ├─ couchbox-airplay .... UxPlay                                                    │
 │  ├─ couchbox-mediakeys .. Play/Pause, Rewind, FF → whatever is playing (MPRIS)      │
 │  ├─ couchbox-frigate-popup  a camera's live picture over anything (layer-shell QML) │
@@ -64,7 +64,7 @@ The assistant mode of `couchbox-voice` sends the transcript to an OpenAI-compati
 
 - **Tools follow the home row.** Each app's tool is offered only while its tile is shown, so hiding Dropout removes the `dropout` tool. Jellyfin, Seerr and Frigate also need their servers set; Weather needs a town (Settings → Time). `open_app` lists only the visible apps.
 - **The tools:**
-  - `youtube`: VacuumTube over DevTools.
+  - `youtube`: Couchbox's YouTube app through its control socket (VacuumTube, when it's the tile's choice, over DevTools).
   - `jellyfin`: the web client's API over DevTools.
   - `seerr`: its API.
   - `frigate`: shows a camera live (by spoken name), all cameras, the alerts, or the last day's timeline (of a camera or all), through the Frigate app's control socket.
