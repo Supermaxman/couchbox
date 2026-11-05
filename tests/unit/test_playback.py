@@ -506,3 +506,21 @@ def test_app_in_front(monkeypatch):
 
     monkeypatch.setattr(appctl, "call", down)
     assert playback.app_in_front(42) is None
+
+
+def test_the_guard_runs_in_its_own_unit_so_it_outlives_the_app(monkeypatch):
+    runs, popens = [], []
+
+    class R:
+        returncode = 0
+
+    monkeypatch.setattr(playback.subprocess, "run", lambda argv, **kw: runs.append(argv) or R())
+    monkeypatch.setattr(playback.subprocess, "Popen", lambda argv, **kw: popens.append(argv))
+    playback._guarded.discard(4242)
+    playback.start_guard(4242)
+    assert runs[0][:3] == ["systemd-run", "--user", "--collect"] and "--unit=couchbox-rate-guard-4242" in runs[0]
+    assert runs[0][-2:] == ["watch", "4242"] and not popens
+    R.returncode = 1  # no user manager: a plain child instead
+    playback._guarded.discard(4243)
+    playback.start_guard(4243)
+    assert popens and popens[0][-2:] == ["watch", "4243"]
