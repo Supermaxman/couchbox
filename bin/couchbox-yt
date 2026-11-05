@@ -49,6 +49,8 @@ from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
 from couchbox.services import youtube, ytauth, ytextras, ytstream  # noqa: E402
 
+SHOWN = ("home", "browse", "channel", "search", "subscriptions", "library")   # pages (for "screen")
+
 
 class Backend(QObject):
     """QML's way to youtube.py, ytauth.py and ytstream.py: call(id, op, args) answers later with
@@ -68,6 +70,7 @@ class Backend(QObject):
         else:
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
+        self.shown = {}                              # the last page the app asked for (the control socket's "screen")
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
@@ -178,7 +181,10 @@ class Backend(QObject):
     def call(self, rid, op, args):
         def work():
             try:
-                out = self.run(op, json.loads(args or "{}"))
+                a = json.loads(args or "{}")
+                out = self.run(op, a)
+                if op in SHOWN and isinstance(out, dict) and "error" not in out:
+                    self.shown = {"op": op, "args": a, "page": out}
             except (ytstream.Unavailable, youtube.YouTubeError) as err:
                 out = {"error": str(err.args[0]) if err.args else str(err)}
             except ytauth.SignedOut as err:
@@ -224,8 +230,10 @@ def qr_png(text, path):
 
 
 class Control(QObject):
-    """The control socket (couchbox.appctl): a second launch hands its --open to this one, and
-    the voice assistant can open videos, searches and channels."""
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one; the
+    voice assistant, links sent to the TV, Continue watching and phones casting (couchbox-yt-cast)
+    open videos, searches and channels, control what plays (media), read what's on screen (state,
+    screen: the last page asked for) and use the app's own sign-in (call)."""
     command = Signal(str)
 
     def __init__(self, backend):
@@ -266,6 +274,8 @@ class Control(QObject):
             return dict(self.state, site="YouTube")
         if op == "focus":
             return dict(self.focus, page=self.state.get("page", ""))
+        if op == "screen":                           # the voice assistant's "what's on screen"
+            return dict(self.state, shown=self.backend.shown)
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):

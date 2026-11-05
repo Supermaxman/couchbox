@@ -36,6 +36,7 @@ ApplicationWindow {
     readonly property var guestTiles: [{title: "Movies & TV", id: "FEstorefront", colors: ["#7a5600", "#d6a10a"]},
                                        {title: "Podcasts", id: "FEtopics_podcasts", colors: ["#6a0f6a", "#b0209a"]}]
     property bool pickedAtStart: false         // ... as the app started (Back there leaves the app)
+    property string pendingOpen: ""            // asked for (control socket) before the app was ready
 
     Component.onCompleted: {
         Y.u = u;
@@ -45,7 +46,7 @@ ApplicationWindow {
             guide.entries = r.guide;
             if (r.settings) Y.settings = r.settings;
             ready = true;
-            const o = arg("--open");
+            const o = pendingOpen || arg("--open");
             const want = args.indexOf("--profile") >= 0 ? arg("--profile") : null;
             const profiles = r.profiles || [];
             const cur = profiles.find(p => p.id === r.current);
@@ -205,10 +206,16 @@ ApplicationWindow {
         }
     }
 
-    // --open / a second launch / the voice assistant: video:ID[@SECONDS], search:TEXT, channel:ID,
-    // browse:ID, home, and typing:TEXT (Search's keys with that typed: screenshots)
+    // --open / a second launch / the voice assistant / a link sent to the TV: video:ID[@SECONDS],
+    // search:TEXT, channel:ID, browse:ID, playlist:ID, history, home (or a guide entry), and
+    // typing:TEXT (Search's keys with that typed: screenshots)
     function openTarget(o) {
-        if (!ready) return;
+        if (!ready) { pendingOpen = o; return; }
+        if (picking) {                                  // Who's watching is up: as the last profile watching
+            pickedAtStart = false;
+            Y.call("profiles", {}, r => win.use((r.profiles || []).some(p => p.id === r.last) ? r.last : "", o), () => win.use("", o));
+            return;
+        }
         const i = o.indexOf(":"), k = i < 0 ? o : o.slice(0, i), rest = i < 0 ? "" : o.slice(i + 1);
         if (k === "video") {
             const m = rest.match(/^([\w-]{1,20})(?:@(\d+(?:\.\d+)?))?$/);
@@ -216,6 +223,11 @@ ApplicationWindow {
         } else if (k === "search") { stack.clear(StackView.Immediate); Y.search(rest); }
         else if (k === "typing") { stack.clear(StackView.Immediate); choose("search"); search.begin(rest); search.forceActiveFocus(); }
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
+        else if (k === "playlist") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest.indexOf("VL") === 0 ? rest : "VL" + rest}); }
+        else if (k === "history") {
+            stack.clear(StackView.Immediate); choose("library");
+            if (Y.signedIn) push(listC, {title: "History", browseId: "FEhistory"});
+        }
         else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
         else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
         else if (k === "shorts") { stack.clear(StackView.Immediate); push(shortsC, {startId: rest}); }
@@ -226,9 +238,13 @@ ApplicationWindow {
         const st = {page: picking ? "profiles" : cur ? (cur.videoId !== undefined ? "player" : cur.browseId !== undefined ? "list" : "channel") : section,
                     profile: Y.profile ? Y.profile.name : "guest"};
         if (cur && cur.label) st.showing = cur.label;
+        if (cur && cur.channelId) st.id = cur.channelId;
+        if (!picking && !cur) st.section = section;
+        if (!picking && !cur && section === "search") st.query = search.query;
         if (win.playing) {
-            st.playing = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
+            st.playing = cur.label; st.title = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
             st.videoId = cur.videoId || ""; st.duration = Math.round(video.duration || 0);    // for couchbox-yt-cast
+            st.live = !!cur.live;
         }
         control.setState(JSON.stringify(st));
     }
