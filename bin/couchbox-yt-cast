@@ -4,8 +4,8 @@ found on the Wi-Fi (DIAL), launched and paired from the phone, and then told wha
 YouTube's Lounge. It drives couchbox-yt through its control socket (it starts the app when a
 phone casts and it isn't running) and reports back what plays.
 
-Run by couchbox-yt-cast.service (couchbox-yt starts it). Until the native app replaces
-VacuumTube it shows up under its own name, "Couchbox YouTube (beta)", beside VacuumTube's.
+Run by couchbox-yt-cast.service (couchbox-yt starts it). Phones list it under the TV's device
+name (ytcast.cast_name: "Couchbox" by default; COUCHBOX_YT_CAST_NAME overrides it).
 Its screen id (which phones remember) is kept in ~/.local/share/couchbox-yt/cast.json.
   couchbox-yt-cast            run
   couchbox-yt-cast --code     print a "Link with TV code" pairing code (12 digits) and leave
@@ -23,7 +23,7 @@ import uuid
 from couchbox import appctl
 from couchbox.services import ytcast
 
-NAME = os.environ.get("COUCHBOX_YT_CAST_NAME", "Couchbox YouTube (beta)")
+NAME = os.environ.get("COUCHBOX_YT_CAST_NAME") or ytcast.cast_name()
 DIR = os.path.expanduser("~/.local/share/couchbox-yt")
 STATE_FILE = os.path.join(DIR, "cast.json")
 APP = "yt"

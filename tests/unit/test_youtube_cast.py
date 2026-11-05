@@ -64,3 +64,14 @@ def test_dial_documents():
     assert "<state>stopped</state>" in C.app_xml(False, "x")
     reply = C.ssdp_reply("http://192.0.2.5:56789/dd.xml", "u-1").decode()
     assert reply.startswith("HTTP/1.1 200 OK") and "LOCATION: http://192.0.2.5:56789/dd.xml" in reply and C.DIAL_ST in reply
+
+
+def test_phones_list_the_tv_under_its_name(box):
+    from couchbox import settings
+
+    assert C.cast_name() == "Couchbox"
+    settings.update({"network.hostname": "living-room"})
+    assert C.cast_name() == "living-room"
+    settings.update({"media.youtube.client": "vacuumtube"})
+    (box / "var/lib/flatpak/app/rocks.shy.VacuumTube").mkdir(parents=True)
+    assert C.cast_name() == "living-room (Couchbox YouTube)"  # beside VacuumTube's own

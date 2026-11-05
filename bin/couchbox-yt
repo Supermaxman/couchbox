@@ -615,7 +615,7 @@ def start_cast():
 def cast_code(demo):
     """A "Link with TV code" (12 digits, in threes) from couchbox-yt-cast."""
     if demo:
-        return {"code": "123 456 789 012", "name": "Couchbox YouTube (beta)"}
+        return {"code": "123 456 789 012", "name": "Couchbox"}
     from couchbox import appctl
     try:
         return appctl.call("yt-cast", {"op": "code"}, timeout=25)
