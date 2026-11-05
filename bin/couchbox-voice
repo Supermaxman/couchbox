@@ -21,7 +21,8 @@ the keyboard pop-ups use it): GET /state (read by the indicator), GET /log?after
 POST /ask {"text": ...}, POST /cancel (the remote's Back button, via couchbox-input: stops
 the request and hides the indicator; answers whether anything was showing), POST /typing,
 /seerr/... (the Seerr app's allow-listed proxy, adding the API key), /tmdb/... (Movies & TV's
-TMDB reads on a box without Seerr, adding the TMDB key), POST /play/....
+TMDB reads on a box without Seerr, adding the TMDB key), POST /play/jellyfin and /play/youtube
+{"id"} (play on the TV), POST /search/youtube {"query"} (Search's "On this TV").
 Writes need the header "X-Couchbox: 1" and no foreign Origin, so web pages in the TV's
 browser can't drive it. Code and prompt: couchbox.voice (Python package)."""
 import io
@@ -314,6 +315,16 @@ class Service:
                 threading.Thread(target=app, args=("play",), kwargs={"id": vid}, daemon=True).start()
                 self.send({"result": "playing"})
 
+            def youtube_search(self):
+                """Search's "On this TV": YouTube's own search for the words, on the TV: {"query": ...}."""
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                q = str(body.get("query", "")).strip()[:200]
+                if not q:
+                    return self.send({"error": "no query"}, 400)
+                from couchbox.voice import tools
+                threading.Thread(target=tools.youtube, args=("search",), kwargs={"query": q}, daemon=True).start()
+                self.send({"result": "searching"})
+
             def guarded(self):
                 """Writes: our own programs only. A web page can't add the custom header
                 (that needs a CORS preflight we never answer) or hide its Origin."""
@@ -337,6 +348,8 @@ class Service:
                     return self.seerr("POST")
                 if self.path in ("/play/jellyfin", "/play/youtube"):
                     return self.play()
+                if self.path == "/search/youtube":
+                    return self.youtube_search()
                 if self.path == "/typing":           # an app's keyboard pop-up opened / closed
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                     svc.typing_until = time.time() + 120 if body.get("on") else 0.0

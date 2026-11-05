@@ -43,8 +43,12 @@ ApplicationWindow {
         D.u = u;
         D.call("status", {}, r => win.signedIn(r), () => stack.replace(null, win.signInPage, {}, StackView.Immediate));
     }
+    property bool opened: false              // --open (Continue watching, Search): once, after signing in
     function signedIn(r) {
-        if (r.state === "ok") showSection(0);
+        if (r.state === "ok") {
+            showSection(0);
+            if (!win.shot && !win.opened && win.arg("--open")) { win.opened = true; win.openTarget(win.arg("--open")); }
+        }
         else if (r.state === "profile") stack.replace(null, profileC, {profiles: r.profiles}, StackView.Immediate);
         else stack.replace(null, win.signInPage, {}, StackView.Immediate);
     }
@@ -239,6 +243,7 @@ ApplicationWindow {
             if (win.playing) stack.popCurrentItem(StackView.Immediate);   // one player at a time
             D.play(idOf(o.slice(5)));
         }
+        else if (o.startsWith("category:")) D.open({kind: "category", id: "cat:" + o.slice(9), title: o.slice(9)});    // Twitch
         else if (o.startsWith("search:")) { win.showSection(3); Qt.callLater(() => stack.currentItem.search(o.slice(7))); }
         else if (o === "series") win.showSection(1);
         else if (o === "mylist") win.showSection(2);
@@ -287,7 +292,7 @@ ApplicationWindow {
     readonly property bool watching: win.playing && !!stack.currentItem.watching
     Timer { id: idle; interval: 60 * 60 * 1000; running: !win.watching; onTriggered: Qt.quit() }
 
-    // --shot FILE [--open series:ID | video:ID | play:ID | search:TEXT | series | mylist] [--down N] [--keyboard]
+    // --shot FILE [--open series:ID | video:ID | play:ID | category:NAME | search:TEXT | series | mylist] [--down N] [--keyboard]
     //            [--keys ok,down,right,back,...] [--wait MS]
     property int downs: 0
     property var keys: []                       // --keys up,down,left,right,ok,back,...: pressed one per second

@@ -12,7 +12,9 @@ Sign-in: copied from the TV's browser if it's signed in to Dropout, else email a
 (keyboard pop-up or phone). The QML is in /usr/share/couchbox/ui/streaming/qml, the Python (vhx.py,
 player.py) next to it.
 
-  couchbox-streaming
+  couchbox-streaming [--open play:ID | series:ID | category:NAME | search:TEXT]
+                                         open on that, after signing in (Continue watching, Search's
+                                         "On this TV"; a second launch hands it to the running app)
   couchbox-streaming --shot FILE [--open series:ID | search:TEXT | ...]   render once (testing)
   couchbox-streaming --site twitch --keep-signed-in   refresh a week-old Twitch sign-in (daily, from
                                                       couchbox-clean-caches: Twitch drops it after 30 days unused)

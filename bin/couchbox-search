@@ -11,6 +11,11 @@ side (couchbox.services.search) keeps the recent searches and asks the assistant
 through couchboxd, for summaries and the optional short answer above the results
 (Settings -> Apps -> Search). The QML is in /usr/share/couchbox/ui/search.
 
+Above Google's results, "On this TV": the same search in the TV's own apps on the home row
+(Jellyfin's library, Dropout, 2nd Try, Nebula, Twitch, Movies & TV, and YouTube's own search),
+each app asked on its own thread with its own sign-in (couchbox.ontv). OK on one opens it in its
+app (couchbox-ontv --open); the web results stay as they are.
+
   couchbox-search [--open search:TEXT | url:ADDRESS]
   couchbox-search --demo --shot FILE [--open ...] [--keys down,ok,...]
                                      render once off screen (made-up pages, no network)
@@ -38,6 +43,7 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
+from couchbox import ontv  # noqa: E402
 from couchbox.services import search  # noqa: E402
 
 JS_DIR = os.path.join(os.path.dirname(QML), "js")
@@ -51,13 +57,25 @@ class Backend(QObject):
         super().__init__()
         self.demo = demo
         self.history = search.History()
-        self.pool = ThreadPoolExecutor(max_workers=3)
+        self.pool = ThreadPoolExecutor(max_workers=8)       # the page's calls, and one per app for On this TV
+        self.clients = ontv.Clients()
 
     def status(self):
         s = settings.load()
         return {"ai": True if self.demo else search.ai_ready(s), "aiAnswer": True if self.demo else bool(s["apps.search.ai_answer"]),
                 "history": ["eiffel tower height", "weather this weekend", "best pizza dough recipe"] if self.demo else self.history.load(),
-                "zoom": float(s["apps.search.zoom"])}
+                "zoom": float(s["apps.search.zoom"]), "tv": self.tv_apps()}
+
+    def tv_apps(self):
+        """The apps On this TV asks, in order, with their colour (the home tiles' glow)."""
+        glow = {}
+        try:
+            for a in json.load(open(paths.state() / "home/home.json")).get("apps", []):
+                glow[a.get("app")] = a.get("glow") or ""
+        except (OSError, ValueError):
+            pass
+        srcs = list(ontv.SEARCH_APPS) if self.demo else ontv.sources("search")
+        return [{"app": a, "name": ontv.NAMES[a], "glow": glow.get(a) or ontv.GLOW.get(a, "")} for a in srcs]
 
     def run(self, op, a):
         if op == "status":
@@ -71,6 +89,20 @@ class Backend(QObject):
         if op == "zoom":
             if not self.demo:
                 settings.update({"apps.search.zoom": round(float(a["zoom"]), 2)})
+            return {"ok": True}
+        if op == "tv":
+            if self.demo:
+                return {"items": ontv.demo_search(a["source"], a["query"])}
+            try:
+                return {"items": ontv.search(a["source"], a["query"], self.clients)}
+            except ontv.NotSignedIn:
+                return {"items": []}
+        if op == "open":
+            if not self.demo:
+                ontv.split_target(a["target"])                 # only what couchbox-ontv opens
+                import subprocess
+                subprocess.Popen([os.path.join(os.path.dirname(os.path.realpath(__file__)), "couchbox-ontv"), "--open", a["target"]],
+                                 start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return {"ok": True}
         if op == "reader":
             return search.blocks(search.DEMO_ARTICLE if self.demo else json.loads(a["article"] or "{}"))

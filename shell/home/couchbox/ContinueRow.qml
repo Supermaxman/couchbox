@@ -1,0 +1,125 @@
+// couchbox: the Continue watching row under the apps: what's part-watched in Jellyfin, Dropout,
+// 2nd Try and Nebula, and followed Twitch channels that are live, newest first (couchbox-ontv
+// keeps the list; HomeData reads it). Left and Right move, OK plays it in its app (opened()),
+// Up or Back return to the apps. Plain Qt Quick (no Plasma), so couchbox-ontv can draw it off
+// screen; Home.qml does the launching and the sounds.
+import QtQuick
+
+FocusScope {
+    id: root
+
+    property var items: []              // couchbox.ontv items
+    property var apps: []               // the home row's apps (HomeData.apps): badges and colours
+    property Item navigationUp
+    property real cardWidth: 270
+    property real cardHeight: 152
+    property real gap: 22
+    signal opened(var item)
+    signal moved()
+
+    readonly property bool shown: items.length > 0
+    readonly property var currentItem: list.currentIndex >= 0 && list.currentIndex < items.length ? items[list.currentIndex] : null
+    height: label.height + 22 + cardHeight + 52
+
+    function appOf(id) {
+        for (const a of apps) if (a.app === id) return a;
+        return null;
+    }
+
+    // A fresh list keeps the same card in focus (it may have moved), else the same place
+    property string focusedKey: ""
+    onItemsChanged: {
+        let i = items.findIndex(x => x.key === focusedKey);
+        if (i < 0) i = Math.min(Math.max(0, list.currentIndex), items.length - 1);
+        list.currentIndex = i;
+        if (!shown && activeFocus && navigationUp) navigationUp.forceActiveFocus();
+    }
+
+    Text {
+        id: label
+        text: "Continue watching"
+        color: list.activeFocus ? Style.text : Style.textDim
+        font.family: Style.font
+        font.pixelSize: 19
+        font.weight: Font.DemiBold
+        Behavior on color { ColorAnimation { duration: Style.duration } }
+    }
+
+    ListView {
+        id: list
+        anchors { top: label.bottom; topMargin: 22; left: parent.left; right: parent.right }
+        height: root.cardHeight
+        orientation: ListView.Horizontal
+        spacing: root.gap
+        clip: false
+        focus: true
+        keyNavigationEnabled: false
+        highlightMoveDuration: Style.duration
+        highlightRangeMode: ListView.ApplyRange
+        preferredHighlightBegin: 0
+        preferredHighlightEnd: width
+        boundsBehavior: Flickable.StopAtBounds
+        model: root.items
+        onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < root.items.length) root.focusedKey = root.items[currentIndex].key
+
+        delegate: ContinueCard {
+            required property var modelData
+            required property int index
+            width: root.cardWidth
+            height: root.cardHeight
+            item: modelData
+            app: root.appOf(modelData.app)
+            current: ListView.isCurrentItem && list.activeFocus
+            dimmed: list.activeFocus && !ListView.isCurrentItem
+            MouseArea {
+                anchors.fill: parent
+                onClicked: { list.currentIndex = index; list.forceActiveFocus(); root.opened(modelData); }
+            }
+        }
+
+        Keys.onLeftPressed: if (currentIndex > 0) { root.moved(); decrementCurrentIndex(); }
+        Keys.onRightPressed: if (currentIndex < count - 1) { root.moved(); incrementCurrentIndex(); }
+        Keys.onUpPressed: root.leave()
+        Keys.onDownPressed: (event) => event.accepted = true
+        Keys.onEscapePressed: root.leave()
+        Keys.onBackPressed: root.leave()
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) {
+                event.accepted = true;
+                if (!event.isAutoRepeat && root.currentItem) root.opened(root.currentItem);
+            }
+        }
+    }
+    function leave() {
+        if (!navigationUp) return;
+        root.moved();
+        navigationUp.forceActiveFocus();
+    }
+
+    // More cards off to the right / left
+    Repeater {
+        model: [true, false]
+        Rectangle {
+            required property bool modelData       // the left edge
+            readonly property bool more: modelData ? list.visibleArea.xPosition > 0.005
+                                                   : list.visibleArea.xPosition + list.visibleArea.widthRatio < 0.995
+            x: modelData ? -width / 2 : root.width - width / 2
+            y: list.y + (root.cardHeight - height) / 2
+            width: 46; height: 46; radius: 23
+            color: Qt.rgba(0, 0, 0, 0.45)
+            border.color: Qt.rgba(1, 1, 1, 0.35)
+            border.width: 1
+            opacity: more && root.shown ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Text {
+                anchors.centerIn: parent
+                anchors.horizontalCenterOffset: parent.modelData ? -2 : 2
+                text: parent.modelData ? "‹" : "›"
+                color: Style.text
+                font.family: Style.font
+                font.pixelSize: 34
+                font.weight: Font.Light
+            }
+        }
+    }
+}

@@ -3,6 +3,8 @@
 // under a toolbar: the arrows move between links and scroll (js/keynav.js),
 // OK opens, Back goes back, and Up at the top of a page reaches the toolbar (the search, Back,
 // Forward, Reader, text size, and the assistant's Summarize and Ask when it's set up).
+// Above Google's results, "On this TV" (OnThisTv): the same search in the TV's own apps; Up from
+// the page reaches it first, then the toolbar.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Window
@@ -33,6 +35,7 @@ ApplicationWindow {
     property var typed: null                 // the keyboard pop-up types for this
     property bool consent: false             // Google's cookie choice page is up
     property bool reading: false             // reader view up
+    property var tv: ({query: "", items: [], pending: 0})     // "On this TV" for the search on screen
 
     Component.onCompleted: {
         S.u = u;
@@ -121,8 +124,30 @@ ApplicationWindow {
                        e => { win.answerBusy = false; win.answer = null; });
             });
         } else if (!q) answer = null;
+        if (q) lookOnTv(q);
         publish();
     }
+    // The search in each of the TV's apps (status.tv, in order), shown as they answer
+    function lookOnTv(q) {
+        if (tv.query === q) return;
+        const order = (status.tv || []).map(a => a.app);
+        const got = {};
+        tv = {query: q, items: [], pending: order.length};
+        for (const src of order) {
+            const done = items => {
+                if (win.tv.query !== q) return;
+                got[src] = items || [];
+                win.tv = {query: q, items: [].concat(...order.map(s => got[s] || [])), pending: win.tv.pending - 1};
+            };
+            S.call("tv", {source: src, query: q}, r => done(r.items), () => done([]));
+        }
+    }
+    function openOnTv(it) {
+        S.call("open", {target: it.target}, () => toast.show("Opening in " + it.name + "…"), e => toast.show(e));
+    }
+    readonly property bool tvShown: mode === "web" && !reading && !!query && tv.query === query && (tv.items.length > 0 || tv.pending > 0)
+    // Up from the page: "On this TV" when it has something, else the toolbar
+    function focusUp() { if (tvShown && tv.items.length) tvStrip.forceActiveFocus(); else focusBar(); }
     function queryOf(url) {
         const m = /^https?:\/\/(www\.)?google\.[a-z.]+\/search\?(.*)$/.exec(url);
         if (!m) return "";
@@ -186,7 +211,7 @@ ApplicationWindow {
         }
         Keys.onLeftPressed: idx = Math.max(0, idx - 1)
         Keys.onRightPressed: idx = Math.min(buttons.length, idx + 1)
-        Keys.onDownPressed: view.forceActiveFocus()
+        Keys.onDownPressed: { if (win.tvShown && win.tv.items.length) tvStrip.forceActiveFocus(); else view.forceActiveFocus(); }
         Keys.onReturnPressed: act()
         Keys.onEnterPressed: act()
         Keys.onEscapePressed: win.back()
@@ -266,11 +291,25 @@ ApplicationWindow {
         }
     }
 
+    // ------------------------------------------------------------------ On this TV, above the results
+    OnThisTv {
+        id: tvStrip
+        visible: win.tvShown
+        anchors { left: parent.left; right: parent.right; top: answerBox.visible ? answerBox.bottom : bar.bottom; leftMargin: S.edge; rightMargin: S.edge; topMargin: 12 * S.u }
+        items: win.tv.items
+        pending: win.tv.pending
+        apps: { const o = {}; for (const a of win.status.tv || []) o[a.app] = a; return o; }
+        onOpened: it => win.openOnTv(it)
+        onUp: win.focusBar()
+        onDown: view.forceActiveFocus()
+        onBack: win.back()
+    }
+
     // ------------------------------------------------------------------ Google's cookie choice
     Rectangle {
         id: consentBox
         visible: win.mode === "web" && win.consent && !win.reading
-        anchors { left: parent.left; right: parent.right; top: answerBox.visible ? answerBox.bottom : bar.bottom; leftMargin: S.edge; rightMargin: S.edge; topMargin: 8 * S.u }
+        anchors { left: parent.left; right: parent.right; top: tvStrip.visible ? tvStrip.bottom : answerBox.visible ? answerBox.bottom : bar.bottom; leftMargin: S.edge; rightMargin: S.edge; topMargin: 8 * S.u }
         height: visible ? 70 * S.u : 0
         radius: 12 * S.u; color: S.panel; border.color: S.line
         Text {
@@ -286,11 +325,11 @@ ApplicationWindow {
         id: pageArea
         visible: win.mode === "web"
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom
-                  top: consentBox.visible ? consentBox.bottom : answerBox.visible ? answerBox.bottom : bar.bottom
-                  topMargin: consentBox.visible || answerBox.visible ? 8 * S.u : 0 }
+                  top: consentBox.visible ? consentBox.bottom : tvStrip.visible ? tvStrip.bottom : answerBox.visible ? answerBox.bottom : bar.bottom
+                  topMargin: consentBox.visible || tvStrip.visible || answerBox.visible ? 8 * S.u : 0 }
         // keys the page didn't use come here: Up at the very top (nothing above, nowhere to
-        // scroll) is the toolbar; Back goes back
-        Keys.onUpPressed: win.focusBar()
+        // scroll) is On this TV or the toolbar; Back goes back
+        Keys.onUpPressed: win.focusUp()
         Keys.onEscapePressed: win.back()
         Keys.onBackPressed: win.back()
 
@@ -321,7 +360,7 @@ ApplicationWindow {
             onPermissionRequested: permission => permission.deny()      // location, camera, notifications: no
             onJavaScriptConsoleMessage: (level, message, line, source) => {
                 if (message.startsWith("couchbox:")) console.log("page: " + message.slice(0, 80));
-                if (message === "couchbox:top") win.focusBar();
+                if (message === "couchbox:top") win.focusUp();
                 else if (message === "couchbox:back") win.back();
                 else if (message.startsWith("couchbox:edit ")) {
                     let f = {};

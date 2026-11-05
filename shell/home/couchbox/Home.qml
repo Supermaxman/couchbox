@@ -1,10 +1,14 @@
 // Couchbox: the app row of the home screen, in the order chosen in Settings (HomeData, from
 // couchboxd). Hold OK (or press Menu) on an app for its options; "Move" lifts it: Left and
 // Right carry it, OK drops it, Back puts it back. A glow in the focused app's colour sits behind.
+// Under it, Continue watching (ContinueRow, when there's something to continue): Down reaches it,
+// OK plays the card in its app (couchbox-ontv --open), Up or Back return to the apps.
 import QtQuick
 import QtQuick.Shapes
 import QtQuick.Window
 
+import org.kde.plasma.plasmoid
+import org.kde.plasma.plasma5support as P5Support
 import org.kde.bigscreen as Bigscreen
 
 
@@ -43,6 +47,30 @@ FocusScope {
     readonly property real tileHeight: Math.round(tileWidth * 9 / 16)
 
     readonly property var currentApp: row.model[row.currentIndex] || null
+    readonly property bool hasContinue: continueRow.shown
+
+    // Continue watching: open a card in its app, as a tile would (the app's window to the front if
+    // it runs, else its launch screen), and couchbox-ontv takes it to the item.
+    function openItem(it) {
+        Bigscreen.NavigationSoundEffects.playClickedSound();
+        const list = Plasmoid.applicationListModel;
+        const a = continueRow.appOf(it.app);
+        if (it.desktop && list.isApplicationRunning(it.desktop)) list.maximizeApplication(it.desktop);
+        else Plasmoid.showAppLaunchScreen(a ? a.name : it.name, a ? (a.tile || a.icon) : "");
+        exec.connectSource("/usr/lib/couchbox/bin/couchbox-ontv --open " + quote(it.target));
+    }
+    function quote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+    // The home screen came to the front: focus back where it was, and ask for a fresh
+    // Continue watching (something was probably just watched)
+    function becameVisible() {
+        forceActiveFocus();
+        if (HomeData.continueFile) exec.connectSource("/usr/lib/couchbox/bin/couchbox-ontv --refresh");
+    }
+    P5Support.DataSource {
+        id: exec
+        engine: "executable"
+        onNewData: (source, data) => disconnectSource(source)
+    }
 
     // Glow behind the focused tile, in its app's colour (data-couchbox-glow in the tile SVG).
     Shape {
@@ -107,7 +135,12 @@ FocusScope {
                 root.navigationUp.forceActiveFocus();
             }
         }
-        Keys.onDownPressed: (event) => event.accepted = true
+        Keys.onDownPressed: (event) => {
+            if (!root.moving && continueRow.shown) {
+                Bigscreen.NavigationSoundEffects.playMovingSound();
+                continueRow.forceActiveFocus();
+            }
+        }
         Keys.onEscapePressed: (event) => { if (root.moving) root.drop(false); else event.accepted = false; }
         Keys.onBackPressed: (event) => { if (root.moving) root.drop(false); else event.accepted = false; }
         Keys.onLeftPressed: (event) => {
@@ -172,6 +205,21 @@ FocusScope {
                 Behavior on width { NumberAnimation { duration: Style.duration } }
             }
         }
+    }
+
+    ContinueRow {
+        id: continueRow
+        anchors { left: parent.left; right: parent.right }
+        y: row.y + root.tileHeight + 104
+        visible: continueRow.shown
+        items: HomeData.continueItems
+        apps: HomeData.apps
+        navigationUp: row
+        cardWidth: root.tileWidth
+        cardHeight: root.tileHeight
+        gap: root.gap
+        onOpened: (it) => root.openItem(it)
+        onMoved: Bigscreen.NavigationSoundEffects.playMovingSound()
     }
 
     TileMenu {

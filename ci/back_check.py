@@ -32,7 +32,8 @@ CASES = [
     ("weather-today", "couchbox-weather", [], "", "quits"),
     ("search-keyboard", "couchbox-search", [], "ok", "moves"),
     ("search-results", "couchbox-search", ["--open", "search:eiffel tower height"], "", "moves"),
-    ("search-toolbar", "couchbox-search", ["--open", "search:eiffel tower height"], "up", "moves"),
+    ("search-toolbar", "couchbox-search", ["--open", "search:eiffel tower height"], "up,up", "moves"),
+    ("search-on-this-tv", "couchbox-search", ["--open", "search:eiffel tower height"], "up,right", "moves"),
     ("search-reader", "couchbox-search", ["--open", "reader"], "", "moves"),
     ("search-summary", "couchbox-search", ["--open", "summary"], "", "moves"),
     ("search-start", "couchbox-search", [], "", "quits"),
@@ -64,6 +65,7 @@ CASES = [
     ("settings-menu", "couchbox-settings", [], "", "quits"),
     ("settings-dialog", "couchbox-settings", ["--page", "time", "--in"], "ok", "moves"),
     ("setup-step", "couchbox-setup", ["--step", "3"], "", "moves"),
+    ("home-continue", "couchbox-ontv", [], "down,right", "moves"),
 ]
 STEP = 8  # compare every 8th pixel
 MIN_CHANGED = 50  # samples: a moved focus ring alone changes a few hundred
