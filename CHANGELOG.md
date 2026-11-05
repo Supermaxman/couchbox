@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/Supermaxman/couchbox/compare/v0.16.0...v0.16.1) (2026-11-05)
+
+
+### Fixed
+
+* **home:** updates reach the running home screen ([#85](https://github.com/Supermaxman/couchbox/issues/85)) ([66d9161](https://github.com/Supermaxman/couchbox/commit/66d916120efa186d2ad207a21fce181d03470d1f))
+
 ## [0.16.0](https://github.com/Supermaxman/couchbox/compare/v0.15.0...v0.16.0) (2026-11-05)
 
 
