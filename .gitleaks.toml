@@ -1,8 +1,10 @@
-# gitleaks: the default rules, minus the obviously fake keys in the unit tests.
+# gitleaks: the default rules, minus the obviously fake keys in the unit tests, and the OAuth client
+# of YouTube's TV app (public: published in YouTube's own TV player, used by the YouTube app's
+# sign-in, src/couchbox/services/ytauth.py).
 [extend]
 useDefault = true
 
 [allowlist]
-description = "fake values in tests"
+description = "fake values in tests; YouTube's public TV OAuth client"
 paths = ['''tests/unit/.*\.py''']
-regexes = ['''test-fake-[a-z0-9-]+''']
+regexes = ['''test-fake-[a-z0-9-]+''', '''SboVhoG9s0rNafixCSGGKXAT''']
