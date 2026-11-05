@@ -34,7 +34,7 @@ FocusScope {
         height: parent.height - y
         perRow: 3
         focus: true
-        onOpen: it => Y.open(it)
+        onOpen: it => Y.playList(feed.itemsAfter(it), it)      // the list's next videos after it
     }
     Text {
         visible: !!page.problem

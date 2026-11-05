@@ -126,6 +126,7 @@ ApplicationWindow {
         updateState();
     }
     function pop() {
+        if (win.playing && Y.queueAuto) { Y.queue = []; Y.queueAuto = false; }   // a playlist's rest ends with its player
         if (stack.depth > 1) stack.pop(StackView.Immediate);
         else stack.clear(StackView.Immediate);            // pop() never takes the last page off
         if (!stack.depth && shortsFromGuide) {                // back on the guide, on Shorts
@@ -137,8 +138,12 @@ ApplicationWindow {
         updateState();
     }
     function play(id, at, seed) {
-        // one player at a time: a new video replaces what's playing (and what was opened over it)
-        while (stack.depth && !win.playing) stack.pop(StackView.Immediate);
+        // one player at a time: a new video replaces what's playing (and what was opened over it).
+        // With no player under them, the pages stay (Back from the video returns to them). (pop()
+        // never takes the last page off: looping on it with no player in the stack never ended.)
+        let player = -1;
+        for (let i = 0; i < stack.depth; i++) if (stack.get(i, StackView.DontLoad).videoId !== undefined) player = i;
+        while (player >= 0 && stack.depth > player + 1) stack.pop(StackView.Immediate);
         if (win.playing && !stack.currentItem.start) stack.pop(StackView.Immediate);       // Shorts: a video replaces it
         if (win.playing) { stack.currentItem.seed = seed || {}; stack.currentItem.start(id, at || 0); stack.currentItem.forceActiveFocus(); updateState(); return; }
         push(playerC, {videoId: id, startAt: at || 0, seed: seed || {}});
@@ -409,7 +414,8 @@ ApplicationWindow {
             if (!p.visible || p.opacity === 0) shown = false;
         }
         const cur = stack.depth ? stack.currentItem : null;
-        const st = {focus: names.join("/"), item: String(it).split("(")[0], shown: shown, section: section, guideOpen: guide.open};
+        const st = {focus: names.join("/"), item: String(it).split("(")[0], shown: shown, section: section, guideOpen: guide.open,
+                    toast: toast.opacity > 0 ? toastText.text : "", queue: Y.queue.length};
         if (cur && cur.focusDetail) st.detail = cur.focusDetail();
         else if (!cur && page(section).focusDetail) st.detail = page(section).focusDetail();
         return st;

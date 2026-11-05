@@ -441,7 +441,25 @@ def main():
         lambda f: (f.get("section") == "movies" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
         settle=4,
     )
-    remote("left", "up", "up", "up", "up", "ok")  # Movies & TV -> Podcasts, News, Gaming, Library
+    # a live stream from the Live tab's first row: it's live, seeks back (behind live) and forward
+    remote("left", "down", "ok")  # Movies & TV -> Live
+    r.step("tab-live", lambda f: (f.get("section") == "live" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows"), settle=4)
+    remote("ok")
+    f = r.step(
+        "live-player",
+        lambda f: (f["page"] == "player" and bool(d(f).get("live")), f"live {d(f).get('live')}, {d(f).get('videoId')}"),
+        settle=10,
+    )
+    if d(f).get("live"):
+        remote("back")  # the controls hide: Left / Right seek
+        time.sleep(1)
+        remote("left")
+        r.step("live-behind", lambda f: ("behind live" in (f.get("toast") or ""), f"toast {f.get('toast')!r}"), settle=1)
+        remote("right", "right")  # forward to live again
+        r.step("live-forward", lambda f: (bool(f.get("toast")), f"toast {f.get('toast')!r}"), settle=1)
+    remote("back", "back")  # out of the player, back on the Live tab
+    r.step("live-left", lambda f: (f.get("section") == "live" and f["page"] != "player", f"page {f.get('page')}"), settle=2)
+    remote("left", *["up"] * 5, "ok")  # Live -> Movies & TV, Podcasts, News, Gaming, Library
     r.step("library", lambda f: (f.get("section") == "library" and "tiles" in f["focus"], f"section {f.get('section')}"), settle=2)
     remote("down")
     r.step("library-signin", lambda f: ("action" in f["focus"], "the Sign in button"), settle=1)

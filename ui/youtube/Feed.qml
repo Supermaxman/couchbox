@@ -24,6 +24,13 @@ FocusScope {
     property real topRoom: 12 * Y.u              // room above the current row (its focus ring)
     signal atTop()
     signal open(var item)
+    // the cards after this one, through the following rows (a playlist's order)
+    function itemsAfter(it) {
+        const all = [];
+        for (const r of rows) for (const x of r.items || []) all.push(x);
+        const i = all.findIndex(x => x.id === it.id);
+        return i < 0 ? [] : all.slice(i + 1);
+    }
     // the focus goes down to the current row's cards: a row hidden meanwhile (the player's, while
     // a panel or the bar was up) can have lost its place in the chain, and keys then went nowhere
     onActiveFocusChanged: if (activeFocus) Qt.callLater(focusRow)

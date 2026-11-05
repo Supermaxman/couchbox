@@ -19,6 +19,13 @@ QtObject {
     property bool videoSide: false            // the player's side panel is open: the video sits to its left
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
+    property bool queueAuto: false            // the queue is a playlist's rest (it ends with the player)
+    // a video from a playlist: the playlist's next videos play after it, in order
+    function playList(after, it) {
+        queue = (after || []).filter(x => x.type === "video" || x.type === "live");
+        queueAuto = true;
+        open(it);
+    }
     property bool shot: false                 // --shot: still (no blinking caret)
     // the TV's settings (ytextras.Settings: SponsorBlock, DeArrow, dislikes, Hide Shorts, H.264 only)
     property var settings: ({sponsorblock: true, skip: {sponsor: true}, dearrow: false, dislikes: false, hide_shorts: false, h264: true})

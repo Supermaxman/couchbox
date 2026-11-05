@@ -68,7 +68,7 @@ FocusScope {
         width: parent.width
         height: parent.height - y
         boxed: true
-        onOpen: it => Y.open(it)
+        onOpen: it => page.channelId.indexOf("VL") === 0 ? Y.playList(feed.itemsAfter(it), it) : Y.open(it)   // a playlist: in order
     }
     Connections {                             // Left off the first card: the back button, not the guide
         target: Y
