@@ -22,6 +22,7 @@ FocusScope {
     readonly property bool watching: !!s && !video.paused
     readonly property rect place: Qt.rect(592 * Y.u, 8 * Y.u, 609 * Y.u, 1064 * Y.u)
     readonly property string videoId: cur.id || ""
+    function focusDetail() { return {videoId: videoId, index: index, area: area}; }
     signal closed()
 
     Component.onCompleted: {

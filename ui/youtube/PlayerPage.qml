@@ -22,7 +22,9 @@ FocusScope {
     // the controls' keys land here (the player handles them): the focus comes back to it, not
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
-    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count}; }
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count,
+                                          captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
+                                          card: panel === "description" ? description.index : -1}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
@@ -351,8 +353,9 @@ FocusScope {
     }
     Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending) player.mode = "hidden" }
     function skip(d) {
-        if (live || !s) return;
-        video.seek(d);
+        if (!s) return;
+        video.seek(d);                         // a live stream too: back into its DVR window and forward again
+        if (live && duration > 0) Y.toast(duration - pos - d > 15 ? "-" + Y.clock(duration - pos - d) + " behind live" : "Live");
         if (mode === "hidden") mode = "bar";
         hide.restart();
     }
@@ -518,7 +521,7 @@ FocusScope {
         subtitle: player.panel === "notify" ? "You'll get notified in the mobile app or on YouTube.com based on your account settings"
                 : player.panel === "quality" ? "H.264, the Pi's best: Auto picks up to 1080p60" : ""
         onPicked: i => player.panelPick(i)
-        onClosed: player.panel = ""
+        onClosed: player.back()                // Quality, speed or captions: back to the settings menu; else closed
     }
 
     Item {

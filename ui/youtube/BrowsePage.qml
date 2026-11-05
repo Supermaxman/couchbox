@@ -9,6 +9,7 @@ FocusScope {
     property string label: "Home"
     property bool loaded: false
     property string problem: ""
+    function focusDetail() { return {key: key, loaded: loaded, rows: feed.count, row: feed.index, problem: problem}; }
     readonly property bool empty: loaded && feed.count === 0
 
     function load() {

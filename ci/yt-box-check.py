@@ -362,6 +362,41 @@ def main():
         settle=1,
     )
 
+    # the settings menu: Quality, then Playback speed (and Back out of each)
+    remote(*["right"] * 13, "ok")
+    r.step("player-settings", lambda f: (d(f).get("panel") == "settings", f"panel {d(f).get('panel')!r}"), settle=1.5)
+    remote("ok")
+    r.step("player-quality", lambda f: (d(f).get("panel") == "quality", f"panel {d(f).get('panel')!r}"), settle=1.5)
+    remote("back", "down", "ok")
+    r.step("player-speed", lambda f: (d(f).get("panel") == "speed", f"panel {d(f).get('panel')!r}"), settle=1.5)
+    remote("back", "back")
+    r.step(
+        "player-settings-back", lambda f: (not d(f).get("panel") and "controls" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=1.5
+    )
+    # captions: CC on (when the video has any: else the TV says so) and off again
+    remote("left", "ok")
+    f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
+    if d(f).get("captions"):
+        remote("ok")
+        r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
+    # comments, from the Description panel's Comments card
+    remote(*["left"] * 11, "ok")
+    r.step("description-again", lambda f: (d(f).get("panel") == "description", f"panel {d(f).get('panel')!r}"), settle=2)
+    for _ in range(4):  # Down to the Comments card (cards without content are skipped)
+        if d(focus()).get("card") == 3:
+            break
+        remote("down")
+    remote("ok")
+    r.step(
+        "comments",
+        lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r} (Summary may be missing: then the card above)"),
+        settle=3,
+    )
+    remote("back")
+    if d(focus()).get("panel"):
+        remote("back")
+    r.step("comments-back", lambda f: (not d(f).get("panel"), f"panel {d(f).get('panel')!r}"), settle=1.5)
+
     # the channel's panel (its picture, Subscribe, Go to channel), then its page, and Back to the player
     remote(*["left"] * 6, "ok")
     r.step("channel-panel", lambda f: (d(f).get("panel") == "channel" and "panel" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=2)
@@ -376,13 +411,37 @@ def main():
     remote("back", "back")
     r.step("player-left", lambda f: (f["page"] == "home", f"page {f.get('page')}"), settle=2)
     remote("left", "down", "ok")  # the guide on Home, Down: Shorts
-    r.step("shorts", lambda f: ("shorts" in f["focus"], f"focus {f.get('focus')}"), settle=5)
+    f = r.step("shorts", lambda f: ("shorts" in f["focus"], f"focus {f.get('focus')}"), settle=5)
+    first = d(f).get("videoId")
+    remote("down")  # the next Short
+    r.step("shorts-next", lambda f: (bool(d(f).get("videoId")) and d(f).get("videoId") != first, f"Short {d(f).get('index')}"), settle=4)
+    remote("up")
+    r.step("shorts-previous", lambda f: (d(f).get("videoId") == first, f"Short {d(f).get('index')}"), settle=3)
     remote("back")
     r.step("shorts-back", lambda f: ("guide" in f["focus"], "back on the guide"), settle=1.5)
 
     # a guest's Library (the tiles that need no account), Subscriptions (the sign-in note), Settings
     # beside the open guide, and Who's watching from the guide's picture (and Back from it)
-    remote("down", "down", "down", "ok")  # Shorts -> Music, Subscriptions, Library
+    # the tabs: Music, Gaming, Movies & TV (their shelves load), then Library
+    remote("down", "ok")  # Shorts -> Music
+    r.step(
+        "tab-music",
+        lambda f: (f.get("section") == "music" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
+        settle=4,
+    )
+    remote("left", "down", "down", "down", "ok")  # Music -> Subscriptions, Library, Gaming
+    r.step(
+        "tab-gaming",
+        lambda f: (f.get("section") == "gaming" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
+        settle=4,
+    )
+    remote("left", "down", "down", "down", "ok")  # Gaming -> News, Podcasts, Movies & TV
+    r.step(
+        "tab-movies",
+        lambda f: (f.get("section") == "movies" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
+        settle=4,
+    )
+    remote("left", "up", "up", "up", "up", "ok")  # Movies & TV -> Podcasts, News, Gaming, Library
     r.step("library", lambda f: (f.get("section") == "library" and "tiles" in f["focus"], f"section {f.get('section')}"), settle=2)
     remote("down")
     r.step("library-signin", lambda f: ("action" in f["focus"], "the Sign in button"), settle=1)
