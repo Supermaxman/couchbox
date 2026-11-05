@@ -19,6 +19,10 @@ Out-of-memory order (oom_score_adj, re-applied every check), killed first to las
   (couchbox-input and couchbox-voice set theirs in their units; system services stay at 0.)
 Swap: an 8 GB swap file on the SSD (couchbox-swap) gives the kernel room before it has to kill.
 
+Home screen after an update: the package marks it stale (HOME_STALE), since Plasma keeps running
+the old QML; it's reloaded (plasmashell restarted) once the home screen is in front, nothing
+plays and the remote has been left alone for HOME_QUIET seconds, so no one sees it happen.
+
 Open files, checked every 10 s. Any TV app past FD_RAISE open files gets its full allowance
 (the hard limit), and one still climbing past half of that is logged. libmpv leaks a GL fence
 (an open file) per video frame; our player and Jellyfin's delete them, but a leak like it
@@ -46,6 +50,8 @@ LAST_KEY = "/run/couchbox/last-key"
 STATE = "/run/couchbox/memory/state.json"
 CHECK_SECONDS = 30
 FILES_SECONDS = 10
+HOME_STALE = "/var/lib/couchbox/state/home-stale"
+HOME_QUIET = 600
 FD_RAISE = 256       # more open files than any app needs: a leak, so give it the full allowance
 
 OOM_BACKGROUND, OOM_SESSION, OOM_ACTIVE = 900, 200, 100
@@ -181,14 +187,21 @@ def launched_apps(uid, plist, covered):
     return out
 
 
-def front_and_players(uid):
-    """(unit in front, {unit: playing}) from couchbox-mediakeys, or None if it can't be asked."""
+def media_state(uid):
+    """couchbox-mediakeys's state (the window in front and the players), or None."""
     from couchbox import appctl
 
     try:
         os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
-        st = appctl.call("mediakeys", {"op": "state"}, timeout=5)
+        return appctl.call("mediakeys", {"op": "state"}, timeout=5)
     except Exception:
+        return None
+
+
+def front_and_players(uid):
+    """(unit in front, {unit: playing}) from couchbox-mediakeys, or None if it can't be asked."""
+    st = media_state(uid)
+    if st is None:
         return None
     playing = {}
     for p in st.get("players") or []:
@@ -356,6 +369,8 @@ class Memory:
                 self.last_active[k] = now
             a["idle"] = int(now - self.last_active[k])
 
+        if os.path.exists(HOME_STALE):
+            self.reload_home(apps, now - key)
         mains = {n: g[0] for n, g in groups.items()}
         for k, a in apps.items():
             if a["idle"] > self.idle:
@@ -381,6 +396,23 @@ class Memory:
         with open(STATE + ".tmp", "w") as f:
             json.dump({"t": now, "idle_limit": self.idle, "apps": apps, "files": self.files}, f)
         os.replace(STATE + ".tmp", STATE)
+
+    def reload_home(self, apps, quiet):
+        """Restart plasmashell for the updated home screen, if no one would notice."""
+        if quiet < HOME_QUIET or any(a["playing"] for a in apps.values()):
+            return
+        st = media_state(self.uid)
+        if not st or not (st.get("window") or {}).get("shell"):
+            return
+        if any(p.get("effective") == "Playing" for p in st.get("players") or []):
+            return
+        from couchbox import home
+        self.log("reloading the home screen after an update")
+        home.restart_plasmashell()
+        try:
+            os.unlink(HOME_STALE)
+        except OSError:
+            pass
 
     def run(self):
         self.log(f"couchbox-memory: closing apps idle for {self.idle // 60} min; checking every {CHECK_SECONDS} s")
