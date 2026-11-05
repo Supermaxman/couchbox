@@ -1,8 +1,8 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "desktop": "rocks.shy.VacuumTube.desktop",
-  "kind": "flatpak",
+  "desktop": "couchbox-yt.desktop",
+  "kind": "native",
   "tile": "youtube",
   "default_order": 10,
   "settings_page": "apps/youtube"

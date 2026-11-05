@@ -86,6 +86,16 @@ def all_apps(s: dict[str, Any] | None = None) -> list[App]:
     return apps
 
 
+VACUUMTUBE = "/var/lib/flatpak/app/rocks.shy.VacuumTube"
+
+
+def youtube_native(s: dict[str, Any] | None = None) -> bool:
+    """The YouTube tile opens couchbox-yt, Couchbox's own app, unless Settings → Apps → YouTube app
+    says VacuumTube and it's installed (bin/couchbox-youtube-tv decides the same way)."""
+    s = s or settings.load()
+    return s.get("media.youtube.client", "native") != "vacuumtube" or not (paths.root() / VACUUMTUBE.lstrip("/")).is_dir()
+
+
 def get(app_id: str, s: dict[str, Any] | None = None) -> App | None:
     return next((a for a in all_apps(s) if a.id == app_id), None)
 

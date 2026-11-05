@@ -53,6 +53,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 |---|---|---|---|
 | `media.jellyfin.url` | unset | "Find on my network" uses Jellyfin's discovery (UDP 7359 broadcast), or type the URL. Tile hidden until set | `apps.tsv` |
 | `media.jellyfin.client` | `native` | `native` (hardware HEVC, couchbox-media) or `web` | `9-jellyfin-hevc.sh` |
+| `media.youtube.client` | `native` | What the YouTube tile opens: `native` (couchbox-yt) or `vacuumtube` (the VacuumTube Flatpak, kept installed as the fallback) | — |
 | `media.seerr.url` | unset | Seerr app sign-in uses Seerr's own login. Tile hidden until set | `MTV_SEERR_URL` |
 | `media.seerr.api_key` 🔒 | unset | Optional, only for voice requests | `secrets/seerr-key` |
 | `apps.maps.google_api_key` 🔒 | unset | Optional. Maps uses Google Maps Platform (traffic, transit, Google places and map) with it, OpenStreetMap services without | — |

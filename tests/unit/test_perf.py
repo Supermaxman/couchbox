@@ -46,6 +46,8 @@ def test_two_samples_give_loads_and_the_busiest_app(box, monkeypatch):
 def test_unit_names():
     assert perf.unit_name("app-flatpak-rocks.shy.VacuumTube-2179559093.scope") == "YouTube"
     assert perf.unit_name("app-couchbox\\x2djellyfin@0f51.service") == "Jellyfin"
+    assert perf.unit_name("app-couchbox\\x2dyt@0f51.service") == "YouTube"
+    assert perf.unit_name("couchbox-yt-cast.service") == "YouTube casting"
     assert perf.unit_name("plasma-kwin_wayland.service") == "Screen (KWin)"
     assert perf.unit_name("couchboxd.service") == "Couchboxd"
     assert perf.unit_name("session-3.scope") == "Logins"
