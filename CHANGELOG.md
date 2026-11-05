@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/Supermaxman/couchbox/compare/v0.15.0...v0.16.0) (2026-11-05)
+
+
+### New
+
+* Continue watching on the home screen, "On this TV" in Search ([#83](https://github.com/Supermaxman/couchbox/issues/83)) ([83ec9d9](https://github.com/Supermaxman/couchbox/commit/83ec9d9752417720b3af85af1d513d568c5ecc49))
+* playback settings: match the TV's refresh rate, night mode, surround passthrough ([#82](https://github.com/Supermaxman/couchbox/issues/82)) ([5989a48](https://github.com/Supermaxman/couchbox/commit/5989a48b4c09d12f4ac57bf1d4fed76e2a4bcb75))
+
 ## [0.15.0](https://github.com/Supermaxman/couchbox/compare/v0.14.0...v0.15.0) (2026-11-05)
 
 
