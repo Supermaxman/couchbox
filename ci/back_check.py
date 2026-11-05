@@ -95,6 +95,9 @@ CASES = [
     ("yt-player-quality", "couchbox-yt", ["--open", "video:demo0000003"], "right,right,right,right,right,right,right,right,right,ok,ok", "moves"),
     ("yt-player-end", "couchbox-yt", ["--open", "video:demo0000003@3598"], "", "moves"),
     ("yt-card-menu", "couchbox-yt", [], "menu", "moves"),
+    ("yt-player-scrub", "couchbox-yt", ["--open", "video:demo0000003@1500"], "back,right", "moves"),
+    ("yt-results-cluster", "couchbox-yt", ["--open", "search:sky"], "down,down,right", "moves"),
+    ("yt-search-landing", "couchbox-yt", [], "left,up,ok,down,down,down", "moves"),
 ]
 STEP = 8  # compare every 8th pixel
 MIN_CHANGED = 50  # samples: a moved focus ring alone changes a few hundred

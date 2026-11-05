@@ -14,8 +14,11 @@ Item {
     property bool boxed: false
     property color behind: Y.bg               // the colour around the card (its rounded corners)
     property bool captioned: true             // the title and lines under it (a hero shelf shows them above)
+    property real metaSize: Y.tMeta           // the grey lines (search results: a little smaller)
+    readonly property bool overVideo: behind.a === 0 && !round   // nothing behind to paint corners with: a Canvas rounds it
     readonly property string kind: item.type || "video"
-    readonly property string shape: item.shape || "wide"   // wide | poster | square | hero | round
+    property bool wide: false                 // drawn 16:9 whatever its shape (a hero shelf's row)
+    readonly property string shape: wide ? "wide" : item.shape || "wide"   // wide | poster | square | hero | round
     readonly property bool round: kind === "channel" || shape === "round"
     readonly property real thumbH: Math.round(w * 9 / 16)
     readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
@@ -59,7 +62,12 @@ Item {
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             sourceSize: Y.sz(width, height)
-            visible: status === Image.Ready
+            visible: status === Image.Ready && !card.overVideo
+        }
+        Loader {
+            anchors.fill: parent
+            active: card.overVideo && !!card.item.thumb
+            sourceComponent: RoundImage { radius: Y.radius; cover: true; source: card.item.thumb || "" }
         }
         Corners {
             anchors.fill: parent
@@ -80,7 +88,7 @@ Item {
                 anchors.centerIn: parent
                 text: card.item.live ? "LIVE" : card.item.duration || ""
                 color: "white"
-                font.family: Y.font; font.pixelSize: Y.tMeta; font.weight: Font.Medium
+                font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
             }
         }
         Item {                               // watched so far: red over a faint track
@@ -94,53 +102,60 @@ Item {
     }
 
     // ------------------------------------------------------------------ text
+    // the title (two lines, 48 apart), the channel 45 under its last line, and the badges and the
+    // views and age 37 under that: badges always sit in a line of text, before it
     Column {
         id: caption
         visible: !card.boxed && card.captioned
-        anchors { left: art.left; top: art.bottom; topMargin: 26 * Y.u }
+        anchors { left: art.left; top: art.bottom; topMargin: 23 * Y.u }
         width: card.artW
-        spacing: 6 * Y.u
+        readonly property var lines: card.item.lines || []
+        readonly property var badges: card.item.badges || []
         Text {
             width: parent.width
             text: card.item.title || ""
             color: card.on ? Y.text : Y.dim
-            font.family: Y.font; font.pixelSize: Y.tTitle; font.weight: Font.Medium
+            font.family: Y.font; font.pixelSize: Y.tTitle; font.weight: Font.DemiBold
             wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
             horizontalAlignment: card.round ? Text.AlignHCenter : Text.AlignLeft
-            lineHeight: 1.08
+            lineHeightMode: Text.FixedHeight; lineHeight: Y.tTitleLine
         }
-        Text {
-            width: parent.width
-            visible: (card.item.lines || []).length > 0
-            text: (card.item.lines || [])[0] || ""
-            color: Y.dim
-            font.family: Y.font; font.pixelSize: card.round ? Y.tSmall + 2 * Y.u : Y.tMeta
-            elide: Text.ElideRight
-            horizontalAlignment: card.round ? Text.AlignHCenter : Text.AlignLeft
-        }
-        Row {
-            visible: (card.item.lines || []).length > 1 || (card.item.badges || []).length > 0
-            spacing: 8 * Y.u
-            anchors.horizontalCenter: card.round ? parent.horizontalCenter : undefined
-            Repeater {
-                model: card.item.badges || []
-                Rectangle {
-                    required property string modelData
-                    width: bt.implicitWidth + 14 * Y.u
-                    height: bt.implicitHeight + 2 * Y.u
-                    radius: 4 * Y.u
-                    color: Y.raised
-                    anchors.verticalCenter: parent.verticalCenter
-                    Text { id: bt; anchors.centerIn: parent; text: parent.modelData; color: Y.dim; font.family: Y.font; font.pixelSize: Y.tMeta; font.weight: Font.Medium }
+        Item { width: 1; height: 4 * Y.u }
+        Repeater {                           // the channel, then the badges and the views and age
+            model: caption.lines.length >= 2 ? 2 : caption.lines.length || caption.badges.length ? 1 : 0
+            Item {
+                id: metaLine
+                required property int index
+                readonly property int rows: caption.lines.length >= 2 ? 2 : 1
+                readonly property bool last: index === rows - 1
+                readonly property string line: index === 0 ? caption.lines[0] || "" : caption.lines.slice(1).join(" • ")
+                width: caption.width
+                height: last ? 34 * Y.u : 37 * Y.u
+                Row {
+                    height: 34 * Y.u
+                    spacing: 8 * Y.u
+                    anchors.horizontalCenter: card.round ? parent.horizontalCenter : undefined
+                    Repeater {
+                        model: metaLine.last ? caption.badges : []
+                        Rectangle {
+                            required property string modelData
+                            width: bt.implicitWidth + 12 * Y.u
+                            height: 34 * Y.u
+                            radius: 4 * Y.u
+                            color: Y.raised
+                            Text { id: bt; anchors.centerIn: parent; text: parent.modelData; color: Y.dim; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium }
+                        }
+                    }
+                    Text {
+                        width: Math.min(implicitWidth, card.artW - x)
+                        height: 34 * Y.u
+                        verticalAlignment: Text.AlignVCenter
+                        text: metaLine.line
+                        color: Y.dim
+                        font.family: Y.font; font.pixelSize: card.round ? Y.tSmall + 2 * Y.u : metaLine.index === 0 ? Y.tMeta : card.metaSize
+                        elide: Text.ElideRight
+                    }
                 }
-            }
-            Text {
-                width: Math.min(implicitWidth, card.artW - x)
-                text: (card.item.lines || []).slice(1).join(" • ")
-                color: Y.dim
-                font.family: Y.font; font.pixelSize: card.round ? Y.tSmall + 2 * Y.u : Y.tMeta
-                elide: Text.ElideRight
-                anchors.verticalCenter: parent.verticalCenter
             }
         }
     }
@@ -149,7 +164,7 @@ Item {
         visible: card.boxed
         anchors { left: art.left; right: art.right; top: art.bottom }
         height: 194 * Y.u
-        color: card.on ? Y.text : "#212121"
+        color: card.on ? Y.text : Y.raised
         radius: Y.radius
         Rectangle { width: parent.width; height: parent.radius; color: parent.color }   // square top
         Column {
@@ -158,8 +173,8 @@ Item {
             Text {
                 width: parent.width
                 text: card.item.title || ""
-                color: card.on ? Y.ink : Y.dim
-                font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Medium
+                color: card.on ? Y.ink : Y.text
+                font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
                 elide: Text.ElideRight
             }
             Item { width: 1; height: 22 * Y.u }
@@ -169,7 +184,7 @@ Item {
                     required property string modelData
                     width: parent.width
                     text: modelData
-                    color: card.on ? "#606060" : Y.faint
+                    color: card.on ? "#606060" : Y.dim
                     font.family: Y.font; font.pixelSize: Y.tSmall
                     elide: Text.ElideRight
                 }

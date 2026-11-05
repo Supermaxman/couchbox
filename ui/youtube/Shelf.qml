@@ -16,9 +16,10 @@ FocusScope {
     property alias count: list.count
     property real baseW: Y.cardW
     property bool fixed: false                // a row that doesn't scroll (the player's rows of three)
-    readonly property real cardW: row.hero ? 533 * Y.u : grow && current ? Y.bigW : baseW
-    readonly property bool hasHead: !!(row.title || row.pill)
-    readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 100 : 70) * Y.u : 0) + (row.hero ? 300 * Y.u : 0)
+    property real metaSize: Y.tMeta
+    readonly property real cardW: row.hero ? 288 * Y.u : grow && current ? Y.bigW : baseW
+    readonly property bool hasHead: !row.hero && !!(row.title || row.pill)    // a hero's title is the focused card's
+    readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 106 : 70) * Y.u : 0) + (row.hero ? 468 * Y.u : 0)
     readonly property var focused: (row.items || [])[list.currentIndex] || ({})
     signal open(var item)
     signal search(string query)
@@ -27,31 +28,36 @@ FocusScope {
     Behavior on height { enabled: shelf.grow; NumberAnimation { duration: 160 } }
 
     // ------------------------------------------------------------------ a hero: the focused title, large
+    // (Movies & TV): its name, a line of what it is with badges (green: pay to watch), two lines
+    // of its description, then a row of small wide posters
     Column {
         visible: !!shelf.row.hero
         x: shelf.indent
-        y: shelf.hasHead ? 70 * Y.u : 0
+        y: (shelf.hasHead ? 70 * Y.u : 0) + 180 * Y.u
         width: shelf.width - shelf.indent - 280 * Y.u
-        spacing: 16 * Y.u
-        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 64 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width }
+        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 56 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
+        Item { width: 1; height: 14 * Y.u }
         Row {
-            spacing: 10 * Y.u
-            Text { text: (shelf.focused.lines || [])[0] || ""; color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; anchors.verticalCenter: parent.verticalCenter }
+            height: 34 * Y.u
+            spacing: 8 * Y.u
+            Text { text: (shelf.focused.lines || [])[0] || ""; color: Y.dim; font.family: Y.font; font.pixelSize: 24 * Y.u; height: parent.height; verticalAlignment: Text.AlignVCenter }
             Repeater {
                 model: shelf.focused.badges || []
                 Rectangle {
                     required property string modelData
-                    width: hb.implicitWidth + 14 * Y.u; height: hb.implicitHeight + 4 * Y.u; radius: 4 * Y.u
-                    color: Y.raised
-                    anchors.verticalCenter: parent.verticalCenter
-                    Text { id: hb; anchors.centerIn: parent; text: parent.modelData; color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium }
+                    readonly property bool pay: /buy|rent|pay|\$/i.test(modelData)
+                    width: hb.implicitWidth + 12 * Y.u; height: 34 * Y.u; radius: 4 * Y.u
+                    color: pay ? "#1d3a22" : Y.raised
+                    Text { id: hb; anchors.centerIn: parent; text: parent.modelData; color: parent.pay ? "#3ea84f" : Y.soft; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium }
                 }
             }
         }
+        Item { width: 1; height: 20 * Y.u }
         Text {
-            width: parent.width * 0.7
+            width: Math.min(parent.width, 830 * Y.u)
             text: (shelf.focused.lines || []).slice(1).join(" • ")
             color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u
+            lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
             wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
         }
     }
@@ -60,17 +66,18 @@ FocusScope {
     Column {
         x: shelf.indent
         visible: !shelf.row.pill && shelf.hasHead
-        spacing: 4 * Y.u
         Text {
             text: shelf.row.title || ""
-            color: Y.text
+            color: Y.dimmed ? Y.dim : Y.text
             font.family: Y.font; font.pixelSize: Y.tShelf; font.weight: Font.Medium
+            height: 36 * Y.u
         }
-        Text {
+        Text {                                 // a second line, 36 under the title's middle
             visible: !!shelf.row.subtitle
             text: shelf.row.subtitle || ""
-            color: Y.text
+            color: Y.dimmed ? Y.dim : Y.soft
             font.family: Y.font; font.pixelSize: Y.tSmall
+            topPadding: 5 * Y.u
         }
     }
     Rectangle {                               // a cluster's pill: the channel (or a search) it's from
@@ -111,7 +118,7 @@ FocusScope {
         id: list
         y: shelf.headH
         width: parent.width
-        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 24 : 210) * Y.u
+        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 201) * Y.u
         orientation: ListView.Horizontal
         spacing: Y.gap
         clip: false
@@ -153,6 +160,8 @@ FocusScope {
             boxed: shelf.boxed
             behind: shelf.behind
             captioned: !shelf.row.hero
+            wide: !!shelf.row.hero
+            metaSize: shelf.metaSize
         }
     }
 

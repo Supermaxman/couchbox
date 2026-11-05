@@ -6,11 +6,14 @@ FocusScope {
     id: chips
     property var chips: []
     property real indent: Y.left
+    property real topPad: 0                   // room above (under search results)
     width: parent ? parent.width : 0
-    height: 72 * Y.u
+    height: topPad + 72 * Y.u
     ListView {
         id: list
-        anchors.fill: parent
+        y: chips.topPad
+        width: parent.width
+        height: 72 * Y.u
         orientation: ListView.Horizontal
         spacing: 26 * Y.u
         focus: true

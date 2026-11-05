@@ -81,39 +81,39 @@ FocusScope {
     }
 
     // ------------------------------------------------------------------ the entries
+    // Open, they scroll so the focused one stays about two thirds down (y 700) until the last is
+    // in view; Settings stays at the bottom, apart.
     Item {
         id: viewport
         y: guide.open ? 154 * Y.u : 195 * Y.u
         width: parent.width
-        height: (guide.open ? 1080 : 900) * Y.u - y
+        height: (guide.open ? 898 : 900) * Y.u - y
         clip: true
         Column {
             id: column
             width: parent.width
-            // keep the current entry in view while the open guide scrolls
-            readonly property real curY: {
+            function topOf(i) {
                 let yy = 0;
-                for (let i = 0; i < guide.cur && i < guide.list.length; i++)
-                    yy += 78 * Y.u + (guide.open && (i === guide.groupEnd1 || i === guide.groupEnd2) ? 39 * Y.u : 0);
-                return yy + (guide.cur === guide.list.length ? 47 * Y.u : 0);
+                for (let k = 0; k < i && k < guide.list.length; k++)
+                    yy += 78 * Y.u + (guide.open && (k === guide.groupEnd1 || k === guide.groupEnd2) ? 39 * Y.u : 0);
+                return yy;
             }
-            y: guide.open ? -Math.max(0, curY + 96 * Y.u - viewport.height) : 0
+            readonly property real full: topOf(guide.list.length)
+            readonly property real curY: topOf(Math.min(guide.cur, guide.list.length - 1))
+            y: !guide.open || guide.cur < 0 ? 0
+               : -Math.max(0, Math.min(full - viewport.height, viewport.y + curY + 39 * Y.u - 700 * Y.u))
             Behavior on y { NumberAnimation { duration: 140 } }
             Repeater {
-                // the open guide scrolls on to Settings at the end
-                model: guide.list.concat([{key: "settings", label: "Settings"}])
+                model: guide.list
                 Item {
                     id: entry
                     required property var modelData
                     required property int index
                     readonly property bool sel: guide.section === modelData.key
                     readonly property bool on: guide.open && guide.cur === index
-                    readonly property real gap: index === guide.list.length ? 47 * Y.u : 0
                     width: column.width
-                    visible: index < guide.list.length || guide.open
-                    height: gap + 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
+                    height: 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
                     Rectangle {
-                        y: entry.gap
                         x: 33 * Y.u
                         width: 444 * Y.u; height: 78 * Y.u
                         radius: 16 * Y.u
@@ -121,7 +121,7 @@ FocusScope {
                         visible: entry.on
                     }
                     Icon {
-                        x: 58 * Y.u; y: entry.gap + 19 * Y.u
+                        x: 58 * Y.u; y: 19 * Y.u
                         name: entry.modelData.key
                         filled: entry.sel
                         size: 40 * Y.u
@@ -130,7 +130,7 @@ FocusScope {
                     Text {
                         visible: guide.open
                         x: 123 * Y.u
-                        y: entry.gap + 39 * Y.u - height / 2
+                        y: 39 * Y.u - height / 2
                         text: entry.modelData.label
                         color: entry.on ? Y.ink : Y.text
                         font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium
@@ -146,14 +146,13 @@ FocusScope {
         }
     }
 
-    // ------------------------------------------------------------------ Settings, at the bottom (closed)
+    // ------------------------------------------------------------------ Settings, at the bottom
     Item {
-        visible: !guide.open
-        readonly property bool on: false
-        y: 945 * Y.u
+        readonly property bool on: guide.open && guide.cur === guide.list.length
+        y: 944 * Y.u
         width: parent.width; height: 78 * Y.u
         Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: Y.text; visible: parent.on }
-        Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; size: 40 * Y.u; color: parent.on ? Y.ink : Y.text }
+        Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; filled: guide.section === "settings"; size: 40 * Y.u; color: parent.on ? Y.ink : Y.text }
         Text {
             visible: guide.open
             x: 123 * Y.u; y: 39 * Y.u - height / 2

@@ -3,7 +3,7 @@
 // channel, Description, the bell | previous, play/pause, next | like, dislike, comments, Ask,
 // save, Thanks | captions, settings); and the related videos under them, rows of three.
 // The remote:
-//   OK            pause / play (and show the controls)
+//   OK            with the controls hidden: show them (it doesn't pause); on them: the focused one
 //   Left / Right  back / forward 10 s (the bar shows)      Rewind / Fast-forward: the same (MPRIS)
 //   Up / Down     show the controls; Down again: the related videos; Up from the controls: the bar,
 //                 with the chapters' pictures above it; Up again picks a chapter (Left / Right, OK)
@@ -36,6 +36,9 @@ FocusScope {
     property string captionsOn: ""             // the captions shown (their name), "" none
     property bool ending: false                // the end screen is up
     readonly property real duration: video.duration || (s ? s.duration : 0) || 0
+    // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
+    // chapters' pictures over it and the hint show, as on YouTube's TV app
+    readonly property bool seeking: mode === "bar" || mode === "chapters"
     readonly property int chapter: Y.chapterAt(chapters, video.position)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
     readonly property string label: v.title || (s ? s.title : "") || seed.title || ""
@@ -301,6 +304,7 @@ FocusScope {
         if (panel) { panel = ""; return; }
         if (mode === "chapters") { mode = "bar"; hide.restart(); return; }
         if (mode === "related") { mode = "controls"; hide.restart(); return; }
+        // the controls up: Back only hides them (still loading, they can't hide: it leaves)
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
         finished();
     }
@@ -338,7 +342,7 @@ FocusScope {
 
     Keys.onPressed: e => {
         const k = e.key;
-        if (k === Qt.Key_Escape || k === Qt.Key_Back) { back(); e.accepted = true; return; }
+        if (k === Qt.Key_Escape || k === Qt.Key_Back) { if (!e.isAutoRepeat) back(); e.accepted = true; return; }
         if (k === Qt.Key_MediaTogglePlayPause || k === Qt.Key_MediaPlay || k === Qt.Key_MediaPause || k === Qt.Key_Space) {
             video.togglePause(); showControls();
         } else if (k === Qt.Key_AudioRewind || k === Qt.Key_MediaPrevious) {
@@ -346,7 +350,7 @@ FocusScope {
         } else if (k === Qt.Key_AudioForward || k === Qt.Key_MediaNext) {
             skip(10);
         } else if (mode === "hidden") {
-            if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.togglePause(); mode = "controls"; button = 4; hide.restart(); }
+            if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
             else if (k === Qt.Key_Left) skip(-10);
             else if (k === Qt.Key_Right) skip(10);
             else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
@@ -381,7 +385,7 @@ FocusScope {
     }
 
     // the video's place: the whole screen, or left of a panel
-    readonly property rect place: Y.videoSide ? Qt.rect(54 * Y.u, 218 * Y.u, 1146 * Y.u, 646 * Y.u) : Qt.rect(0, 0, width, height)
+    readonly property rect place: Y.videoSide ? Qt.rect(54 * Y.u, 219 * Y.u, 1146 * Y.u, 645 * Y.u) : Qt.rect(0, 0, width, height)
     // the stand-in for the video while it loads (and off screen, the demo): its thumbnail
     Image {
         x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
@@ -445,7 +449,7 @@ FocusScope {
         Rectangle {                            // scrims: the top for the title, the bottom for the controls
             anchors { left: parent.left; right: parent.right; top: parent.top }
             height: 320 * Y.u
-            opacity: player.mode === "related" ? 0 : 1
+            opacity: player.mode === "related" || player.seeking ? 0 : 1
             gradient: Gradient {
                 GradientStop { position: 0; color: "#cc000000" }
                 GradientStop { position: 1; color: "transparent" }
@@ -453,11 +457,12 @@ FocusScope {
         }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            // the related videos over the video: about half dark, so the video still shows
             height: player.mode === "related" ? parent.height : 560 * Y.u
             gradient: Gradient {
                 GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: player.mode === "related" ? 0.35 : 0.45; color: "#b3000008" }
-                GradientStop { position: 1; color: "#f0050512" }
+                GradientStop { position: player.mode === "related" ? 0.4 : 0.45; color: player.mode === "related" ? "#66000000" : "#b3000008" }
+                GradientStop { position: 1; color: player.mode === "related" ? "#8c000000" : "#f0050512" }
             }
         }
 
@@ -472,13 +477,13 @@ FocusScope {
                 x: 96 * Y.u; y: 96 * Y.u
                 width: parent.width - 2 * x
                 spacing: 12 * Y.u
-                opacity: player.mode === "related" ? 0 : 1
+                opacity: player.mode === "related" || player.seeking ? 0 : 1
                 Behavior on opacity { NumberAnimation { duration: 180 } }
                 Text {
                     width: Math.min(parent.width, implicitWidth)
                     text: player.label
                     color: Y.text
-                    font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Medium
+                    font.family: Y.font; font.pixelSize: 42 * Y.u; font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     style: Text.Raised; styleColor: "#40000000"
                 }
@@ -521,11 +526,13 @@ FocusScope {
                     color: Y.red
                 }
                 Text {
+                    visible: !player.seeking
                     text: player.live ? "" : Y.clock(video.position) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: Y.text
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
                 Text {
+                    visible: !player.seeking
                     anchors.right: parent.right
                     text: player.live ? "" : Y.clock(player.duration)
                     color: Y.text
@@ -536,7 +543,7 @@ FocusScope {
                     visible: !player.live
                     y: 55 * Y.u
                     width: parent.width
-                    height: (player.mode === "bar" || player.mode === "chapters" ? 12 : 8) * Y.u
+                    height: 8 * Y.u
                     readonly property real frac: player.duration > 0 ? Math.min(1, video.position / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
@@ -550,7 +557,8 @@ FocusScope {
                         model: bar.cuts
                         Item {
                             required property var modelData
-                            readonly property real gapPx: 5 * Y.u
+                            required property int index
+                            readonly property real gapPx: index < bar.cuts.length - 1 ? 5 * Y.u : 0   // the last ends at the bar's end
                             x: modelData.a * bar.width
                             width: Math.max(1, (modelData.b - modelData.a) * bar.width - gapPx)
                             height: bar.height
@@ -567,74 +575,83 @@ FocusScope {
                         visible: player.mode === "bar" || player.mode === "chapters"
                         x: bar.frac * bar.width - width / 2
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 30 * Y.u; height: width; radius: width / 2
+                        width: 32 * Y.u; height: width; radius: width / 2
                         color: Y.text
                     }
                 }
             }
 
             // ---------------------------------------------------------------- the chapters, while seeking
+            // A strip of the chapters' pictures over the bar, the current one over the playhead (its
+            // title white and bold, its time under it; the others' titles grey, cut short); Up
+            // picks one (Left / Right, OK plays from it).
             Item {
                 id: strip
-                visible: (player.mode === "bar" || player.mode === "chapters") && player.chapters.length > 1
-                y: 296 * Y.u
+                visible: player.seeking && player.chapters.length > 1
                 width: parent.width
-                height: 330 * Y.u
+                height: parent.height
                 readonly property int cur: player.mode === "chapters" ? player.chapterPick : Math.max(0, player.chapter)
+                readonly property real cardW: 336 * Y.u
+                readonly property real pitch: cardW + 18 * Y.u
+                // where the current chapter's middle sits: over the playhead, kept on the screen
+                readonly property real anchorX: Math.max(96 * Y.u + cardW / 2, Math.min(width - 96 * Y.u - cardW / 2, barArea.x + bar.frac * bar.width))
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
+                    y: 340 * Y.u - height / 2
                     text: player.mode === "chapters" ? "OK plays from the chapter" : "Press up to view chapters"
-                    color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
+                    color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u
                     style: Text.Raised; styleColor: "#80000000"
                 }
-                ListView {
-                    id: stripList
-                    y: 57 * Y.u
-                    width: parent.width
-                    height: 270 * Y.u
-                    orientation: ListView.Horizontal
-                    interactive: false
-                    spacing: 18 * Y.u
+                Repeater {
                     model: player.chapters
-                    currentIndex: strip.cur
-                    // the current chapter sits over the playhead
-                    highlightRangeMode: ListView.StrictlyEnforceRange
-                    preferredHighlightBegin: Math.max(0, Math.min(width - 336 * Y.u, 96 * Y.u + bar.frac * bar.width - 168 * Y.u))
-                    preferredHighlightEnd: preferredHighlightBegin + 336 * Y.u
-                    highlightMoveDuration: 160
-                    delegate: Item {
+                    Item {
                         id: chap
                         required property var modelData
                         required property int index
                         readonly property bool cur: index === strip.cur
-                        width: 336 * Y.u; height: 270 * Y.u
+                        readonly property bool picking: cur && player.mode === "chapters"
+                        x: strip.anchorX - strip.cardW / 2 + (index - strip.cur) * strip.pitch
+                        y: 387 * Y.u
+                        visible: x > -strip.cardW && x < strip.width
+                        width: strip.cardW; height: 290 * Y.u
+                        Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         Rectangle {
                             width: parent.width; height: 189 * Y.u; radius: 12 * Y.u
                             color: Qt.hsla(Y.hue(chap.modelData.title), 0.45, 0.28, 1)
-                            border.color: chap.cur && player.mode === "chapters" ? Y.text : "transparent"
-                            border.width: 6 * Y.u
-                            Image {
-                                anchors { fill: parent; margins: chap.cur && player.mode === "chapters" ? 6 * Y.u : 0 }
+                            RoundImage {
+                                anchors.fill: parent
+                                radius: 12 * Y.u
+                                cover: true
                                 source: chap.modelData.thumb || ""
-                                fillMode: Image.PreserveAspectCrop
-                                sourceSize: Y.sz(width, height)
-                                asynchronous: true
+                                visible: !!chap.modelData.thumb
+                            }
+                            Rectangle {                // picking: the focus ring
+                                visible: chap.picking
+                                x: -Y.ring; y: -Y.ring
+                                width: parent.width + 2 * Y.ring; height: parent.height + 2 * Y.ring
+                                radius: parent.radius + Y.ring
+                                color: "transparent"
+                                border.color: Y.text; border.width: Y.ring
                             }
                         }
                         Text {
-                            y: 206 * Y.u; width: parent.width
+                            y: 226 * Y.u - height / 2
+                            width: parent.width
                             horizontalAlignment: chap.cur ? Text.AlignHCenter : Text.AlignLeft
                             text: chap.modelData.title
-                            color: chap.cur ? Y.text : Y.dim
+                            color: chap.cur ? Y.text : Y.soft
                             font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: chap.cur ? Font.Bold : Font.Medium
                             elide: Text.ElideRight
+                            style: Text.Raised; styleColor: "#60000000"
                         }
                         Text {
                             visible: chap.cur
-                            y: 240 * Y.u; width: parent.width
+                            y: 262 * Y.u - height / 2
+                            width: parent.width
                             horizontalAlignment: Text.AlignHCenter
                             text: Y.clock(player.mode === "chapters" ? chap.modelData.start : video.position)
                             color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u
+                            style: Text.Raised; styleColor: "#60000000"
                         }
                     }
                 }
@@ -646,13 +663,13 @@ FocusScope {
                 x: 96 * Y.u; y: 741 * Y.u
                 width: parent.width - 192 * Y.u
                 height: 96 * Y.u
-                opacity: player.mode === "related" ? 0 : 1
+                opacity: player.mode === "related" || player.seeking ? 0 : 1
                 Behavior on opacity { NumberAnimation { duration: 180 } }
                 readonly property bool live: player.mode === "controls" && player.activeFocus
                 function on(i) { return live && player.button === i; }
 
                 Row {                          // the channel, Description, the bell
-                    spacing: 12 * Y.u
+                    spacing: 14 * Y.u
                     anchors.verticalCenter: parent.verticalCenter
                     Rectangle {
                         width: 72 * Y.u; height: width; radius: width / 2
@@ -664,9 +681,9 @@ FocusScope {
                         }
                     }
                     Rectangle {
-                        width: descT.implicitWidth + 72 * Y.u; height: 72 * Y.u; radius: height / 2
+                        width: descT.implicitWidth + 66 * Y.u; height: 72 * Y.u; radius: height / 2
                         color: row.on(1) ? Y.text : "#33ffffff"
-                        Text { id: descT; anchors.centerIn: parent; text: "Description"; color: row.on(1) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
+                        Text { id: descT; anchors.centerIn: parent; text: "Description"; color: row.on(1) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                     }
                     CtlButton {                // the bell when subscribed (its level), else Subscribe
                         visible: !Y.signedIn || !!player.v.subscribed
@@ -677,7 +694,7 @@ FocusScope {
                         visible: Y.signedIn && !player.v.subscribed
                         width: subT.implicitWidth + 64 * Y.u; height: 72 * Y.u; radius: height / 2
                         color: row.on(2) ? Y.text : "#33ffffff"
-                        Text { id: subT; anchors.centerIn: parent; text: "Subscribe"; color: row.on(2) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
+                        Text { id: subT; anchors.centerIn: parent; text: "Subscribe"; color: row.on(2) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                     }
                 }
                 Row {                          // previous, play/pause, next
@@ -730,12 +747,12 @@ FocusScope {
                 id: related
                 y: 948 * Y.u
                 width: parent.width
-                height: player.height - 440 * Y.u
+                height: 532 * Y.u             // opened, it ends at y 1000: the next row doesn't peek in
                 indent: 96 * Y.u
                 cardW: 552 * Y.u
                 fixed: true
-                behind: "#08070d"              // about the scrim's colour there
-                visible: player.mode !== "hidden"
+                behind: "transparent"          // over the video: no corners painted
+                visible: player.mode !== "hidden" && !player.seeking
                 onOpen: it => Y.open(it)
             }
         }
@@ -761,12 +778,13 @@ FocusScope {
         onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; player.forceActiveFocus(); player.showControls(); }
     }
     Rectangle {                                // buffering
+        id: busy
         visible: !!player.s && video.buffering && !video.paused
         anchors.centerIn: parent
         width: 96 * Y.u; height: width; radius: width / 2
         color: "#80000000"
         border.color: Y.text; border.width: 6 * Y.u
-        RotationAnimation on rotation { running: parent.visible; from: 0; to: 360; duration: 1200; loops: Animation.Infinite }
+        RotationAnimation on rotation { running: busy.visible; from: 0; to: 360; duration: 1200; loops: Animation.Infinite }
         Rectangle { width: 22 * Y.u; height: width; radius: width / 2; color: Y.red; x: parent.width / 2 - width / 2; y: -4 * Y.u }
     }
 }

@@ -21,19 +21,24 @@ FocusScope {
         ? [["1", "2", "3", "4", "5", "6", "7", "del"], ["8", "9", "0", ".", ",", "?", "!", "sym"], ["@", "#", "&", "(", ")", ":", "/", "globe"], ["+", "=", "_", "\"", "$", "%", "*"]]
         : [["A", "B", "C", "D", "E", "F", "G", "del"], ["H", "I", "J", "K", "L", "M", "N", "sym"], ["O", "P", "Q", "R", "S", "T", "U", "globe"], ["V", "W", "X", "Y", "Z", "-", "'"]]
     readonly property var buttons: ["SPACE", "CLEAR", "SEARCH"]
-    property string area: "keys"              // keys | list
+    property string area: "list"              // list (the suggestions) | keys | landing (the shelf under them)
     property int r: 0
     property int c: 0
     property int li: 0
     property bool allSelected: false          // Ctrl+A from the phone: the next Backspace clears
+    property bool fresh: true                 // nothing pressed since the keys came up: the suggestions take the focus
+    property bool okDown: false               // OK was pressed here (it acts when let go: the press that opened Search doesn't)
+    property bool keyboard: false             // the last thing typed came from a keyboard: its Enter searches
 
-    function begin(q) {                       // the keys, with this text
+    function begin(q) {                       // the keys, with this text (the first suggestion in focus)
         results = false;
         query = q || "";
-        area = "keys"; r = 0; c = 0; li = 0;
+        area = suggestions.length ? "list" : "keys"; r = 0; c = 0; li = 0;
+        fresh = true; okDown = false; keyboard = false;
         problem = "";
         refreshSuggestions();
         keys.forceActiveFocus();
+        if (!landing.loaded) landing.load();
     }
     function search(q) {
         q = (q || "").trim();
@@ -47,7 +52,7 @@ FocusScope {
             Y.call("suggest", {q: q}, s => {
                 const chips = (s.items || []).filter(x => x.toLowerCase() !== q.toLowerCase()).slice(0, 8);
                 if (chips.length && searched === q && feed.rows.length)
-                    feed.rows = feed.rows.slice(0, 1).concat([{kind: "chips", chips: chips}], feed.rows.slice(1));
+                    feed.rows = feed.rows.slice(0, 1).concat([{kind: "chips", chips: chips, pad: 67}], feed.rows.slice(1));
             }, () => {});
             feed.setPage(r, extra);
             if (!feed.count) problem = "No results for “" + q + "”.";
@@ -71,10 +76,14 @@ FocusScope {
     function refreshSuggestions() {
         const q = query;
         if (!q.trim()) {
-            Y.call("searches", {}, s => { if (!page.query.trim()) { page.recent = true; page.suggestions = (s.items || []).slice(0, 5); } }, () => {});
+            Y.call("searches", {}, s => { if (!page.query.trim()) { page.recent = true; page.suggestions = (s.items || []).slice(0, 5); page.settle(); } }, () => {});
             return;
         }
-        Y.call("suggest", {q: q}, s => { if (s.q === page.query) { page.recent = false; page.suggestions = (s.items || []).slice(0, 9); } }, () => {});
+        Y.call("suggest", {q: q}, s => { if (s.q === page.query) { page.recent = false; page.suggestions = (s.items || []).slice(0, 9); page.settle(); } }, () => {});
+    }
+    function settle() {                       // the suggestions came: the first takes the focus, if nothing's been pressed
+        if (fresh && area !== "landing") area = suggestions.length ? "list" : "keys";
+        if (area === "list") li = Math.max(0, Math.min(li, suggestions.length - 1));
     }
 
     // the voice button types here while the keys are up (couchbox-voice: POST /typing)
@@ -103,25 +112,10 @@ FocusScope {
         Text {
             anchors { left: parent.left; leftMargin: 34 * Y.u; right: parent.right; rightMargin: 34 * Y.u; verticalCenter: parent.verticalCenter }
             text: page.query || "Search"
-            color: pillFocus.activeFocus ? Y.ink : page.query ? Y.text : "#bfbfbf"
+            color: pillFocus.activeFocus ? Y.ink : page.query ? Y.text : Y.dim
             font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Medium
             elide: Text.ElideLeft
         }
-        Rectangle {                            // the caret, while typing
-            visible: !page.results
-            x: Math.min(parent.width - 30 * Y.u, 34 * Y.u + caretMetrics.advanceWidth + 3 * Y.u)
-            anchors.verticalCenter: parent.verticalCenter
-            width: 3 * Y.u; height: 40 * Y.u
-            color: Y.text
-            opacity: page.query ? 1 : 0
-            SequentialAnimation on opacity {
-                running: !page.results && keys.activeFocus && !Y.shot
-                loops: Animation.Infinite
-                NumberAnimation { to: 0; duration: 500 }
-                NumberAnimation { to: 1; duration: 500 }
-            }
-        }
-        TextMetrics { id: caretMetrics; font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Medium; text: page.query }
     }
     FocusScope {
         id: pillFocus
@@ -143,29 +137,44 @@ FocusScope {
         visible: !page.results
         anchors.fill: parent
         focus: true
+        // OK acts when it's let go, and only after a press here: the press that opened Search (and
+        // its repeats) types nothing. The other keys act as they're pressed.
         Keys.onPressed: e => {
             const k = e.key;
+            if (page.area === "landing") {         // the shelf under the keys: Up comes back
+                if (k === Qt.Key_Up) { page.area = "keys"; page.r = 4; page.c = 0; keys.forceActiveFocus(); e.accepted = true; }
+                return;
+            }
+            if (k === Qt.Key_Return) {
+                if (!e.isAutoRepeat) page.okDown = true;
+                if (page.keyboard && !e.isAutoRepeat) { page.okDown = false; page.search(page.query); }   // a keyboard's Enter
+                e.accepted = true;
+                return;
+            }
+            page.fresh = false;
             if (k === Qt.Key_Left) {
+                page.keyboard = false;
                 if (page.area === "list") Y.toGuide();
                 else if (page.c > 0 && page.r < 4) page.c--;
                 else if (page.r === 4 && page.c > 0) page.c--;
                 else if (page.suggestions.length) { page.area = "list"; page.li = Math.min(page.r, page.suggestions.length - 1); }
                 else Y.toGuide();
             } else if (k === Qt.Key_Right) {
+                page.keyboard = false;
                 if (page.area === "list") { page.area = "keys"; page.r = Math.min(page.li, 4); page.c = 0; }
                 else if (page.r === 4) page.c = Math.min(2, page.c + 1);
                 else page.c = Math.min(page.letters[page.r].length - 1, page.c + 1);
             } else if (k === Qt.Key_Up) {
+                page.keyboard = false;
                 if (page.area === "list") { if (page.li > 0) page.li--; }
                 else if (page.r === 4) { page.r = 3; page.c = page.c * 2 + 1; }
                 else if (page.r > 0) page.r--;
             } else if (k === Qt.Key_Down) {
-                if (page.area === "list") { if (page.li < page.suggestions.length - 1) page.li++; }
-                else if (page.r === 3) { page.r = 4; page.c = page.c <= 1 ? 0 : page.c <= 3 ? 1 : 2; }
-                else if (page.r < 3) { page.r++; page.c = Math.min(page.c, page.letters[page.r].length - 1); }
-            } else if (k === Qt.Key_Return) {
-                if (page.area === "list") page.search(page.suggestions[page.li]);
-                else page.press(page.r === 4 ? page.buttons[page.c] : page.letters[page.r][page.c]);
+                page.keyboard = false;
+                if (page.area === "list" && page.li < page.suggestions.length - 1) page.li++;
+                else if (page.area === "keys" && page.r === 3) { page.r = 4; page.c = page.c <= 1 ? 0 : page.c <= 3 ? 1 : 2; }
+                else if (page.area === "keys" && page.r < 3) { page.r++; page.c = Math.min(page.c, page.letters[page.r].length - 1); }
+                else if (landing.visible && landing.count) { page.area = "landing"; landing.forceActiveFocus(); }
             } else if (k === Qt.Key_Enter) {
                 page.search(page.query);                          // the phone's Enter
             } else if (k === Qt.Key_Backspace) {
@@ -174,10 +183,20 @@ FocusScope {
                 page.allSelected = true;
             } else if (e.text && e.text.length === 1 && e.text >= " " && !(e.modifiers & Qt.ControlModifier)) {
                 page.type(e.text);
+                page.keyboard = true;
             } else {
                 return;
             }
             e.accepted = true;
+        }
+        Keys.onReleased: e => {
+            if (e.key !== Qt.Key_Return || e.isAutoRepeat) return;
+            e.accepted = true;
+            if (!page.okDown) return;                             // its press was somewhere else
+            page.okDown = false;
+            page.fresh = false;
+            if (page.area === "list") page.search(page.suggestions[page.li]);
+            else if (page.area === "keys") page.press(page.r === 4 ? page.buttons[page.c] : page.letters[page.r][page.c]);
         }
 
         Column {                               // suggestions / recent searches
@@ -277,15 +296,33 @@ FocusScope {
                 }
             }
         }
+        // nothing typed yet: a shelf under the keys (YouTube's recommended searches; Home's first shelf here)
+        Shelf {
+            id: landing
+            property bool loaded: false
+            function load() {
+                loaded = true;
+                Y.call("home", {}, r => {
+                    const sh = (r.shelves || []).find(x => (x.items || []).length && !x.grid && !x.hero);
+                    if (sh) landing.row = Object.assign({}, sh, {title: sh.title || "Recommended", subtitle: "", pill: null, more: ""});
+                }, () => { landing.loaded = false; });
+            }
+            visible: !page.query.trim() && count > 0
+            y: 548 * Y.u
+            current: page.area === "landing"
+            Keys.onUpPressed: { page.area = "keys"; page.r = 4; page.c = 0; keys.forceActiveFocus(); }
+            onOpen: it => Y.open(it)
+        }
     }
 
     // ------------------------------------------------------------------ results
     Feed {
         id: feed
         visible: page.results
-        y: 186 * Y.u
+        y: 198 * Y.u
         width: parent.width
         height: parent.height - y
+        metaSize: Y.tSmall
         onAtTop: pillFocus.forceActiveFocus()
         onOpen: it => Y.open(it)
     }
@@ -295,6 +332,16 @@ FocusScope {
         text: page.problem || "Searching…"
         color: Y.dim
         font.family: Y.font; font.pixelSize: Y.tMeta
+    }
+
+    // ready before Search is opened: the recent searches, the shelf under the keys
+    Component.onCompleted: { refreshSuggestions(); landing.load(); }
+
+    // coming back (from a video): the results keep the focus, else the keys
+    onActiveFocusChanged: {
+        if (!activeFocus) return;
+        if (results) { if (!feed.activeFocus && !pillFocus.activeFocus) feed.forceActiveFocus(); }
+        else if (!keys.activeFocus) keys.forceActiveFocus();
     }
 
     // Back: the results go back to the keys (Main leaves Search from the keys)
