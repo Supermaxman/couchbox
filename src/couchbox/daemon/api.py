@@ -682,6 +682,14 @@ def system_info() -> dict[str, Any]:
     }
 
 
+@method("system.perf", write=False)
+def system_perf() -> dict[str, Any]:
+    """Processor and graphics load since the last call, the fan, the clock, the busiest apps."""
+    from couchbox import perf
+
+    return dict(perf.sample(), temp_c=system_info()["temp_c"])
+
+
 @method("system.doctor", write=False)
 def system_doctor() -> dict[str, Any]:
     from couchbox import doctor
