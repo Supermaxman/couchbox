@@ -1,0 +1,76 @@
+#!/usr/bin/python3
+"""couchbox-screenshot: save what's on the TV as a PNG, for tests and support.
+
+Asks KWin for the whole screen (org.kde.KWin.ScreenShot2.CaptureWorkspace) as the TV user:
+everything shown, apps, the home screen and overlays (the voice indicator, the Frigate pop-up).
+KWin only answers programs whose .desktop file lists that interface;
+/usr/share/applications/couchbox-screenshot.desktop does, for /usr/bin/python3, which therefore
+covers any Python program in the TV session (as Spectacle's covers Spectacle); Flatpak apps
+can't reach KWin's D-Bus service.
+
+  couchbox-screenshot [FILE]          default /tmp/couchbox-screenshot.png
+  couchbox-screenshot --width 960 F   scaled down (smaller to send around)
+With couchbox-remote, a change can be checked on the TV without anyone there.
+"""
+import os
+import pwd
+import sys
+
+TV_USER = os.environ.get("COUCHBOX_TV_USER", "tv")
+
+
+def as_tv_user():
+    """Run again as the TV user, in its session (KWin and D-Bus are its)."""
+    tv = pwd.getpwnam(TV_USER)
+    if os.geteuid() == tv.pw_uid:
+        os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{tv.pw_uid}")
+        os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{tv.pw_uid}/bus")
+        return
+    run = f"/run/user/{tv.pw_uid}"
+    os.execvp("sudo", ["sudo", "-u", TV_USER, "env", f"XDG_RUNTIME_DIR={run}",
+                       f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", "/usr/bin/python3", os.path.abspath(sys.argv[0])]
+              + sys.argv[1:])
+
+
+def capture():
+    """(raw image bytes, {width, height, stride, format}) of the whole screen."""
+    import dbus
+
+    kwin = dbus.SessionBus().get_object("org.kde.KWin", "/org/kde/KWin/ScreenShot2")
+    r, w = os.pipe()
+    try:
+        meta = kwin.CaptureWorkspace({"native-resolution": True}, dbus.types.UnixFd(w),
+                                     dbus_interface="org.kde.KWin.ScreenShot2", timeout=10)
+    finally:
+        os.close(w)
+    chunks = []
+    with os.fdopen(r, "rb") as f:
+        while chunk := f.read(1 << 20):
+            chunks.append(chunk)
+    return b"".join(chunks), {str(k): int(v) for k, v in meta.items() if k in ("width", "height", "stride", "format")}
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] in (["-h"], ["--help"]):
+        sys.exit(__doc__)
+    width = 0
+    if args[:1] == ["--width"] and len(args) > 1:
+        width, args = int(args[1]), args[2:]
+    out = os.path.abspath(args[0]) if args else "/tmp/couchbox-screenshot.png"
+    as_tv_user()
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+
+    data, m = capture()
+    img = QImage(data, m["width"], m["height"], m["stride"], QImage.Format(m["format"]))
+    if width and width < img.width():
+        img = img.scaledToWidth(width, Qt.SmoothTransformation)
+    if not img.save(out):
+        sys.exit(f"couchbox-screenshot: couldn't write {out}")
+    print(f"{out} ({img.width()}x{img.height()})")
+
+
+if __name__ == "__main__":
+    main()
