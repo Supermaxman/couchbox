@@ -1,0 +1,9 @@
+{
+  "id": "youtube-beta",
+  "name": "YouTube (beta)",
+  "desktop": "couchbox-yt.desktop",
+  "kind": "native",
+  "tile": "youtube-beta",
+  "default_order": 11,
+  "unofficial": true
+}

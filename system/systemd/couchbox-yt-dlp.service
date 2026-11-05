@@ -1,0 +1,9 @@
+[Unit]
+Description=Couchbox: keep yt-dlp current (the YouTube app's streams)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/couchbox/bin/couchbox-yt-dlp
+Nice=10

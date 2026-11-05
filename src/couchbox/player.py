@@ -320,12 +320,20 @@ class MpvVideo(QQuickFramebufferObject):
     # ------------------------------------------------------------------ QML API
     @Slot(str, float)
     def load(self, url, start):
+        self.loadWith(url, start, "")
+
+    @Slot(str, float, str)
+    def loadWith(self, url, start, options):
+        """load() with mpv options for this file only, in mpv's syntax ("a=1,b=%5%x,y,z"): the
+        YouTube app gives a live stream's sound as audio-file=%LEN%URL."""
         self._live_cam = False
         self._ended = False
         self._error = ""
         self.endedChanged.emit()
-        opts = {"start": str(int(start))} if start > 0 else {}
-        self.mpv.command("loadfile", url, "replace", -1, ",".join(f"{k}={v}" for k, v in opts.items()))
+        opts = [f"start={int(start)}"] if start > 0 else []
+        if options:
+            opts.append(options)  # as given: its %LEN% quoting may hold commas
+        self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 
     @Slot(str)

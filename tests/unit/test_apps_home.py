@@ -11,14 +11,14 @@ def ids(row):
 
 def test_default_row_hides_apps_that_need_setup():
     row = ids(apps.home_row())
-    assert row == ["youtube", "spotify", "dropout", "2ndtry", "nebula", "twitch", "search", "maps", "settings"]
+    assert row == ["youtube", "youtube-beta", "spotify", "dropout", "2ndtry", "nebula", "twitch", "search", "maps", "settings"]
     assert "jellyfin" not in row and "seerr" not in row  # no server set
     assert "fcast" not in row and "twitch-web" not in row  # hidden by default
 
 
 def test_configured_servers_show_their_apps():
     settings.update({"media.jellyfin.url": "http://jf.local:8096"})
-    assert ids(apps.home_row())[:2] == ["youtube", "jellyfin"]
+    assert ids(apps.home_row())[:3] == ["youtube", "youtube-beta", "jellyfin"]
 
 
 def test_user_order_hidden_names_and_disabled():
@@ -26,7 +26,7 @@ def test_user_order_hidden_names_and_disabled():
         {"home.layout": ["twitch", "youtube"], "home.hidden": ["nebula"], "home.names": {"youtube": "YT"}, "apps.disabled": ["dropout"]}
     )
     row = apps.home_row()
-    assert ids(row) == ["twitch", "youtube", "spotify", "2ndtry", "search", "maps", "settings"]
+    assert ids(row) == ["twitch", "youtube", "youtube-beta", "spotify", "2ndtry", "search", "maps", "settings"]
     assert row[1].name == "YT"
 
 

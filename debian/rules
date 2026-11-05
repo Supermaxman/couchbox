@@ -14,8 +14,10 @@ override_dh_installsystemd:
 	dh_installsystemd \
 	  couchboxd.service couchbox-input.service couchbox-cec.service couchbox-phone.service \
 	  couchbox-memory.service couchbox-voice.service couchbox-firstboot.service couchbox-apps.service \
-	  couchbox-reencrypt-resume.service couchbox-cloudinit-off.service couchbox-netplan.service couchbox-fan.service couchbox-updater.timer couchbox-clean-caches.timer couchbox-flatpak-update.timer
-	dh_installsystemd --no-enable --no-start couchbox-clean-caches.service couchbox-flatpak-update.service couchbox-btlog.service
+	  couchbox-reencrypt-resume.service couchbox-cloudinit-off.service couchbox-netplan.service couchbox-fan.service couchbox-updater.timer couchbox-clean-caches.timer couchbox-flatpak-update.timer \
+	  couchbox-yt-dlp.timer
+	dh_installsystemd --no-enable --no-start couchbox-clean-caches.service couchbox-flatpak-update.service couchbox-btlog.service \
+	  couchbox-yt-dlp.service
 # The updater installs this package from inside these units (and re-encryption must not be cut
 # off): an upgrade must not stop them, or dpkg is killed half-way through unpacking.
 	dh_installsystemd --no-enable --no-start --no-stop-on-upgrade \

@@ -1,0 +1,62 @@
+#!/bin/sh
+# couchbox-yt-dlp: keep yt-dlp, which finds the YouTube app's streams (couchbox-yt), current in
+# /opt/couchbox/yt-dlp. YouTube changes how its players get stream addresses every few weeks and
+# yt-dlp follows within days; Ubuntu's package is often months behind. This fetches yt-dlp's own
+# release (one zip that Python imports; it bundles the "EJS" challenge scripts), checks it
+# against the release's SHA2-256SUMS and that it imports, and keeps the one before it.
+# couchbox-yt-dlp.timer runs it daily (and soon after boot).
+#   sudo couchbox-yt-dlp              install or update to the latest release
+#   sudo couchbox-yt-dlp 2026.10.26   that release (pinned until the next run without one)
+#   couchbox-yt-dlp --status          what's installed, and the JavaScript runtime yt-dlp will use
+set -eu
+DIR=/opt/couchbox/yt-dlp
+RELEASES=https://github.com/yt-dlp/yt-dlp/releases
+
+status() {
+    if [ -f "$DIR/yt-dlp" ]; then
+        echo "yt-dlp $(cat "$DIR/version" 2>/dev/null || echo '?') in $DIR"
+    else
+        echo "yt-dlp: not installed (run: sudo couchbox-yt-dlp)"
+    fi
+    js=""
+    for p in /opt/couchbox/deno/deno deno node nodejs bun qjs; do
+        if command -v "$p" >/dev/null 2>&1; then js="$p $("$p" --version 2>/dev/null | head -1)"; break; fi
+    done
+    echo "JavaScript runtime: ${js:-none (install nodejs: YouTube offers fewer formats without one)}"
+}
+if [ "${1:-}" = "--status" ]; then status; exit 0; fi
+[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+
+want=${1:-}
+if [ -z "$want" ]; then
+    # the latest release's tag, from where .../releases/latest redirects
+    want=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$RELEASES/latest" | sed 's|.*/tag/||')
+fi
+case "$want" in
+    [0-9][0-9][0-9][0-9].[0-9]*) ;;
+    *) echo "couchbox-yt-dlp: couldn't tell which release to get ($want)" >&2; exit 1 ;;
+esac
+have=$(cat "$DIR/version" 2>/dev/null || true)
+if [ "$have" = "$want" ] && [ -f "$DIR/yt-dlp" ]; then
+    echo "yt-dlp $have is current."
+    exit 0
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL --retry 3 -o "$tmp/yt-dlp" "$RELEASES/download/$want/yt-dlp"
+curl -fsSL --retry 3 -o "$tmp/SUMS" "$RELEASES/download/$want/SHA2-256SUMS"
+sum=$(awk '$2 == "yt-dlp" { print $1 }' "$tmp/SUMS")
+got=$(sha256sum "$tmp/yt-dlp" | cut -d' ' -f1)
+if [ -z "$sum" ] || [ "$sum" != "$got" ]; then
+    echo "couchbox-yt-dlp: the download doesn't match the release's checksum; keeping ${have:-nothing}" >&2
+    exit 1
+fi
+ver=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import yt_dlp; print(yt_dlp.version.__version__)' "$tmp/yt-dlp")
+install -d -m 755 "$DIR"
+[ -f "$DIR/yt-dlp" ] && cp -p "$DIR/yt-dlp" "$DIR/yt-dlp.previous"
+install -m 644 "$tmp/yt-dlp" "$DIR/yt-dlp.new"
+mv "$DIR/yt-dlp.new" "$DIR/yt-dlp"
+echo "$ver" > "$DIR/version"
+echo "yt-dlp ${have:+$have -> }$ver (restart YouTube to use it)."
+status

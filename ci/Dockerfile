@@ -14,3 +14,6 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       xvfb libgl1 libegl1 libglx-mesa0 libgl1-mesa-dri plasma-bigscreen qml6-module-org-kde-plasma-plasma5support \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir --break-system-packages ruff==0.12.0 reuse==5.0.2
+# the YouTube app's typeface (its own layer, so the one above stays cached)
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends fonts-roboto-unhinted \
+    && rm -rf /var/lib/apt/lists/*

@@ -97,6 +97,22 @@ shot movies-person couchbox-movies --open person:303
 shot movies-person-work couchbox-movies --open person:303:directing
 shot movies-search couchbox-movies --open search:harbor
 shot movies-top couchbox-movies --open top:movie
+# YouTube (beta) with made-up videos: Home, the guide open, a tab, Search (the keys, typing),
+# results and down to the chips, a channel, the player (controls, the related rows, the bar),
+# Settings
+shot yt-home couchbox-yt
+shot yt-guide couchbox-yt --keys left
+shot yt-guide-tab couchbox-yt --keys left,down,down,down,down,down,down
+shot yt-gaming couchbox-yt --open gaming
+shot yt-search couchbox-yt --keys left,up,ok
+shot yt-search-typed couchbox-yt --open typing:sky --keys left,down
+shot yt-results couchbox-yt --open "search:sky"
+shot yt-results-chips couchbox-yt --open "search:sky" --keys down
+shot yt-channel couchbox-yt --open channel:UCdemo0000000000000orbit
+shot yt-player couchbox-yt --open video:demo0000003
+shot yt-player-related couchbox-yt --open video:demo0000003 --keys down
+shot yt-player-bar couchbox-yt --open video:demo0000003 --keys up,right,right
+shot yt-settings couchbox-yt --open settings
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down
@@ -115,6 +131,8 @@ shot edge-movies-person-work couchbox-movies --open person:303 --keys down,$r6
 shot edge-search-recent couchbox-search --keys down,down
 shot edge-search-on-this-tv-last couchbox-search --open "search:eiffel tower height" --keys up,$r6,$r6
 shot edge-home-continue-last couchbox-ontv --keys down,$r6,$r6
+shot edge-yt-home-far couchbox-yt --keys $r6,$r6,down,down,down
+shot edge-yt-results-far couchbox-yt --open "search:sky" --keys $r6,$r6
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 # the remote's Back key on every app's pages: it goes back a level or closes the app
 python3 ci/back_check.py "$OUT/back" || fail=1

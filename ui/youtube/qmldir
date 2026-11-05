@@ -1,0 +1,19 @@
+singleton Y 1.0 Y.qml
+Icon 1.0 Icon.qml
+Logo 1.0 Logo.qml
+Corners 1.0 Corners.qml
+VideoCard 1.0 VideoCard.qml
+Shelf 1.0 Shelf.qml
+Chips 1.0 Chips.qml
+Nudge 1.0 Nudge.qml
+Feed 1.0 Feed.qml
+Header 1.0 Header.qml
+Guide 1.0 Guide.qml
+PhoneCard 1.0 PhoneCard.qml
+CtlButton 1.0 CtlButton.qml
+BrowsePage 1.0 BrowsePage.qml
+SearchPage 1.0 SearchPage.qml
+ChannelPage 1.0 ChannelPage.qml
+MessagePage 1.0 MessagePage.qml
+PlayerPage 1.0 PlayerPage.qml
+RoundImage 1.0 RoundImage.qml
