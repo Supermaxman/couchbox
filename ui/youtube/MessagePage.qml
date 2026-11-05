@@ -19,6 +19,7 @@ FocusScope {
                 ["Ads", "Never shown: none are asked for, and ad shelves are left out"],
                 ["yt-dlp", a.ytdlp ? a.ytdlp + (a.ytdlpPath ? "  (" + a.ytdlpPath + ")" : "") : "missing: run  sudo couchbox-yt-dlp"],
                 ["JavaScript", a.js || "none: fewer formats (install nodejs)"],
+                ["PO tokens", a.pot || "none"],
                 ["TV client", a.client || ""],
             ];
         }, () => {});

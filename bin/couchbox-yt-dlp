@@ -4,13 +4,26 @@
 # yt-dlp follows within days; Ubuntu's package is often months behind. This fetches yt-dlp's own
 # release (one zip that Python imports; it bundles the "EJS" challenge scripts), checks it
 # against the release's SHA2-256SUMS and that it imports, and keeps the one before it.
+#
+# It also installs the bgutil PO-token provider (proof-of-origin tokens for when YouTube asks
+# "are you a bot?"), pinned to POT_VERSION and checked against the checksums below: its yt-dlp
+# plugin (a zip Python imports) and its provider (node), built here with npm into
+# /opt/couchbox/yt-dlp/bgutil/server. couchbox-yt-pot.service runs it as a small HTTP server on
+# 127.0.0.1 while YouTube is open; the plugin can also run it as a script without the server.
+# A Couchbox release moves the pin; this timer puts the pinned one back if it's missing.
 # couchbox-yt-dlp.timer runs it daily (and soon after boot).
-#   sudo couchbox-yt-dlp              install or update to the latest release
-#   sudo couchbox-yt-dlp 2026.10.26   that release (pinned until the next run without one)
+#   sudo couchbox-yt-dlp              install or update yt-dlp to the latest release (and the provider)
+#   sudo couchbox-yt-dlp 2026.10.26   that yt-dlp release (pinned until the next run without one)
 #   couchbox-yt-dlp --status          what's installed, and the JavaScript runtime yt-dlp will use
 set -eu
 DIR=/opt/couchbox/yt-dlp
 RELEASES=https://github.com/yt-dlp/yt-dlp/releases
+POT_VERSION=2.0.2
+POT_SRC_SHA256=1f2ae9ec39405b8e80397dfc2551f58deed09d8dff4b2b8fbc314df8e091c0a1
+POT_PLUGIN_SHA256=a26b980bf6d8e8400d8f21445daa4d8381bf6183d20f0be309391f86b31e27ef
+POT_REPO=https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+POT_DIR=$DIR/bgutil
+POT_PLUGIN=$DIR/bgutil-ytdlp-pot-provider.zip
 
 status() {
     if [ -f "$DIR/yt-dlp" ]; then
@@ -23,40 +36,97 @@ status() {
         if command -v "$p" >/dev/null 2>&1; then js="$p $("$p" --version 2>/dev/null | head -1)"; break; fi
     done
     echo "JavaScript runtime: ${js:-none (install nodejs: YouTube offers fewer formats without one)}"
+    if [ -f "$POT_DIR/server/build/main.js" ] && [ -f "$POT_PLUGIN" ]; then
+        echo "PO-token provider: bgutil $(cat "$POT_DIR/version" 2>/dev/null || echo '?') in $POT_DIR"
+    else
+        echo "PO-token provider: not installed (needs nodejs and npm; then: sudo couchbox-yt-dlp)"
+    fi
 }
+
+# Each step returns 1 itself: set -e doesn't apply inside a function called with ||.
+update_ytdlp() {
+    want=${1:-}
+    if [ -z "$want" ]; then
+        # the latest release's tag, from where .../releases/latest redirects
+        want=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$RELEASES/latest" | sed 's|.*/tag/||')
+    fi
+    case "$want" in
+        [0-9][0-9][0-9][0-9].[0-9]*) ;;
+        *) echo "couchbox-yt-dlp: couldn't tell which release to get ($want)" >&2; return 1 ;;
+    esac
+    have=$(cat "$DIR/version" 2>/dev/null || true)
+    if [ "$have" = "$want" ] && [ -f "$DIR/yt-dlp" ]; then
+        echo "yt-dlp $have is current."
+        return 0
+    fi
+    curl -fsSL --retry 3 -o "$tmp/yt-dlp" "$RELEASES/download/$want/yt-dlp" || return 1
+    curl -fsSL --retry 3 -o "$tmp/SUMS" "$RELEASES/download/$want/SHA2-256SUMS" || return 1
+    sum=$(awk '$2 == "yt-dlp" { print $1 }' "$tmp/SUMS")
+    got=$(sha256sum "$tmp/yt-dlp" | cut -d' ' -f1)
+    if [ -z "$sum" ] || [ "$sum" != "$got" ]; then
+        echo "couchbox-yt-dlp: the download doesn't match the release's checksum; keeping ${have:-nothing}" >&2
+        return 1
+    fi
+    ver=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import yt_dlp; print(yt_dlp.version.__version__)' "$tmp/yt-dlp") || return 1
+    install -d -m 755 "$DIR"
+    if [ -f "$DIR/yt-dlp" ]; then cp -p "$DIR/yt-dlp" "$DIR/yt-dlp.previous"; fi
+    install -m 644 "$tmp/yt-dlp" "$DIR/yt-dlp.new" && mv "$DIR/yt-dlp.new" "$DIR/yt-dlp" || return 1
+    echo "$ver" > "$DIR/version"
+    echo "yt-dlp ${have:+$have -> }$ver (restart YouTube to use it)."
+}
+
+check() {  # check FILE SHA256
+    if [ "$(sha256sum "$1" | cut -d' ' -f1)" != "$2" ]; then
+        echo "couchbox-yt-dlp: $(basename "$1") doesn't match its pinned checksum; not installing it" >&2
+        return 1
+    fi
+}
+
+update_pot() {
+    if [ "$(cat "$POT_DIR/version" 2>/dev/null || true)" = "$POT_VERSION" ] && [ -f "$POT_DIR/server/build/main.js" ] && [ -f "$POT_PLUGIN" ]; then
+        echo "PO-token provider $POT_VERSION is current."
+        return 0
+    fi
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+        echo "PO-token provider: needs node and npm (apt install nodejs npm); skipped."
+        return 0
+    fi
+    if ! node -e 'process.exit(+process.versions.node.split(".")[0] >= 22 ? 0 : 1)'; then
+        echo "PO-token provider: needs node 22 or newer; skipped."
+        return 0
+    fi
+    curl -fsSL --retry 3 -o "$tmp/pot.tar.gz" "$POT_REPO/archive/refs/tags/$POT_VERSION.tar.gz" || return 1
+    curl -fsSL --retry 3 -o "$tmp/pot-plugin.zip" "$POT_REPO/releases/download/$POT_VERSION/bgutil-ytdlp-pot-provider.zip" || return 1
+    check "$tmp/pot.tar.gz" "$POT_SRC_SHA256" || return 1
+    check "$tmp/pot-plugin.zip" "$POT_PLUGIN_SHA256" || return 1
+    tar -xzf "$tmp/pot.tar.gz" -C "$tmp" || return 1
+    src="$tmp/bgutil-ytdlp-pot-provider-$POT_VERSION/server"
+    # build it (TypeScript), then keep only what it runs with
+    (cd "$src" && export HOME="$tmp" npm_config_cache="$tmp/npm" npm_config_update_notifier=false \
+        && npm ci --no-audit --no-fund --loglevel=error && npx --no-install tsc && npm prune --omit=dev --no-audit --no-fund --loglevel=error) || {
+        echo "couchbox-yt-dlp: the PO-token provider didn't build (see above); keeping what's installed" >&2
+        return 1
+    }
+    test -f "$src/build/main.js" || return 1
+    rm -rf "$POT_DIR.new" "$POT_DIR.previous"
+    install -d -m 755 "$POT_DIR.new" && cp -a "$src" "$POT_DIR.new/server" || return 1
+    echo "$POT_VERSION" > "$POT_DIR.new/version"
+    if [ -d "$POT_DIR" ]; then mv "$POT_DIR" "$POT_DIR.previous"; fi
+    mv "$POT_DIR.new" "$POT_DIR"
+    install -m 644 "$tmp/pot-plugin.zip" "$POT_PLUGIN" || return 1
+    echo "PO-token provider bgutil $POT_VERSION installed."
+    # the TV user's provider server, if it's running, starts again on the new one
+    tvuser=$(. /etc/couchbox/couchbox.env 2>/dev/null; echo "${COUCHBOX_TV_USER:-tv}")
+    systemctl --user -M "$tvuser@" try-restart couchbox-yt-pot.service >/dev/null 2>&1 || true
+}
+
 if [ "${1:-}" = "--status" ]; then status; exit 0; fi
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
-
-want=${1:-}
-if [ -z "$want" ]; then
-    # the latest release's tag, from where .../releases/latest redirects
-    want=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$RELEASES/latest" | sed 's|.*/tag/||')
-fi
-case "$want" in
-    [0-9][0-9][0-9][0-9].[0-9]*) ;;
-    *) echo "couchbox-yt-dlp: couldn't tell which release to get ($want)" >&2; exit 1 ;;
-esac
-have=$(cat "$DIR/version" 2>/dev/null || true)
-if [ "$have" = "$want" ] && [ -f "$DIR/yt-dlp" ]; then
-    echo "yt-dlp $have is current."
-    exit 0
-fi
-
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL --retry 3 -o "$tmp/yt-dlp" "$RELEASES/download/$want/yt-dlp"
-curl -fsSL --retry 3 -o "$tmp/SUMS" "$RELEASES/download/$want/SHA2-256SUMS"
-sum=$(awk '$2 == "yt-dlp" { print $1 }' "$tmp/SUMS")
-got=$(sha256sum "$tmp/yt-dlp" | cut -d' ' -f1)
-if [ -z "$sum" ] || [ "$sum" != "$got" ]; then
-    echo "couchbox-yt-dlp: the download doesn't match the release's checksum; keeping ${have:-nothing}" >&2
-    exit 1
-fi
-ver=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import yt_dlp; print(yt_dlp.version.__version__)' "$tmp/yt-dlp")
 install -d -m 755 "$DIR"
-[ -f "$DIR/yt-dlp" ] && cp -p "$DIR/yt-dlp" "$DIR/yt-dlp.previous"
-install -m 644 "$tmp/yt-dlp" "$DIR/yt-dlp.new"
-mv "$DIR/yt-dlp.new" "$DIR/yt-dlp"
-echo "$ver" > "$DIR/version"
-echo "yt-dlp ${have:+$have -> }$ver (restart YouTube to use it)."
+ok=0
+update_ytdlp "${1:-}" || ok=1
+update_pot || ok=1
 status
+exit $ok

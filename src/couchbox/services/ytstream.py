@@ -19,6 +19,14 @@ already has (Ubuntu's python3-yt-dlp, often months old). Since late 2025 yt-dlp 
 runtime for YouTube's challenges (its "EJS" scripts, bundled in the release zip): deno, node, bun
 or QuickJS, found on the PATH or in /opt/couchbox. Without one yt-dlp still plays through a
 client that needs no JavaScript (visionOS: HLS only), so videos start, with fewer formats.
+
+Proof-of-origin (PO) tokens: when YouTube says "Sign in to confirm you're not a bot", the web
+clients still play if they bring a PO token. The bgutil provider makes them (BotGuard, run by
+node): its yt-dlp plugin (bgutil-ytdlp-pot-provider.zip, on sys.path) asks the provider's HTTP
+server (couchbox-yt-pot.service, 127.0.0.1:4416; the app starts it), else runs the provider's
+script itself (slower: a node process per token). couchbox-yt-dlp installs both, pinned. Without
+them yt-dlp works as before. A bot check is retried once with clients that use PO tokens
+(RETRY_CLIENTS); each video's client and whether it carried a PO token are logged (never the token).
 """
 
 import os
@@ -30,6 +38,11 @@ import time
 from typing import Any
 
 YTDLP_ZIP = "/opt/couchbox/yt-dlp/yt-dlp"
+POT_PLUGIN = "/opt/couchbox/yt-dlp/bgutil-ytdlp-pot-provider.zip"  # couchbox-yt-dlp
+POT_SERVER_HOME = "/opt/couchbox/yt-dlp/bgutil/server"
+POT_URL = "http://127.0.0.1:4416"
+# after a bot check: clients whose streams carry a PO token from the provider, then the TV's
+RETRY_CLIENTS = ["mweb", "tv"]
 # JavaScript runtimes yt-dlp can use, in yt-dlp's order of preference: (yt-dlp's name, programs)
 RUNTIMES = (
     ("deno", ("/opt/couchbox/deno/deno", "deno")),
@@ -40,6 +53,7 @@ RUNTIMES = (
 MAX_HEIGHT = 1080
 _lock = threading.Lock()  # one extraction at a time: a YoutubeDL isn't made for threads
 _ydl = None
+_ydl_retry = None
 _module = None
 
 
@@ -57,6 +71,9 @@ def module():
         if path and os.path.exists(path) and path not in sys.path:
             sys.path.insert(0, path)
             break
+    plugin = os.environ.get("COUCHBOX_YT_POT_PLUGIN", POT_PLUGIN)
+    if os.path.exists(plugin) and plugin not in sys.path:  # yt-dlp finds yt_dlp_plugins on sys.path
+        sys.path.insert(0, plugin)
     try:
         import yt_dlp
 
@@ -95,36 +112,109 @@ def about() -> dict[str, Any]:
         "ytdlp": m.version.__version__ if m else "",
         "ytdlpPath": os.path.dirname(os.path.dirname(m.__file__)) if m else "",
         "js": js,
+        "pot": {"http": "bgutil HTTP server (running)", "script": "bgutil script (the HTTP server isn't running)", "none": "none"}[
+            pot_mode()
+        ],
     }
 
 
-def _downloader():
-    global _ydl
+def pot_mode(timeout: float = 0.3) -> str:
+    """Where PO tokens come from: "http" (the provider's server answers), "script" (the plugin can
+    run the provider itself) or "none"."""
+    if not os.path.exists(os.environ.get("COUCHBOX_YT_POT_PLUGIN", POT_PLUGIN)):
+        return "none"
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{POT_URL}/ping", timeout=timeout) as r:  # noqa: S310 (localhost)
+            if r.status == 200:
+                return "http"
+    except OSError:
+        pass
+    home = os.environ.get("COUCHBOX_YT_POT_HOME", POT_SERVER_HOME)
+    return "script" if os.path.exists(os.path.join(home, "build", "generate_once.js")) and "node" in js_runtimes() else "none"
+
+
+def _options(clients: list[str] | None = None) -> dict[str, Any]:
+    args: dict[str, Any] = {
+        "youtube": {"skip": ["translated_subs"]},
+        # the provider's plugin: its server first, else its script (both from couchbox-yt-dlp)
+        "youtubepot-bgutilhttp": {"base_url": [POT_URL]},
+        "youtubepot-bgutilscript": {"server_home": [os.environ.get("COUCHBOX_YT_POT_HOME", POT_SERVER_HOME)]},
+    }
+    if clients:
+        args["youtube"]["player_client"] = clients
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "js_runtimes": js_runtimes(),
+        "extractor_args": args,
+    }
+
+
+def _downloader(retry: bool = False):
+    """A YoutubeDL kept for the app's life (its caches: the player's JavaScript, PO tokens): the
+    usual one, or the one for a retry after a bot check (RETRY_CLIENTS)."""
+    global _ydl, _ydl_retry
+    m = module()
+    if not m:
+        raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
+    if retry:
+        if _ydl_retry is None:
+            _ydl_retry = m.YoutubeDL(_options(RETRY_CLIENTS))
+        return _ydl_retry
     if _ydl is None:
-        m = module()
-        if not m:
-            raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
-        _ydl = m.YoutubeDL(
-            {
-                "quiet": True,
-                "no_warnings": True,
-                "skip_download": True,
-                "noplaylist": True,
-                "js_runtimes": js_runtimes(),
-                "extractor_args": {"youtube": {"skip": ["translated_subs"]}},
-            }
-        )
+        _ydl = m.YoutubeDL(_options())
     return _ydl
 
 
+def is_bot_check(msg: str) -> bool:
+    return "not a bot" in msg.lower()
+
+
 def extract(video_id: str) -> dict[str, Any]:
-    """yt-dlp's information about a video (formats not chosen yet)."""
+    """yt-dlp's information about a video (formats not chosen yet). A bot check is tried once
+    more with the clients that bring PO tokens; then the TV says so in plain words."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
     with _lock:
-        ydl = _downloader()
         try:
-            return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False, process=False)
+            info = _downloader().extract_info(url, download=False, process=False)
+            info["_couchbox_retry"] = False
+            return info
         except Exception as err:  # yt-dlp's DownloadError, ExtractorError, ...
+            if not is_bot_check(str(err)):
+                raise Unavailable(friendly(str(err))) from err
+            print(f"yt {video_id}: bot check; trying again with {', '.join(RETRY_CLIENTS)} (PO tokens: {pot_mode()})", flush=True)
+        try:
+            info = _downloader(retry=True).extract_info(url, download=False, process=False)
+            info["_couchbox_retry"] = True
+            return info
+        except Exception as err:
             raise Unavailable(friendly(str(err))) from err
+
+
+def served_by(*urls: str) -> dict[str, Any]:
+    """Which YouTube client a stream's addresses came from (their c=...), and whether they carry
+    a PO token (pot=...): for the log; the token itself is never kept."""
+    from urllib.parse import parse_qs, urlparse
+
+    clients, pot = [], False
+    for u in urls:
+        parts = urlparse(u)
+        q = parse_qs(parts.query)
+        path = parts.path.split("/")  # HLS addresses keep their parameters in the path: .../c/IOS/...
+        for k in ("c", "pot"):
+            if k not in q and k in path[:-1]:
+                q[k] = [path[path.index(k) + 1]]
+        c = (q.get("c") or [""])[0]
+        if c and c not in clients:
+            clients.append(c)
+        pot = pot or bool(q.get("pot"))
+    if not clients and any("/api/manifest/" in u for u in urls):
+        clients = ["HLS"]  # an HLS manifest's addresses don't name their client (visionOS's, mostly)
+    return {"client": "+".join(clients) or "?", "pot": pot}
 
 
 # yt-dlp's errors as the TV says them (the first that matches)
@@ -301,6 +391,15 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
     t = time.monotonic()
     info = extract(video_id)
     out = playable(info, h264, max_height)
+    video, audio = pick(info.get("formats") or [], h264, max_height)
+    by = served_by(*[f.get("url") or "" for f in (video, audio) if f])
+    # which client and PO-token path served it (never a token or an address)
+    mode = pot_mode() if by["pot"] else "-"
+    print(
+        f"yt {video_id}: client={by['client']} pot={'yes' if by['pot'] else 'no'} provider={mode}"
+        f"{' retry' if info.get('_couchbox_retry') else ''} {out['height']}p {out['vcodec']}",
+        flush=True,
+    )
     out.update(
         {
             "id": info.get("id") or video_id,
@@ -317,6 +416,8 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
             "heights": [h for h in heights(info.get("formats") or [], h264) if h <= MAX_HEIGHT],
             "maxHeight": max_height,
             "took": round(time.monotonic() - t, 2),
+            "client": by["client"],
+            "pot": by["pot"],
         }
     )
     return out

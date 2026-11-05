@@ -1,0 +1,14 @@
+[Unit]
+Description=Couchbox: PO tokens for the YouTube app (bgutil provider, on 127.0.0.1:4416)
+Documentation=https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+# couchbox-yt starts it when it opens; couchbox-yt-dlp installs it
+ConditionPathExists=/opt/couchbox/yt-dlp/bgutil/server/build/main.js
+
+[Service]
+WorkingDirectory=/opt/couchbox/yt-dlp/bgutil/server
+# localhost only (the provider's default); it has no authentication
+ExecStart=/usr/bin/node build/main.js --host 127.0.0.1 --port 4416
+Restart=on-failure
+RestartSec=10
+Nice=5
+MemoryMax=300M
