@@ -696,7 +696,10 @@ def description(resp: dict[str, Any]) -> dict[str, Any]:
         for f in h.get("factoid") or []:
             fr = f.get("factoidRenderer") or {}
             if fr:
-                out["facts"].append({"value": text(fr.get("value")), "label": text(fr.get("label"))})
+                value, label = text(fr.get("value")), text(fr.get("label"))
+                if re.fullmatch(r"\d{4}", value) and re.search(r"[A-Za-z]", label):
+                    value, label = label, value  # the date: "May 14" large over "2023", as the TV app has it
+                out["facts"].append({"value": value, "label": label})
         break
     for b in _find(resp, "expandableVideoDescriptionBodyRenderer"):
         out["text"] = text(b.get("descriptionBodyText")) or text(b.get("attributedDescriptionBodyText"))
@@ -1582,7 +1585,9 @@ class Demo(YouTube):
                 "teaser": {"author": "@quietviewer", "text": "The part where it finally works made my week.", "photo": ""},
                 "commentsToken": "demo-comments",
             },
-            "chapters": [
+            "chapters": []
+            if n % 10 == 9  # ...9: no chapters (demo_stream)
+            else [
                 {"title": t, "start": i * 514.0, "thumb": ""}
                 for i, t in enumerate(["Intro", "The question", "First try", "What went wrong", "Second try", "The answer", "Wrapping up"])
             ],
@@ -1696,7 +1701,11 @@ def demo_stream(video_id: str) -> dict[str, Any]:
         "channel": DEMO_CHANNELS[n % len(DEMO_CHANNELS)][1],
         "channelId": DEMO_CHANNELS[n % len(DEMO_CHANNELS)][0],
         "duration": 3600.0,
-        "chapters": [{"start": i * 3600 / len(names) + (i * 97) % 200 * (1 if i else 0), "title": t} for i, t in enumerate(names)],
+        # ...9: a video without chapters (the bar shows the storyboard's frame instead; none in the demo)
+        "chapters": []
+        if n % 10 == 9
+        else [{"start": i * 3600 / len(names) + (i * 97) % 200 * (1 if i else 0), "title": t} for i, t in enumerate(names)],
+        "storyboard": None,
         "captions": [
             {"lang": "en", "name": "English", "url": "demo://captions/en", "auto": False},
             {"lang": "en", "name": "English (auto-generated)", "url": "demo://captions/en-auto", "auto": True},

@@ -578,15 +578,17 @@ FocusScope {
                 }
                 Text {
                     visible: !player.seeking
+                    y: 5 * Y.u
                     text: player.live ? "" : Y.clock(player.pos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
-                    color: Y.text
+                    color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
                 Text {
                     visible: !player.seeking
                     anchors.right: parent.right
+                    y: 5 * Y.u
                     text: player.live ? "" : Y.clock(player.duration)
-                    color: Y.text
+                    color: Y.dim
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
                 Item {                         // the bar, cut at the chapters
@@ -594,7 +596,7 @@ FocusScope {
                     visible: !player.live
                     y: 55 * Y.u
                     width: parent.width
-                    height: 8 * Y.u
+                    height: 9 * Y.u
                     readonly property real frac: player.duration > 0 ? Math.min(1, player.pos / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
@@ -646,6 +648,41 @@ FocusScope {
             // A strip of the chapters' pictures over the bar, the current one over the playhead (its
             // title white and bold, its time under it; the others' titles grey, cut short); Up
             // picks one (Left / Right, OK plays from it).
+            // Without chapters: the storyboard's frame at the playhead (when YouTube has one) and the
+            // time under it.
+            Item {
+                id: frameAt
+                visible: player.seeking && player.chapters.length <= 1 && !player.live
+                width: parent.width; height: parent.height
+                readonly property var sb: player.s ? player.s.storyboard : null
+                readonly property real cardW: 336 * Y.u
+                readonly property real anchorX: Math.max(96 * Y.u + cardW / 2, Math.min(width - 96 * Y.u - cardW / 2, barArea.x + bar.frac * bar.width))
+                readonly property var sheet: sb ? sb.sheets.find(g => player.pos >= g.start && player.pos < g.end) || sb.sheets[sb.sheets.length - 1] : null
+                readonly property int tile: sheet && sb ? Math.min(sb.cols * sb.rows - 1, Math.floor((player.pos - sheet.start) / Math.max(0.001, sheet.end - sheet.start) * sb.cols * sb.rows)) : 0
+                Item {
+                    visible: !!frameAt.sheet && !!frameAt.sb
+                    x: frameAt.anchorX - frameAt.cardW / 2; y: 387 * Y.u
+                    width: frameAt.cardW; height: 189 * Y.u
+                    clip: true
+                    Image {
+                        source: frameAt.sheet ? frameAt.sheet.url : ""
+                        width: frameAt.sb ? frameAt.sb.cols * parent.width : 0
+                        height: frameAt.sb ? frameAt.sb.rows * parent.height : 0
+                        x: frameAt.sb ? -(frameAt.tile % frameAt.sb.cols) * parent.width : 0
+                        y: frameAt.sb ? -Math.floor(frameAt.tile / frameAt.sb.cols) * parent.height : 0
+                        asynchronous: true
+                        cache: true
+                        smooth: true
+                    }
+                }
+                Text {
+                    x: frameAt.anchorX - width / 2
+                    y: (frameAt.sheet ? 612 : 648) * Y.u - height / 2
+                    text: Y.clock(player.pos)
+                    color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
+                    style: Text.Raised; styleColor: "#60000000"
+                }
+            }
             Item {
                 id: strip
                 visible: player.seeking && player.chapters.length > 1

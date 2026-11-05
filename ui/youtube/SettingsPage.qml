@@ -80,8 +80,14 @@ FocusScope {
     // the page sits right of the open guide (the pages move 378 right with it): the list from x 525
     readonly property real shift: Y.guideOpen - Y.left
     readonly property real listX: 525 * Y.u - shift
+    Text {                                    // the page's name, as YouTube's
+        x: 550 * Y.u - page.shift; y: 80 * Y.u
+        height: 48 * Y.u; verticalAlignment: Text.AlignVCenter
+        text: "Settings"
+        color: Y.text; font.family: Y.font; font.pixelSize: 46 * Y.u; font.weight: Font.Bold
+    }
     Column {
-        x: page.listX; y: 150 * Y.u
+        x: page.listX; y: 212 * Y.u
         width: 420 * Y.u
         Repeater {
             model: page.groups
@@ -92,11 +98,11 @@ FocusScope {
                 width: parent.width
                 Text {
                     width: parent.width
-                    topPadding: (grp.index ? 30 : 0) * Y.u
-                    bottomPadding: 12 * Y.u
-                    leftPadding: 24 * Y.u
+                    topPadding: (grp.index ? 22 : 0) * Y.u
+                    bottomPadding: 8 * Y.u
+                    leftPadding: 18 * Y.u
                     text: grp.modelData.header.toUpperCase()
-                    color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u; font.weight: Font.Medium
+                    color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u; font.weight: Font.Bold
                 }
                 Repeater {
                     model: grp.modelData.items
@@ -104,11 +110,13 @@ FocusScope {
                         required property var modelData
                         readonly property bool sel: page.item.key === modelData.key
                         readonly property bool on: page.activeFocus && sel && page.area === "list"
-                        width: grp.width; height: 72 * Y.u
-                        radius: 14 * Y.u
+                        width: grp.width; height: 78 * Y.u
+                        radius: 16 * Y.u
                         color: on ? Y.text : sel ? Y.raised : "transparent"
                         Text {
-                            x: 24 * Y.u; anchors.verticalCenter: parent.verticalCenter
+                            x: 18 * Y.u; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 36 * Y.u
+                            elide: Text.ElideRight
                             text: parent.modelData.label
                             color: parent.on ? Y.ink : Y.text
                             font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium
@@ -119,106 +127,144 @@ FocusScope {
         }
     }
     Rectangle {                               // the divider
-        x: page.listX + 442 * Y.u; y: 150 * Y.u
-        width: 2 * Y.u; height: parent.height - 250 * Y.u
+        x: page.listX + 442 * Y.u; y: 192 * Y.u
+        width: 2 * Y.u; height: parent.height - y
         color: Y.raised2
     }
-    Flickable {                               // the details (they scroll with the row in focus)
+    // the details, centred: a large heading, the line under it, facts, a button, or the rows of
+    // switches in VacuumTube's look (cards on a darker panel, a count of them, capital sub-headers)
+    Flickable {
         id: pane
-        x: page.listX + 486 * Y.u; y: 150 * Y.u
-        width: page.width - x - 96 * Y.u - page.shift
-        height: page.height - y - 60 * Y.u
+        x: page.listX + 470 * Y.u; y: 192 * Y.u
+        width: page.width - x - 60 * Y.u - page.shift
+        height: page.height - y - 30 * Y.u
         clip: true
         interactive: false
-        contentHeight: paneCol.height
+        contentHeight: paneCol.height + 40 * Y.u
         contentY: {
             const it = rowsCol.children[page.row];
-            if (page.area !== "rows" || !it) return 0;
-            const bottom = rowsBox.y + it.y + it.height + 24 * Y.u;
+            if (page.area !== "rows" || !it || !page.detail.rows.length || page.detail.rows[0].button) return 0;
+            const bottom = rowsBox.y + rowsHead.height + 4 * Y.u + rowsCol.y + it.y + it.height + 30 * Y.u;
             return Math.max(0, Math.min(contentHeight - height, bottom - height));
         }
         Behavior on contentY { NumberAnimation { duration: 140 } }
         Column {
             id: paneCol
             width: pane.width
-            spacing: 26 * Y.u
-            Text { text: page.detail.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 40 * Y.u; font.weight: Font.Bold }
+            spacing: 22 * Y.u
+            Item { width: 1; height: 4 * Y.u }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: page.detail.title || ""
+                color: Y.text; font.family: Y.font; font.pixelSize: 56 * Y.u; font.weight: Font.Bold
+            }
             Text {
                 visible: !!page.detail.body
-                width: parent.width
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.min(parent.width, 820 * Y.u)
+                horizontalAlignment: Text.AlignHCenter
                 text: page.detail.body || ""
-                color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u
+                color: Y.dim; font.family: Y.font; font.pixelSize: 28 * Y.u
                 wrapMode: Text.WordWrap
+                lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
             }
             Repeater {
                 model: page.detail.facts || []
-                Row {
+                Text {
                     required property var modelData
-                    spacing: 30 * Y.u
-                    Text { width: 220 * Y.u; text: parent.modelData[0]; color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u }
-                    Text { width: paneCol.width - 250 * Y.u; text: parent.modelData[1]; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; wrapMode: Text.WordWrap }
+                    width: paneCol.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    textFormat: Text.StyledText
+                    text: "<font color='#aaaaaa'>" + Y.html(modelData[0]) + "</font>&nbsp;&nbsp;&nbsp;" + Y.html(modelData[1])
+                    color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u
                 }
             }
-            Rectangle {                       // the rows, in one rounded group (VacuumTube's look)
+            Repeater {                        // a button (Who's watching): a pill, centred
+                model: (page.detail.rows || []).filter(r => r.button)
+                Rectangle {
+                    required property var modelData
+                    readonly property bool on: page.activeFocus && page.area === "rows"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: bt.implicitWidth + 120 * Y.u; height: 96 * Y.u; radius: height / 2
+                    color: on ? Y.text : Y.raised
+                    Text { id: bt; anchors.centerIn: parent; text: parent.modelData.label; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium }
+                }
+            }
+            Item {                            // the switches
                 id: rowsBox
-                visible: page.rows.length > 0
+                visible: page.rows.length > 0 && !page.rows[0].button
                 width: parent.width
-                height: rowsCol.height
-                radius: 16 * Y.u
-                color: "#212121"
-                Column {
-                    id: rowsCol
+                height: visible ? rowsHead.height + rowsCol.height + 36 * Y.u : 0
+                Row {
+                    id: rowsHead
                     width: parent.width
-                    Repeater {
-                        model: page.rows
-                        Rectangle {
-                            id: r
-                            required property var modelData
-                            required property int index
-                            readonly property bool focused: page.activeFocus && page.area === "rows" && page.row === index
-                            width: rowsCol.width
-                            height: Math.max(96 * Y.u, rcol.height + 40 * Y.u)
-                            radius: 16 * Y.u
-                            color: focused ? "#2e2e2e" : "transparent"
-                            border.color: focused ? Y.text : "transparent"
-                            border.width: 3 * Y.u
-                            opacity: r.modelData.off ? 0.45 : 1
-                            Rectangle {               // between rows
-                                visible: r.index > 0 && !r.focused
-                                width: parent.width; height: 2 * Y.u
-                                color: "#2c2c2c"
-                            }
-                            Column {
-                                id: rcol
-                                x: 24 * Y.u
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 170 * Y.u
-                                spacing: 6 * Y.u
-                                Text { text: r.modelData.label; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
-                                Text {
-                                    visible: !!r.modelData.desc
-                                    width: parent.width
-                                    text: r.modelData.desc || ""
-                                    color: Y.dim; font.family: Y.font; font.pixelSize: 21 * Y.u
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                            Rectangle {               // a switch: white and its knob right when on
-                                visible: !r.modelData.button
-                                anchors { right: parent.right; rightMargin: 24 * Y.u; verticalCenter: parent.verticalCenter }
-                                width: 76 * Y.u; height: 42 * Y.u; radius: height / 2
-                                color: r.modelData.on ? Y.text : "#5a5a5a"
-                                Rectangle {
-                                    width: 32 * Y.u; height: width; radius: width / 2
+                    height: 40 * Y.u
+                    Text {
+                        width: parent.width / 2
+                        text: (page.detail.title || "").toUpperCase()
+                        color: Y.dim; font.family: Y.font; font.pixelSize: 20 * Y.u; font.weight: Font.Bold
+                        font.letterSpacing: 2 * Y.u
+                    }
+                    Text {
+                        width: parent.width / 2
+                        horizontalAlignment: Text.AlignRight
+                        text: page.rows.length + (page.rows.length === 1 ? " option" : " options")
+                        color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u
+                    }
+                }
+                Rectangle {
+                    y: rowsHead.height + 4 * Y.u
+                    width: parent.width
+                    height: rowsCol.height + 24 * Y.u
+                    radius: 18 * Y.u
+                    color: "#212121"
+                    Column {
+                        id: rowsCol
+                        x: 12 * Y.u; y: 12 * Y.u
+                        width: parent.width - 24 * Y.u
+                        spacing: 8 * Y.u
+                        Repeater {
+                            model: page.rows
+                            Rectangle {
+                                id: r
+                                required property var modelData
+                                required property int index
+                                readonly property bool focused: page.activeFocus && page.area === "rows" && page.row === index
+                                width: rowsCol.width
+                                height: Math.max(92 * Y.u, rcol.height + 36 * Y.u)
+                                radius: 14 * Y.u
+                                color: focused ? "#3a3a3a" : "#2b2b2b"
+                                border.color: focused ? Y.text : "transparent"
+                                border.width: 3 * Y.u
+                                opacity: r.modelData.off ? 0.45 : 1
+                                Column {
+                                    id: rcol
+                                    x: 24 * Y.u
                                     anchors.verticalCenter: parent.verticalCenter
-                                    x: r.modelData.on ? parent.width - width - 5 * Y.u : 5 * Y.u
-                                    color: r.modelData.on ? "#1f1f1f" : Y.text
+                                    width: parent.width - 170 * Y.u
+                                    spacing: 6 * Y.u
+                                    Text { text: r.modelData.label; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.DemiBold }
+                                    Text {
+                                        visible: !!r.modelData.desc
+                                        width: parent.width
+                                        text: r.modelData.desc || ""
+                                        color: Y.dim; font.family: Y.font; font.pixelSize: 21 * Y.u
+                                        wrapMode: Text.WordWrap
+                                    }
                                 }
-                            }
-                            Icon {
-                                visible: !!r.modelData.button
-                                anchors { right: parent.right; rightMargin: 24 * Y.u; verticalCenter: parent.verticalCenter }
-                                name: "chevron"; size: 34 * Y.u; color: Y.text
+                                Rectangle {           // a switch: white, its knob right, when on
+                                    anchors { right: parent.right; rightMargin: 24 * Y.u; verticalCenter: parent.verticalCenter }
+                                    width: 76 * Y.u; height: 42 * Y.u; radius: height / 2
+                                    color: r.modelData.on ? Y.text : "#5a5a5a"
+                                    Rectangle {
+                                        width: 32 * Y.u; height: width; radius: width / 2
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: r.modelData.on ? parent.width - width - 5 * Y.u : 5 * Y.u
+                                        color: r.modelData.on ? "#1f1f1f" : Y.text
+                                    }
+                                }
                             }
                         }
                     }

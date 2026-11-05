@@ -31,6 +31,7 @@ ApplicationWindow {
     readonly property bool playing: stack.depth > 0 && stack.currentItem && stack.currentItem.videoId !== undefined
     readonly property var tabs: ({music: 1, gaming: 1, news: 1, podcasts: 1, movies: 1, live: 1, sports: 1})
     property bool picking: false               // "Who's watching" is up
+    property bool shortsFromGuide: false       // Shorts opened from the guide: Back returns to it
     // Library's tiles that need no account (a guest's Library shows them over its sign-in note)
     readonly property var guestTiles: [{title: "Movies & TV", id: "FEstorefront", colors: ["#7a5600", "#d6a10a"]},
                                        {title: "Podcasts", id: "FEtopics_podcasts", colors: ["#6a0f6a", "#b0209a"]}]
@@ -89,6 +90,7 @@ ApplicationWindow {
     }
     function entry(key) { return (guide.entries || []).find(e => e.key === key) || {key: key, label: key, browse: ""}; }
     function choose(key) {
+        if (key === "shorts") return;          // no page of its own: the one behind stays (OK opens the player)
         section = key;
         guide.section = key;
         const e = entry(key);
@@ -126,7 +128,11 @@ ApplicationWindow {
     function pop() {
         if (stack.depth > 1) stack.pop(StackView.Immediate);
         else stack.clear(StackView.Immediate);            // pop() never takes the last page off
-        if (!stack.depth && section === "shorts") guide.forceActiveFocus();   // Shorts has no page of its own
+        if (!stack.depth && shortsFromGuide) {                // back on the guide, on Shorts
+            shortsFromGuide = false;
+            guide.forceActiveFocus();
+            guide.cur = Math.max(0, guide.list.findIndex(e => e.key === "shorts"));
+        }
         else focusPage();
         updateState();
     }
@@ -294,7 +300,10 @@ ApplicationWindow {
             height: parent.height
             visible: !stack.depth
             onChosen: key => win.choose(key)
-            onEnter: { if (win.section === "shorts") Y.open({type: "shorts", id: "-"}); else win.focusPage(); }
+            onEnter: {
+                if (guide.keyAt(guide.cur) === "shorts") { win.shortsFromGuide = true; Y.open({type: "shorts", id: "-"}); }
+                else win.focusPage();
+            }
             pinned: win.section === "settings" && !stack.depth && !win.picking
             onOpenChanged: Y.pushed = open
             onActiveFocusChanged: Y.dimmed = activeFocus

@@ -30,7 +30,7 @@ FocusScope {
     }
     Feed {
         id: feed
-        y: 162 * Y.u
+        y: 161 * Y.u
         width: parent.width
         height: parent.height - y
         grow: true

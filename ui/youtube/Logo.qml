@@ -28,13 +28,19 @@ Row {
             }
         }
     }
-    Text {
-        text: parent.premium ? "Premium" : "YouTube"
-        color: Y.text
-        font.family: Y.font
-        font.pixelSize: parent.h * 0.95           // YouTube's own type is narrower than Roboto: tighter
-        font.weight: Font.Bold
-        font.letterSpacing: -parent.h * 0.05
+    Item {                                    // the name, drawn narrow as YouTube's own lettering is
+        width: name.implicitWidth * 0.84
+        height: name.implicitHeight
         anchors.verticalCenter: parent.verticalCenter
+        Text {
+            id: name
+            text: parent.parent.premium ? "Premium" : "YouTube"
+            color: Y.text
+            font.family: Y.font
+            font.pixelSize: parent.parent.h * 1.02
+            font.weight: Font.Bold
+            font.letterSpacing: -parent.parent.h * 0.045
+            transform: Scale { xScale: 0.84 }
+        }
     }
 }

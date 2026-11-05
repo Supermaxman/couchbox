@@ -214,7 +214,11 @@ FocusScope {
                     width: parent.width; height: 54 * Y.u
                     radius: 14 * Y.u
                     color: on ? Y.text : "transparent"
-                    Icon { x: 14 * Y.u; anchors.verticalCenter: parent.verticalCenter; name: page.recent ? "history" : "search"; size: 32 * Y.u; color: sug.on ? Y.ink : Y.text }
+                    Icon {                        // history 33 px, the magnifier 29 px, drawn heavier
+                        x: (page.recent ? 2 : 8) * Y.u; anchors.verticalCenter: parent.verticalCenter
+                        name: page.recent ? "history" : "search"; size: (page.recent ? 46 : 40) * Y.u; weight: 2.3
+                        color: sug.on ? Y.ink : Y.text
+                    }
                     Text {
                         x: 66 * Y.u
                         width: parent.width - x - 12 * Y.u
@@ -236,7 +240,7 @@ FocusScope {
         }
 
         Item {                                 // the letter keys
-            x: 714 * Y.u; y: 168 * Y.u
+            x: 714 * Y.u; y: 166 * Y.u
             Repeater {
                 model: 4
                 Repeater {
@@ -260,7 +264,7 @@ FocusScope {
                             visible: key.modelData.length <= 1
                             anchors.centerIn: parent
                             text: key.modelData
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                             font.family: Y.font; font.pixelSize: 36 * Y.u
                         }
                         Icon {
@@ -268,20 +272,20 @@ FocusScope {
                             anchors.centerIn: parent
                             name: key.modelData === "del" ? "backspace" : "globe"
                             size: 36 * Y.u
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                         }
                         Text {
                             visible: key.modelData === "sym"
                             anchors.centerIn: parent
                             text: page.symbols ? "ABC" : "&123"
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                             font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium
                         }
                     }
                 }
             }
             Row {
-                x: 21 * Y.u; y: 270 * Y.u
+                x: 21 * Y.u; y: 272 * Y.u
                 spacing: 13 * Y.u
                 Repeater {
                     model: page.buttons
@@ -292,7 +296,7 @@ FocusScope {
                         width: 132 * Y.u; height: 54 * Y.u
                         radius: 8 * Y.u
                         color: on ? Y.text : Y.raised
-                        Text { anchors.centerIn: parent; text: parent.modelData; color: parent.on ? Y.ink : "#bbbbbb"; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
+                        Text { anchors.centerIn: parent; text: parent.modelData; color: parent.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
                     }
                 }
             }

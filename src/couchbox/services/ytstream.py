@@ -295,6 +295,38 @@ def heights(formats: list[dict[str, Any]], h264: bool = True) -> list[int]:
     return sorted({_lines(f) for f in vids if _lines(f) >= 144}, reverse=True)
 
 
+def storyboard(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The video's storyboard (the frames the bar shows while seeking): the largest of yt-dlp's
+    "storyboard" formats, as {width, height, cols, rows, sheets: [{url, start, end}]} (each sheet
+    a grid of cols x rows frames, in order, covering start..end seconds)."""
+    best = None
+    for f in formats:
+        if f.get("format_note") != "storyboard" and not str(f.get("format_id", "")).startswith("sb"):
+            continue
+        if not f.get("fragments") or not f.get("columns") or not f.get("rows"):
+            continue
+        if best is None or (f.get("width") or 0) > (best.get("width") or 0):
+            best = f
+    if best is None:
+        return None
+    sheets, at = [], 0.0
+    for frag in best["fragments"]:
+        d = float(frag.get("duration") or 0)
+        if not frag.get("url") or d <= 0:
+            continue
+        sheets.append({"url": frag["url"], "start": at, "end": at + d})
+        at += d
+    if not sheets:
+        return None
+    return {
+        "width": int(best.get("width") or 0),
+        "height": int(best.get("height") or 0),
+        "cols": int(best["columns"]),
+        "rows": int(best["rows"]),
+        "sheets": sheets,
+    }
+
+
 def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts)."""
@@ -314,6 +346,7 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
             "timestamp": info.get("timestamp") or info.get("release_timestamp") or 0,
             "portrait": bool(out["height"] and out["width"] and out["height"] > out["width"]),
             "captions": captions(info),
+            "storyboard": storyboard(info.get("formats") or []),
             "heights": [h for h in heights(info.get("formats") or [], h264) if h <= MAX_HEIGHT],
             "maxHeight": max_height,
             "took": round(time.monotonic() - t, 2),

@@ -20,7 +20,7 @@ FocusScope {
     readonly property var cur: items[index] || ({})
     readonly property string label: info.title || "Shorts"
     readonly property bool watching: !!s && !video.paused
-    readonly property rect place: Qt.rect(596 * Y.u, 8 * Y.u, 604 * Y.u, 1064 * Y.u)
+    readonly property rect place: Qt.rect(592 * Y.u, 8 * Y.u, 609 * Y.u, 1064 * Y.u)
     readonly property string videoId: cur.id || ""
     signal closed()
 
@@ -104,8 +104,8 @@ FocusScope {
             x: modelData.x; y: modelData.y; width: modelData.width; height: Math.max(0, modelData.height)
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: index === 1 ? Qt.darker(page.tint, 1.15) : index === 0 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
-                GradientStop { position: 1; color: index === 0 ? Qt.darker(page.tint, 1.15) : index === 1 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
+                GradientStop { position: 0; color: index === 1 ? Qt.lighter(page.tint, 1.07) : index === 0 ? Qt.darker(page.tint, 1.5) : Qt.lighter(page.tint, 1.07) }
+                GradientStop { position: 1; color: index === 0 ? Qt.lighter(page.tint, 1.07) : index === 1 ? Qt.darker(page.tint, 1.5) : Qt.lighter(page.tint, 1.07) }
             }
         }
     }
@@ -113,7 +113,7 @@ FocusScope {
         x: page.place.x - 8 * Y.u; y: page.place.y - 8 * Y.u
         width: page.place.width + 16 * Y.u; height: page.place.height + 16 * Y.u
         r: 36 * Y.u
-        color: Qt.darker(page.tint, 1.15)
+        color: Qt.lighter(page.tint, 1.07)
     }
     Rectangle {                                // the frame (white with the focus)
         id: frame
@@ -153,7 +153,7 @@ FocusScope {
     }
 
     Column {                                   // the right: title, next, channel, Subscribe, buttons
-        x: 1286 * Y.u
+        x: 1278 * Y.u
         width: 580 * Y.u
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 96 * Y.u
@@ -161,9 +161,9 @@ FocusScope {
         Text {
             width: parent.width
             text: page.info.title || ""
-            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
+            color: Y.text; font.family: Y.font; font.pixelSize: 32 * Y.u; font.weight: Font.Bold
+            lineHeightMode: Text.FixedHeight; lineHeight: 48 * Y.u
             wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
-            lineHeight: 1.12
         }
         Row {
             visible: !!page.nextInfo.title

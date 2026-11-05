@@ -16,5 +16,6 @@ Rectangle {
         name: parent.icon
         size: (parent.big ? 44 : 38) * Y.u
         color: parent.on ? Y.ink : Y.text
+        weight: 2.5                          // as heavy as the TV app's (about 4 px at this size)
     }
 }

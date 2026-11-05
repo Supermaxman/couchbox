@@ -57,7 +57,7 @@ FocusScope {
         Behavior on contentY { NumberAnimation { duration: 160 } }
         Column {
             id: col
-            y: 40 * Y.u
+            y: 35 * Y.u
             width: panel.width
             spacing: 12 * Y.u
             Text {
@@ -67,7 +67,7 @@ FocusScope {
                 wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
                 lineHeightMode: Text.FixedHeight; lineHeight: 48 * Y.u
             }
-            Item { width: 1; height: 18 * Y.u }
+            Item { width: 1; height: 14 * Y.u }
             Row {                              // 46K Likes · 2,088,453 Views · Nov 4 2026 (188 apart)
                 anchors.horizontalCenter: parent.horizontalCenter
                 Repeater {
@@ -80,7 +80,7 @@ FocusScope {
                     }
                 }
             }
-            Item { width: 1; height: 12 * Y.u }
+            Item { width: 1; height: 10 * Y.u }
             Card {
                 id: chanCard
                 on: panel.index === 0 && panel.activeFocus
@@ -107,14 +107,14 @@ FocusScope {
                     id: descCol
                     x: 24 * Y.u; y: 24 * Y.u; width: parent.width - 48 * Y.u
                     spacing: 12 * Y.u
-                    Text { text: "Description"; color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
+                    Text { text: "Description"; color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 24.5 * Y.u; font.weight: Font.Bold }
                     Text {
                         width: parent.width
                         // folded: its first three lines as running text; opened: as written
                         readonly property bool open: panel.expanded && panel.index === 1
                         text: open ? panel.d.text || "" : (panel.d.text || "").replace(/\s+/g, " ").trim()
                         color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u
-                        wrapMode: Text.Wrap; maximumLineCount: open ? 40 : 3; elide: Text.ElideRight
+                        wrapMode: Text.Wrap; maximumLineCount: open ? 40 : 3; elide: Text.ElideNone   // cut off, no "…"
                         lineHeightMode: Text.FixedHeight; lineHeight: 33 * Y.u
                     }
                 }

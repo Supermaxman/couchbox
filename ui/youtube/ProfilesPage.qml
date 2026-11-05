@@ -135,7 +135,7 @@ FocusScope {
                     visible: cell.add
                     anchors { fill: parent; margins: cell.on && page.area === "row" ? 8 * Y.u : 0 }
                     radius: width / 2
-                    color: "#33ffffff"
+                    color: "#3b272c"                 // opaque: inside the white ring when focused, the plus still shows
                     Rectangle { anchors.centerIn: parent; width: parent.width * 0.3; height: 6 * Y.u; radius: 3 * Y.u; color: Y.text }
                     Rectangle { anchors.centerIn: parent; width: 6 * Y.u; height: parent.height * 0.3; radius: 3 * Y.u; color: Y.text }
                 }

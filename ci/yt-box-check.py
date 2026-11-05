@@ -199,6 +199,9 @@ def main():
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 
     r.step("home", lambda f: (f["page"] == "home" and "home" in f["focus"] and f["shown"], "Home, a card in focus"), settle=6)
+    remote("down")  # Home's second row (its cards large, the first row gone above)
+    r.step("home-row2", lambda f: (f["page"] == "home" and "home" in f["focus"], "Home's second row"), settle=2)
+    remote("up")
 
     # Search from the guide: the keys (not the last results); typing on a keyboard, then Enter
     remote("left", "up", "ok")

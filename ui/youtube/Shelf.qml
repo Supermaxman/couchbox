@@ -71,7 +71,7 @@ FocusScope {
         Text {
             text: shelf.row.title || ""
             // the current row's white; the others' (and all with the guide open) grey
-            color: Y.dimmed || shelf.dim ? Y.dim : shelf.current ? Y.text : Y.soft
+            color: Y.dimmed || shelf.dim ? Y.dim : shelf.current ? Y.text : "#b7b7b7"
             font.family: Y.font; font.pixelSize: Y.tShelf; font.weight: Font.Medium
             height: 36 * Y.u
         }
@@ -121,7 +121,7 @@ FocusScope {
         id: list
         y: shelf.headH
         width: parent.width
-        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 201) * Y.u
+        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 198) * Y.u
         orientation: ListView.Horizontal
         spacing: Y.gap
         clip: false

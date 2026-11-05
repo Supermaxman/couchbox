@@ -9,6 +9,7 @@ Image {
     property color color: Y.text
     property real size: 40 * Y.u
     property bool filled: false              // the current page's guide entry: its filled drawing
+    property real weight: 1.8                // the stroke, in the drawing's 24ths (the player's buttons: heavier)
     width: size
     height: size
     sourceSize: Y.sz(size, size)
@@ -17,7 +18,7 @@ Image {
     // joins a stroked part and a filled part
     readonly property var paths: ({
         search: "s:<circle cx='10.5' cy='10.5' r='6.5'/><path d='M15.3 15.3 20.5 20.5'/>",
-        "search-filled": "t:<circle cx='10.5' cy='10.5' r='6.2'/><path d='M15.3 15.3 20.5 20.5'/>",
+        "search-filled": "t:<circle cx='10.5' cy='10.5' r='6.2'/><path d='M15.3 15.3 20.5 20.5'/>|<circle cx='10.5' cy='10.5' r='2.1'/>",
         home: "s:<path d='M4 10.5 12 4l8 6.5V20h-5.5v-5.5h-5V20H4z'/>",
         "home-filled": "f:<path d='M3.5 10.5 12 3.5l8.5 7V20.5h-6v-6h-5v6h-6z'/>",
         shorts: "s:<path d='M14.6 3.6 7.4 7.5a3.5 3.5 0 0 0 .3 6.3l.9.4-1.3.7a3.5 3.5 0 0 0 3.3 6.2l7.2-3.9a3.5 3.5 0 0 0-.3-6.3l-.9-.4 1.3-.7a3.5 3.5 0 0 0-3.3-6.2z'/>|<path d='M10.4 9.6v4.8l4.1-2.4z'/>",
@@ -89,7 +90,7 @@ Image {
                  + "<path d='M10.4 9.6v4.8l4.1-2.4z' fill='#fff'/>";
         else {
             const kind = p.slice(0, 1), parts = p.slice(2).split("|");
-            const stroke = s => "<g fill='none' stroke='" + col + "' stroke-width='" + (kind === "t" ? 2.7 : 1.8) + "' stroke-linecap='round' stroke-linejoin='round'>" + s + "</g>";
+            const stroke = s => "<g fill='none' stroke='" + col + "' stroke-width='" + (kind === "t" ? Math.max(2.7, icon.weight + 0.9) : icon.weight) + "' stroke-linecap='round' stroke-linejoin='round'>" + s + "</g>";
             const fill = s => "<g fill='" + col + "' fill-rule='evenodd'>" + s + "</g>";
             body = (kind === "f" ? fill(parts[0]) : stroke(parts[0])) + (parts[1] ? fill(parts[1]) : "");
         }
