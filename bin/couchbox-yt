@@ -165,6 +165,7 @@ class Control(QObject):
         super().__init__()
         self.backend = backend
         self.state = {"page": "starting"}
+        self.focus = {}
         self.server = None
 
     def start(self):
@@ -182,12 +183,22 @@ class Control(QObject):
         except ValueError:
             pass
 
+    @Slot(str)
+    def setFocus(self, js):
+        """What has the focus (Main, every 300 ms): for the "focus" op (ci/yt-box-check.sh)."""
+        try:
+            self.focus = json.loads(js)
+        except ValueError:
+            pass
+
     def handle(self, req):
         op = req.get("op")
         if op == "ping":
             return {"ok": True, "site": SITE}
         if op == "state":
             return dict(self.state, site="YouTube")
+        if op == "focus":
+            return dict(self.focus, page=self.state.get("page", ""))
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):
@@ -206,9 +217,21 @@ def forward_to_running():
     return True
 
 
+# the remote's keys as couchbox-input sends them (uinput: KEY_ENTER is Return, the phone's Enter
+# the keypad's), for --keys and the key filter
+KEYS = {"up": "Key_Up", "down": "Key_Down", "left": "Key_Left", "right": "Key_Right", "ok": "Key_Return",
+        "enter": "Key_Enter", "back": "Key_Escape", "play": "Key_MediaTogglePlayPause", "menu": "Key_Menu",
+        "backspace": "Key_Backspace"}
+TEXT = {"Key_Return": "\r", "Key_Enter": "\r", "Key_Escape": "\x1b", "Key_Backspace": "\b"}
+
+
 class Shooter(QObject):
-    """--shot: save the window to a PNG; --keys: remote key presses."""
+    """--shot: save the window to a PNG; --keys: the remote's presses as the box delivers them: a
+    press, its release 50 ms later, the next key 300 ms on (couchbox-remote's gap); "ok@1.2" holds
+    OK for 1.2 s with the compositor's repeats (after 0.5 s, every 40 ms); "t:sky" types on a
+    keyboard; "wait:2" waits."""
     window = None
+    GAP, TAP, DELAY, RATE = 300, 50, 500, 40
 
     @Slot(str)
     def save(self, path):
@@ -217,16 +240,83 @@ class Shooter(QObject):
         qtcheck.clipped(self.window)
         self.window.grabWindow().save(path)
 
-    @Slot(str)
-    def press(self, name):
+    @Slot(str, str)
+    def note(self, path, js):
+        """--shot: what had the focus, beside the picture (FILE.focus.json)."""
+        with open(path, "w") as f:
+            f.write(js)
+
+    def _send(self, kind, key, text="", repeat=False):
         from PySide6.QtCore import QCoreApplication, QEvent, Qt
         from PySide6.QtGui import QKeyEvent
-        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
-               "ok": Qt.Key_Return, "back": Qt.Key_Escape, "play": Qt.Key_MediaTogglePlayPause, "menu": Qt.Key_Menu}.get(name)
-        if key is None:
-            return
-        for t in (QEvent.KeyPress, QEvent.KeyRelease):
-            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+        t = QEvent.KeyPress if kind == "press" else QEvent.KeyRelease
+        QCoreApplication.sendEvent(self.window, QKeyEvent(t, getattr(Qt, key), Qt.NoModifier, text, repeat))
+
+    @Slot(str, result=int)
+    def run(self, keys):
+        """Schedule the presses; returns how long they take (ms)."""
+        from PySide6.QtCore import QTimer
+
+        at = 0
+        plan = []
+        for name in [k for k in keys.split(",") if k]:
+            if name.startswith("wait:"):
+                at += int(float(name[5:]) * 1000)
+                continue
+            if name.startswith("t:"):
+                for ch in name[2:]:
+                    key = "Key_Space" if ch == " " else f"Key_{ch.upper()}"
+                    plan += [(at, "press", key, ch, False), (at + self.TAP, "release", key, ch, False)]
+                    at += self.TAP + 70
+                at += self.GAP
+                continue
+            base, _, hold = name.partition("@")
+            key = KEYS.get(base)
+            if not key:
+                continue
+            text = TEXT.get(key, "")
+            plan.append((at, "press", key, text, False))
+            held = int(float(hold) * 1000) if hold else self.TAP
+            r = self.DELAY
+            while hold and r < held:            # held: the compositor's repeats, release + press pairs
+                plan += [(at + r, "release", key, text, True), (at + r, "press", key, text, True)]
+                r += self.RATE
+            plan.append((at + held, "release", key, text, False))
+            at += held + self.GAP
+        for when, kind, key, text, repeat in plan:
+            QTimer.singleShot(when, lambda k=kind, y=key, x=text, r=repeat: self._send(k, y, x, r))
+        return at
+
+
+class KeyFilter(QObject):
+    """OK, Back and the other one-shot keys act once per press, on whatever had the focus when
+    they went down: their repeats (held, or the compositor's) are dropped, and so is a release
+    that arrives after the press moved the focus (the press that opened Search typed nothing,
+    the press that opened a panel picked nothing in it)."""
+    ONCE = ("Key_Return", "Key_Enter", "Key_Select", "Key_Escape", "Key_Back", "Key_Menu", "Key_MediaTogglePlayPause",
+            "Key_MediaPlay", "Key_MediaPause")
+
+    def __init__(self, window):
+        from PySide6.QtCore import Qt
+
+        super().__init__()
+        self.window = window
+        self.keys = {int(getattr(Qt, k)) for k in self.ONCE}
+        self.down = {}
+
+    def eventFilter(self, obj, ev):
+        from PySide6.QtCore import QEvent
+
+        if ev.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or int(ev.key()) not in self.keys:
+            return False
+        if ev.isAutoRepeat():
+            return True
+        focus = self.window.activeFocusItem()
+        if ev.type() == QEvent.KeyPress:
+            self.down[int(ev.key())] = focus
+            return False
+        return self.down.pop(int(ev.key()), None) is not focus
 
 
 class Network(QQmlNetworkAccessManagerFactory):
@@ -301,6 +391,8 @@ def main():
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
+    keyfilter = KeyFilter(shooter.window)
+    shooter.window.installEventFilter(keyfilter)
     code = app.exec()
     if control.server:
         control.server.close()

@@ -10,7 +10,7 @@ Rectangle {
     width: (big ? 96 : 72) * Y.u
     height: width
     radius: width / 2
-    color: on ? Y.text : plain ? "transparent" : "#33ffffff"
+    color: on ? Y.text : plain ? "transparent" : "#1fffffff"   // unfocused: white at 12%
     Icon {
         anchors.centerIn: parent
         name: parent.icon

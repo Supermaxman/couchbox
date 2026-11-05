@@ -152,6 +152,16 @@ shot yt-player-scrub couchbox-yt --open video:demo0000003@1500 --keys back,right
 shot yt-results-cluster couchbox-yt --open "search:sky" --keys down,down,right
 shot yt-search-landing couchbox-yt --keys left,up,ok,down,down,down
 shot yt-guide-movies couchbox-yt --keys left,down,down,down,down,down,down,down,down
+# ... round 2's, with the keys as the box sends them (press, release, gaps; ok@1.5 held with its
+# repeats): Search opened from the guide with OK held (nothing typed), typing on a keyboard and
+# Enter, Description and Back (the focus on Description), the related row and Up, the Shorts tab
+# straight into Shorts, Settings beside the open guide, a guest's Library tiles
+shot yt-search-held couchbox-yt --keys left,up,ok@1.5
+shot yt-search-enter couchbox-yt --keys left,up,ok,t:sky,enter
+shot yt-player-description-back couchbox-yt --open video:demo0000003 --keys left,left,left,ok,back
+shot yt-player-related-up couchbox-yt --open video:demo0000003 --keys down,up
+shot yt-shorts-tab couchbox-yt --keys left,down,ok
+shot yt-library-guest couchbox-yt --profile guest --open library
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down

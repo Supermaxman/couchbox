@@ -43,7 +43,7 @@ FocusScope {
                 x: 24 * Y.u; y: parent.height - height - 22 * Y.u
                 text: parent.modelData.title
                 color: "white"
-                font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
+                font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
             }
             Rectangle {
                 visible: parent.on

@@ -25,9 +25,9 @@ FocusScope {
             elide: Text.ElideRight
         }
     }
-    Logo {
+    Logo {                                    // it stays put while the open guide pushes the page right
         premium: !!(Y.profile && Y.profile.premium)
-        anchors { right: parent.right; rightMargin: 108 * Y.u }
+        anchors { right: parent.right; rightMargin: 108 * Y.u + (Y.pushed ? Y.guideOpen - Y.left : 0) }
         y: 76 * Y.u
     }
     Keys.onReturnPressed: searchAsked()

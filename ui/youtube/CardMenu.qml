@@ -4,6 +4,7 @@ import QtQuick
 
 FocusScope {
     id: menu
+    objectName: "cardmenu"
     property var item: null
     property int index: 0
     property var returnFocus: null

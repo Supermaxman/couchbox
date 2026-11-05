@@ -5,6 +5,7 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "profiles"
     property var profiles: []
     property string current: ""
     property int index: 0

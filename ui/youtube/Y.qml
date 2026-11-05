@@ -20,7 +20,8 @@ QtObject {
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
     property bool shot: false                 // --shot: still (no blinking caret)
-    property bool dimmed: false               // the guide is open: the page behind it greys
+    property bool dimmed: false               // the guide has the focus: the page behind it greys
+    property bool pushed: false               // the guide is open: the page is pushed right
 
     // ------------------------------------------------------------------ look
     readonly property color bg: "#0f0f0f"

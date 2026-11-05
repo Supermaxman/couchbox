@@ -68,6 +68,7 @@ Image {
         unsubscribe: "s:<circle cx='10' cy='8.5' r='3.5'/><path d='M3.5 19.5a6.5 6.5 0 0 1 10.5-5.1'/><path d='M16.5 15.5l4 4M20.5 15.5l-4 4'/>",
         "dislike-filled": "f:<g transform='rotate(180 12 12)'><path d='M3.5 10h4v10.5h-4z'/><path d='M8.5 20.5V10l3.6-6.3a2 2 0 0 1 3.7 1.5L15 9.5h3.8a2.2 2.2 0 0 1 2.1 2.7l-1.4 6.5a2.3 2.3 0 0 1-2.2 1.8z'/></g>",
         "save-filled": "f:<path d='M6.5 4h11v16.5L12 16.6l-5.5 3.9z'/>",
+        note: "f:<path d='M9.6 4.2h8.2v3.2h-6.2v9.4a3.1 3.1 0 1 1-2-2.9z'/>",
         plus: "s:<path d='M12 5v14M5 12h14'/>",
         lock: "s:<rect x='5.5' y='10.5' width='13' height='10' rx='1.5'/><path d='M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5'/>",
         chevron: "s:<path d='M9 5.5l6.5 6.5L9 18.5'/>",

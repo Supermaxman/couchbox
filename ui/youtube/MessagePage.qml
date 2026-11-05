@@ -9,7 +9,9 @@ FocusScope {
     property string body: ""
     property string action: ""                // a button under the text (OK: a toast for now)
     property var facts: []                    // [[label, value]] (Settings)
+    property var tiles: []                    // Library as a guest: the tiles that need no account, above the note
     readonly property string label: title
+    onActiveFocusChanged: if (activeFocus && tiles.length && !tileRow.activeFocus && !actionFocus.activeFocus) tileRow.forceActiveFocus()
 
     function load() {
         if (key !== "settings") return;
@@ -24,10 +26,23 @@ FocusScope {
         }, () => {});
     }
     Keys.onLeftPressed: Y.toGuide()
-    Keys.onReturnPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
-    Keys.onEnterPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
+    Keys.onReturnPressed: if (action) Y.signIn()
+    Keys.onEnterPressed: if (action) Y.signIn()
+    Keys.onDownPressed: if (tileRow.activeFocus && action) actionFocus.forceActiveFocus()
+    Keys.onUpPressed: if (actionFocus.activeFocus && tiles.length) tileRow.forceActiveFocus()
+    Item { id: actionFocus; objectName: "action"; focus: !page.tiles.length }
 
+    Tiles {
+        id: tileRow
+        objectName: "tiles"
+        visible: page.tiles.length > 0
+        y: 90 * Y.u
+        indent: Y.left
+        tiles: page.tiles
+        focus: page.tiles.length > 0
+    }
     Text {                                     // the page's name, level with the guide's picture
+        visible: !page.tiles.length
         x: 172 * Y.u; y: 68 * Y.u
         height: 72 * Y.u
         verticalAlignment: Text.AlignVCenter
@@ -35,7 +50,7 @@ FocusScope {
         color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
     }
     Column {
-        x: 172 * Y.u; y: 190 * Y.u
+        x: 172 * Y.u; y: (page.tiles.length ? 330 : 190) * Y.u
         width: Math.min(parent.width - 2 * Y.left, 1200 * Y.u)
         spacing: 28 * Y.u
         Text {
@@ -50,8 +65,9 @@ FocusScope {
         Rectangle {
             visible: !!page.action
             width: actionT.implicitWidth + 72 * Y.u; height: 72 * Y.u; radius: height / 2
-            color: page.activeFocus ? Y.text : Y.glass
-            Text { id: actionT; anchors.centerIn: parent; text: page.action; color: page.activeFocus ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
+            readonly property bool on: page.activeFocus && !tileRow.activeFocus
+            color: on ? Y.text : Y.glass
+            Text { id: actionT; anchors.centerIn: parent; text: page.action; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
         }
         Column {
             visible: page.facts.length > 0

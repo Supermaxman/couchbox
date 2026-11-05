@@ -216,6 +216,8 @@ def _overlays(overlays: list, out: dict) -> None:
                 out["type"] = "short"
             elif t:
                 out["duration"] = t
+                if dig(r, "icon", "iconType") == "AUDIO":
+                    out["music"] = True  # a music video: a note before its length
         elif "thumbnailOverlayResumePlaybackRenderer" in o:
             out["progress"] = min(1.0, (o["thumbnailOverlayResumePlaybackRenderer"].get("percentDurationWatched") or 0) / 100)
         elif "thumbnailBottomOverlayViewModel" in o:
@@ -258,9 +260,12 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
         for li in dig(line, "lineRenderer", "items") or []:
             r = li.get("lineItemRenderer") or {}
             if "badge" in r:
-                label = dig(r, "badge", "metadataBadgeRenderer", "label") or ""
+                b = dig(r, "badge", "metadataBadgeRenderer") or {}
+                label = b.get("label") or ""
                 if label:
                     out["badges"].append(label)
+                    if b.get("style") == "BADGE_STYLE_TYPE_YPC":  # paid (Try now, Buy, Rent): green
+                        out.setdefault("pay", []).append(label)
                 continue
             s = text(r.get("text")).strip()
             if s:
@@ -286,7 +291,17 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     if target.get("type") == "browse":
         out["type"], out["params"] = "browse", target.get("params", "")
     out["channelId"] = _menu_channel(t.get("onLongPressCommand"))
+    out["lines"] = split_channel(out["lines"])
     return out if out["id"] and out["title"] else None
+
+
+def split_channel(lines: list[str]) -> list[str]:
+    """A video's channel on its own line: some shelves (music videos) send "LISA • 74M views •
+    13 days ago" as one line, where the TV app shows the channel, then the views and age."""
+    if len(lines) == 1 and lines[0].count(" • ") >= 2 and re.search(r"\b(views?|watching)\b", lines[0]):
+        chan, rest = lines[0].split(" • ", 1)
+        return [chan, rest]
+    return lines
 
 
 def tile_shape(style: str, thumbnail: Any) -> str:
@@ -347,6 +362,7 @@ def parse_lockup(v: dict[str, Any]) -> dict[str, Any] | None:
                 out["badges"].append(label)
         if parts:
             out["lines"].append(delim.join(parts))
+    out["lines"] = split_channel(out["lines"])
     if v.get("contentType") == "LOCKUP_CONTENT_TYPE_TV_NETWORK":
         out["type"], out["shape"] = "browse", "round"
     target = endpoint(dig(v, "rendererContext", "commandContext", "onTap"))
@@ -445,7 +461,7 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
         kind = r.get("tvhtml5ShelfRendererType") or ""
         if kind == "TVHTML5_SHELF_RENDERER_TYPE_GRID":
             out["grid"] = True
-        elif kind == "TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF":
+        elif kind in ("TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF", "TVHTML5_SHELF_RENDERER_TYPE_WORMHOLES"):
             out["hero"] = True  # Movies & TV: the focused title large above the row
         return [out]
     if "clusterShelfRenderer" in s:
@@ -1426,7 +1442,10 @@ class Demo(YouTube):
             albums = self._shelf("Albums for you", 50, n=8)
             for it in albums["items"]:
                 it.update(shape="square", duration="")
-            return {"shelves": [self._shelf("Music videos", 44), albums], "more": "", "nudge": None, "header": None}
+            clips = self._shelf("Music videos", 44)
+            for it in clips["items"]:
+                it["music"] = True
+            return {"shelves": [clips, albums], "more": "", "nudge": None, "header": None}
         return {
             "shelves": [
                 self._shelf(f"Top in {label}", n),
