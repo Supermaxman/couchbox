@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/Supermaxman/couchbox/compare/v0.18.1...v0.18.2) (2026-11-05)
+
+
+### Fixed
+
+* **youtube:** round 2: the box's key path, focus that stays put, Settings ([#100](https://github.com/Supermaxman/couchbox/issues/100)) ([15bc01e](https://github.com/Supermaxman/couchbox/commit/15bc01e3a2c8958a8acf471f54ac12458749488e))
+
 ## [0.18.1](https://github.com/Supermaxman/couchbox/compare/v0.18.0...v0.18.1) (2026-11-05)
 
 
