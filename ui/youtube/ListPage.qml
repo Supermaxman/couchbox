@@ -19,10 +19,12 @@ FocusScope {
     }, e => { loaded = true; problem = e; })
     Keys.onEscapePressed: closed()
     Keys.onBackPressed: closed()
-    Text {
-        x: Y.left; y: 56 * Y.u
+    Text {                                     // the page's name, level with the guide's picture
+        x: 172 * Y.u; y: 68 * Y.u
+        height: 72 * Y.u
+        verticalAlignment: Text.AlignVCenter
         text: page.title
-        color: Y.text; font.family: Y.font; font.pixelSize: 48 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
     }
     Feed {
         id: feed

@@ -20,6 +20,7 @@ QtObject {
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
     property bool shot: false                 // --shot: still (no blinking caret)
+    property bool dimmed: false               // the guide is open: the page behind it greys
 
     // ------------------------------------------------------------------ look
     readonly property color bg: "#0f0f0f"
@@ -28,6 +29,8 @@ QtObject {
     readonly property color text: "#f1f1f1"           // white text; the focus ring and focused rows
     readonly property color dim: "#aaaaaa"            // grey text: channels, views, unfocused titles
     readonly property color faint: "#717171"
+    readonly property color soft: "#cccccc"           // shelf subtitles, the seek strip's other chapters
+    readonly property color glass: "#1affffff"        // pills on the page: white at 10%
     readonly property color ink: "#0f0f0f"            // text on a focused (white) row
     readonly property color red: "#ff0033"            // progress, the logo
     readonly property color sponsor: "#00d400"
@@ -44,9 +47,10 @@ QtObject {
     // player's related rows keep one size
     readonly property real bigW: 720 * u
     readonly property real cardW: 528 * u
-    readonly property real tTitle: 36 * u
+    readonly property real tTitle: 34 * u           // a card's title: semibold, lines 48 apart
+    readonly property real tTitleLine: 48 * u
     readonly property real tShelf: 30 * u
-    readonly property real tMeta: 26 * u
+    readonly property real tMeta: 24 * u
     readonly property real tSmall: 22 * u
 
     // ------------------------------------------------------------------ formatting

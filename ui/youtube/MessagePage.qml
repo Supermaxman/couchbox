@@ -28,11 +28,17 @@ FocusScope {
     Keys.onReturnPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
     Keys.onEnterPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
 
+    Text {                                     // the page's name, level with the guide's picture
+        x: 172 * Y.u; y: 68 * Y.u
+        height: 72 * Y.u
+        verticalAlignment: Text.AlignVCenter
+        text: page.title
+        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+    }
     Column {
-        x: Y.left; y: 120 * Y.u
+        x: 172 * Y.u; y: 190 * Y.u
         width: Math.min(parent.width - 2 * Y.left, 1200 * Y.u)
         spacing: 28 * Y.u
-        Text { text: page.title; color: Y.text; font.family: Y.font; font.pixelSize: 52 * Y.u; font.weight: Font.Medium }
         Text {
             visible: !!page.body
             width: parent.width
@@ -45,8 +51,8 @@ FocusScope {
         Rectangle {
             visible: !!page.action
             width: actionT.implicitWidth + 72 * Y.u; height: 72 * Y.u; radius: height / 2
-            color: page.activeFocus ? Y.text : Y.raised
-            Text { id: actionT; anchors.centerIn: parent; text: page.action; color: page.activeFocus ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
+            color: page.activeFocus ? Y.text : Y.glass
+            Text { id: actionT; anchors.centerIn: parent; text: page.action; color: page.activeFocus ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
         }
         Column {
             visible: page.facts.length > 0

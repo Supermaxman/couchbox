@@ -259,9 +259,12 @@ def test_search_page_with_a_cluster_and_its_pills():
         }
     }
     page = Y.parse_page(resp)
-    first, hero, recent = page["shelves"]
+    first, cluster = page["shelves"]
     assert [i["type"] for i in first["items"]] == ["video", "channel"]
     assert first["items"][1]["id"] == "UCchannel0000000000000003"
+    # the channel's section is one row: the large card under its pill, the list under its own
+    hero, recent = cluster["cluster"]["hero"], cluster["cluster"]["list"]
+    assert [i["id"] for i in cluster["items"]] == ["vid00000012", "vid00000013"]
     assert hero["pill"]["title"] == "Paper Co" and hero["pill"]["target"] == {"type": "channel", "id": "UCchannel0000000000000003"}
     assert recent["pill"]["icon"] == "search" and recent["pill"]["target"] == {"type": "search", "id": "paper videos"}
 

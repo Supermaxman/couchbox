@@ -470,6 +470,18 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
                     "target": endpoint(b.get("onTap")),
                 }
             shelves.append(shelf)
+        # a channel in search results: its pill over one large card, and "Recently uploaded" over a
+        # list beside it: one row, as the TV app lays it out
+        if (
+            len(shelves) == 2
+            and all(s.get("pill") for s in shelves)
+            and shelves[0]["pill"]["target"].get("type") == "channel"
+            and len(shelves[0]["items"]) == 1
+        ):
+            hero, lst = shelves
+            return [
+                {"title": "", "subtitle": "", "items": hero["items"] + lst["items"], "more": "", "cluster": {"hero": hero, "list": lst}}
+            ]
         return shelves
     if "itemSectionRenderer" in s:
         out = []
@@ -1471,10 +1483,31 @@ class Demo(YouTube):
     def search(self, query):
         cid, name, handle, subs = DEMO_CHANNELS[0]
         first = [self._video(0), item(type="channel", id=cid, title=name, lines=[handle, subs])] + [self._video(i) for i in range(1, 8)]
+        hero = {
+            "title": "",
+            "subtitle": "",
+            "items": [self._video(10)],
+            "more": "",
+            "pill": {"title": name, "avatar": "", "icon": "", "target": {"type": "channel", "id": cid}},
+        }
+        recent = self._shelf("", 11, n=6)
+        recent["pill"] = {
+            "title": "Recently uploaded",
+            "avatar": "",
+            "icon": "search",
+            "target": {"type": "search", "id": f"{name} videos"},
+        }
+        cluster = {
+            "title": "",
+            "subtitle": "",
+            "items": hero["items"] + recent["items"],
+            "more": "",
+            "cluster": {"hero": hero, "list": recent},
+        }
         return {
             "shelves": [
                 {"title": f"Search results for {query}", "subtitle": "", "items": first, "more": ""},
-                self._shelf(name, 10, n=6),
+                cluster,
                 self._shelf("Previously watched", 20, n=6),
             ],
             "more": "",

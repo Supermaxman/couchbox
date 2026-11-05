@@ -79,7 +79,7 @@ FocusScope {
                 required property int index
                 readonly property bool on: panel.index === index && panel.activeFocus
                 width: panel.width
-                height: (panel.name ? 96 : 90) * Y.u
+                height: 90 * Y.u
                 radius: 16 * Y.u
                 color: on ? Y.text : Y.raised
                 Icon {
