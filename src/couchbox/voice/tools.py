@@ -458,7 +458,9 @@ def youtube_resume(page, query):
     return f"Playing {title} ({channel.split(' · ')[0]})."
 
 
-def youtube(action, query=None, id=None):
+def youtube_page():
+    """YouTube's page, in front: the app is started (and waited for until it takes commands)
+    if it isn't running. None if it doesn't come up. Also for links sent to the TV (links.py)."""
     if not app_page("YouTube"):
         open_app("YouTube")
         for _ in range(20):
@@ -467,9 +469,15 @@ def youtube(action, query=None, id=None):
                 break
             time.sleep(1)
     page = app_page("YouTube")
+    if page:
+        raise_window("rocks.shy.VacuumTube.desktop", "YouTube")
+    return page
+
+
+def youtube(action, query=None, id=None):
+    page = youtube_page()
     if not page:
         return "YouTube isn't running."
-    raise_window("rocks.shy.VacuumTube.desktop", "YouTube")
     cmds = {
         "search": {"searchEndpoint": {"query": query or ""}},
         "history": {"browseEndpoint": {"browseId": "FEhistory"}},
@@ -1272,6 +1280,15 @@ def weather_tool(action, day=None, show=False):
 
 
 def search_tool(action, query=None):
+    if action == "open" and (query or "").strip():  # a YouTube, Twitch, Nebula, Dropout or Jellyfin link plays in its app
+        from couchbox import links
+
+        try:
+            app = links.parse(query, settings.get("media.jellyfin.url")).app
+        except links.BadLink:
+            app = "web"
+        if app != "web":
+            return links.open_link(query).message
     a = registry.get("search")
     streaming.ensure("search", start=lambda: open_app(a.name, wait=False))
     if action == "read":

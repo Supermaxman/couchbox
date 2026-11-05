@@ -10,6 +10,11 @@ into whatever field is selected on the TV: web apps, YouTube and Jellyfin throug
 (any characters), anything else (the home screen, our TV apps) as key presses (US keyboard).
 The page also has the remote's buttons: arrows, OK, Back, Home, Play/Pause.
 
+Send to TV: a link pasted on the page (or shared to the iPhone Shortcut the page explains how to
+make, which posts it the same way) opens in its app on the TV: YouTube, Twitch, Nebula, Dropout,
+Jellyfin, else the Search app's web view (couchbox.links). POST /send {"url": ...} with the
+X-Couchbox-Token header, SEND_LIMIT a minute.
+
 The page's Enter (and "Type + Enter") is the keypad Enter key, so our TV apps' keyboard
 pop-up can tell "done typing" from the remote's OK (Return). Its address as a QR code, for
 the pop-up to show: /run/couchbox/phone/phone.png and phone.url. They use https://<tailnet name>
@@ -18,6 +23,7 @@ else http://couchbox.local:8791. Not plain "couchbox": the home router's DNS can
 
   couchbox-phone                 run the server (systemd: couchbox-phone.service)
   couchbox-phone "some text"     type it on the TV now
+  couchbox-phone --send URL      open a link on the TV now, as Send to TV does
 """
 import hmac
 import ipaddress
@@ -32,7 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from evdev import UInput, ecodes as e
 
-from couchbox import secrets, settings  # noqa: E402
+from couchbox import links, secrets, settings  # noqa: E402
 from couchbox.voice import cdp, tools  # noqa: E402
 
 PORT = 8791
@@ -42,6 +48,11 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 PAIR_TRIES = 5            # wrong pairing codes allowed per minute, from anyone
 _pair_fails: list[float] = []
 _pair_lock = threading.Lock()
+SEND_LIMIT = 10           # links sent to the TV per minute, from all phones together
+SEND_BODY = 16384         # bytes: a link and nothing much else
+_sends: list[float] = []
+_send_lock = threading.Lock()
+_opening = threading.Lock()   # one link opens at a time
 
 # US layout: character -> (key, shift)
 CHARS = {c: (getattr(e, f"KEY_{c.upper()}"), c.isupper()) for c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}
@@ -213,6 +224,28 @@ PAGE = r"""<!doctype html>
                 color: var(--text); background: var(--bg); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px;
                 outline: none; -webkit-user-select: text; user-select: text; }
   #pair input:focus { border-color: var(--accent); }
+  .card { display: flex; flex-direction: column; gap: 12px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 18px; padding: 16px; margin-top: 10px; }
+  .card > b { font-size: 17px; }
+  .card .field input { font-size: 17px; background: var(--bg); padding-right: 76px; }
+  .paste { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-height: 40px; padding: 0 12px;
+           font-size: 14px; color: var(--dim); background: var(--card2); border-radius: 10px; }
+  .paste:active { transform: translateY(-50%) scale(0.95); }
+  #sendmsg { margin: 0; color: var(--dim); font-size: 15px; min-height: 20px; }
+  #sendmsg.ok { color: var(--accent2); }
+  #sendmsg.bad { color: #ff9b9b; }
+  button:disabled { opacity: .55; }
+  [hidden] { display: none !important; }
+  details summary { color: var(--dim); font-size: 15px; cursor: pointer; padding: 4px 0; }
+  details[open] summary { color: var(--text); margin-bottom: 8px; }
+  .howto { -webkit-user-select: text; user-select: text; color: var(--dim); font-size: 15px; line-height: 1.45; }
+  .howto ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+  .howto b, .howto code { color: var(--text); }
+  .howto code { font: 14px ui-monospace, Menlo, monospace; background: var(--bg); border-radius: 6px; padding: 1px 5px; }
+  .copyrow { display: flex; gap: 8px; margin: 6px 0 2px; }
+  .copyrow input { flex: 1; min-width: 0; font: 14px ui-monospace, Menlo, monospace; color: var(--text); background: var(--bg);
+                   border: 1px solid var(--line); border-radius: 10px; padding: 10px; outline: none; }
+  .copyrow button { min-height: 40px; padding: 0 14px; font-size: 14px; }
 </style></head><body><main>
 <form id="pair" onsubmit="event.preventDefault(); pairWithCode()">
   <b>Pair this phone</b>
@@ -252,6 +285,35 @@ PAGE = r"""<!doctype html>
     <div><button data-key="play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path d="M4 5l9 7-9 7z" fill="currentColor"/><path d="M16 5v14M20 5v14"/></svg></button>Play</div>
   </div>
 </div>
+<form class="card" id="sendtv" novalidate onsubmit="event.preventDefault(); sendLink()">
+  <b>Send to TV</b>
+  <div class="field">
+    <input id="link" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+           enterkeyhint="send" placeholder="Paste a link">
+    <button class="paste" id="paste" type="button" hidden>Paste</button>
+  </div>
+  <button class="primary" id="sendbtn" type="submit">Send</button>
+  <p id="sendmsg">YouTube, Twitch, Nebula, Dropout and Jellyfin links play in their apps. Other pages open in Search.</p>
+  <details class="howto">
+    <summary>Send from the Share button (iPhone)</summary>
+    <ol>
+      <li>Open the <b>Shortcuts</b> app and tap <b>+</b> to make a new shortcut. Tap its name at the top, choose <b>Rename</b> and call it <b>Send to TV</b>.</li>
+      <li>Tap the name again, choose <b>Details</b>, turn on <b>Show in Share Sheet</b> and tap <b>Done</b>.</li>
+      <li>At the top, in <b>Receive … input from Share Sheet</b>, tap the input types and keep only <b>URLs</b> and <b>Text</b>.
+          Optional: set <b>If there's no input</b> to <b>Get Clipboard</b>, so running the shortcut on its own sends a copied link.</li>
+      <li>Search the actions for <b>Get Contents of URL</b> and add it. Tap <b>URL</b> and paste this address:
+        <span class="copyrow"><input id="endpoint" readonly aria-label="Address"><button type="button" data-copy="endpoint">Copy</button></span></li>
+      <li>Tap the arrow on that action to show more. Set <b>Method</b> to <b>POST</b>.</li>
+      <li>Under <b>Headers</b>, tap <b>Add new header</b>. Key: <code>X-Couchbox-Token</code>. Text: this phone's key (keep it private):
+        <span class="copyrow"><input id="tok" type="password" readonly aria-label="Key"><button type="button" data-copy="tok">Copy</button></span></li>
+      <li>Set <b>Request Body</b> to <b>JSON</b>, tap <b>Add new field</b>, choose <b>Text</b>. Key: <code>url</code>. Value: tap it and pick <b>Shortcut Input</b>.</li>
+      <li>Add <b>Get Dictionary Value</b>: Get <b>Value</b> for <code>result</code> in <b>Contents of URL</b>.
+          Then add <b>Show Notification</b> with <b>Dictionary Value</b>, to see what the TV did.</li>
+      <li>Done. In Safari, YouTube or any app, tap <b>Share</b>, then <b>Send to TV</b> (the first time, it may be under <b>Edit Actions</b>; allow it to connect).</li>
+    </ol>
+    <p>The shortcut works wherever this page does. After <b>New pairing code</b> on the TV, pair this page again and put the new key in the shortcut.</p>
+  </details>
+</form>
 </main>
 <script>
 const t = document.getElementById("t"), msg = document.getElementById("msg"), eye = document.getElementById("eye");
@@ -273,6 +335,7 @@ async function pairWithCode() {
     if (!res.token) { say(res.result); return; }
     window.TOKEN = res.token;
     try { localStorage.setItem("couchbox-token", res.token); } catch (e) {}
+    document.getElementById("tok").value = res.token;
     code.value = ""; code.blur(); pairBox.classList.remove("on"); say("Paired.");
   } catch (err) { say("The TV isn't answering."); }
 }
@@ -306,6 +369,40 @@ for (const b of document.querySelectorAll("[data-key]")) {
   for (const e of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(e, stop);
   b.addEventListener("contextmenu", ev => ev.preventDefault());
 }
+// Send to TV: a link opens in its app on the TV (it can take a while if the app has to start)
+const link = document.getElementById("link"), sendBtn = document.getElementById("sendbtn"),
+      sendMsg = document.getElementById("sendmsg"), paste = document.getElementById("paste");
+async function sendLink() {
+  if (!link.value.trim()) { link.focus(); return; }
+  if (!window.TOKEN) { needPairing("Pair this phone first."); return; }
+  sendBtn.disabled = true; sendMsg.className = ""; sendMsg.textContent = "Sending…";
+  try {
+    const r = await fetch("/send", {method: "POST", headers: {"Content-Type": "application/json", "X-Couchbox-Token": window.TOKEN},
+                                    body: JSON.stringify({url: link.value.trim()})});
+    if (r.status === 401) { sendMsg.textContent = ""; needPairing("This phone isn't paired any more. Scan the QR code or type the code from the TV."); return; }
+    const res = await r.json();
+    sendMsg.textContent = res.result; sendMsg.className = res.ok ? "ok" : "bad";
+    if (res.ok) { link.value = ""; link.blur(); }
+  } catch (err) { sendMsg.textContent = "The TV isn't answering."; sendMsg.className = "bad"; }
+  finally { sendBtn.disabled = false; }
+}
+if (navigator.clipboard && navigator.clipboard.readText && window.isSecureContext) {
+  paste.hidden = false;
+  paste.onclick = async () => { try { link.value = (await navigator.clipboard.readText()).trim(); } catch (e) { link.focus(); } };
+}
+// the Shortcut's address and key (this page's own, so the shortcut reaches the TV the same way)
+document.getElementById("endpoint").value = location.origin + "/send";
+document.getElementById("tok").value = window.TOKEN;
+for (const b of document.querySelectorAll("[data-copy]")) b.onclick = async () => {
+  const el = document.getElementById(b.dataset.copy);
+  if (!el.value) { needPairing("Pair this phone first."); return; }
+  try { await navigator.clipboard.writeText(el.value); }
+  catch (e) {          // plain http (couchbox.local): no clipboard API, copy the selection instead
+    const type = el.type; el.type = "text"; el.select(); el.setSelectionRange(0, el.value.length);
+    document.execCommand("copy"); el.type = type; el.blur();
+  }
+  b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1500);
+};
 </script></body></html>
 """
 
@@ -410,6 +507,49 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.client_address[0]} /pair paired", flush=True)
         self.reply(200, {"result": "Paired.", "token": token})
 
+    def send_link(self):
+        """POST /send {"url": ...} ("text" also works: Android shares text): open a link on the
+        TV in its app (couchbox.links). The page's Send to TV box and the iPhone Shortcut use it.
+        Like every call it needs the token in the X-Couchbox-Token header (checked before this):
+        a header, never a cookie, so another web page can't send for a phone that has the page
+        open (a browser only adds headers across sites after asking us, and we never agree).
+        At most SEND_LIMIT links a minute and one at a time; each is logged."""
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            return self.reply(415, {"ok": False, "result": 'Send JSON: {"url": "https://..."}.'})
+        size = int(self.headers.get("Content-Length") or 0)
+        if size > SEND_BODY:
+            return self.reply(413, {"ok": False, "result": "That's too long for a link."})
+        with _send_lock:
+            now = time.monotonic()
+            _sends[:] = [t for t in _sends if now - t < 60]
+            if len(_sends) >= SEND_LIMIT:
+                return self.reply(429, {"ok": False, "result": "That's a lot of links. Wait a minute."})
+            _sends.append(now)
+        try:
+            body = json.loads(self.rfile.read(size) or b"{}")
+        except ValueError:
+            body = None
+        text = (body.get("url") or body.get("text")) if isinstance(body, dict) else None
+        if isinstance(text, list):          # a Shortcut can hand over a list
+            text = next((x for x in text if isinstance(x, str)), None)
+        if not isinstance(text, str) or not text.strip():
+            return self.reply(400, {"ok": False, "result": "Paste a link first."})
+        if not _opening.acquire(blocking=False):
+            return self.reply(429, {"ok": False, "result": "The TV is still opening the last link."})
+        try:
+            used()
+            res = links.open_link(text)
+        finally:
+            _opening.release()
+        try:
+            sent = links.normalise(text)[:300]
+        except links.BadLink:
+            sent = "(not a link)"
+        print(f"{self.client_address[0]} /send {res.app or '-'} {'ok' if res.ok else 'refused'}: {sent}", flush=True)
+        if not res.ok:
+            print(f"  {res.message}", flush=True)
+        self.reply(200 if res.ok else 400 if not res.app else 502, {"ok": res.ok, "result": res.message})
+
     def do_POST(self):
         if not self.allowed():
             return
@@ -417,6 +557,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.pair()
         if not self.paired():
             return
+        if self.path == "/send":
+            return self.send_link()
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             if self.path == "/type":
@@ -549,6 +691,10 @@ class Server(ThreadingHTTPServer):
 
 def main():
     if len(sys.argv) > 1:
+        if sys.argv[1] == "--send" and len(sys.argv) == 3:
+            res = links.open_link(sys.argv[2])
+            print(res.message)
+            sys.exit(0 if res.ok else 1)
         if sys.argv[1].startswith("-"):
             sys.exit(__doc__)
         time.sleep(0.5)                       # let the desktop pick up the new keyboard
