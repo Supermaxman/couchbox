@@ -5,7 +5,10 @@ SettingsPage {
     id: p
     title: "System"
     property var info: ({})
-    Component.onCompleted: T.call("system.info", {}, r => p.info = r)
+    property var perf: ({})                  // system.perf: what the box is doing, every 2 s while open
+    Component.onCompleted: { T.call("system.info", {}, r => p.info = r); T.call("system.perf", {}, r => p.perf = r); }
+    Timer { interval: 2000; repeat: true; running: p.visible; onTriggered: T.call("system.perf", {}, r => p.perf = r) }
+    function pct(v) { return v === undefined || v === null ? "…" : v + "%"; }
     function doctor() {
         T.toast("Checking…");
         T.call("system.doctor", {}, r => T.message(r.status === "ok" ? "Everything looks fine" : "Some checks need a look",
@@ -30,6 +33,11 @@ SettingsPage {
             T.info("Memory", info.mem_total_mb ? Math.round(info.mem_free_mb / 1024 * 10) / 10 + " GB free of " + Math.round(info.mem_total_mb / 1024) + " GB" : ""),
             T.info("Storage", info.disk_total_gb ? info.disk_free_gb + " GB free of " + info.disk_total_gb + " GB" : ""),
             T.action("Run checks", doctor),
+            T.section("Right now"),
+            T.info("Processor", pct(perf.cpu_pct) + (perf.cpu_mhz ? " · " + (perf.cpu_mhz / 1000).toFixed(1) + " GHz" : "")),
+            T.info("Graphics", pct(perf.gpu_pct), {help: "The share of time the graphics chip is busy drawing; near 100% video starts to stutter."}),
+            T.info("Fan", perf.fan && perf.fan.steps ? (perf.fan.step ? "Step " + perf.fan.step + " of " + perf.fan.steps : "Off") + (perf.fan.rpm ? " · " + perf.fan.rpm.toLocaleString(Qt.locale(), "f", 0) + " rpm" : "") : ""),
+            T.info("Busiest", (perf.apps || []).filter(a => a.pct > 0).map(a => a.name + " " + a.pct + "%").join(", ") || (perf.apps ? "Nothing much" : "…")),
             T.section("Memory and storage"),
             choices("apps.idle_minutes", [30, 60, 120, 240, 1440], v => v >= 60 ? (v / 60) + " hour" + (v > 60 ? "s" : "") : v + " minutes"),
             choices("apps.web_cache_mb", [128, 256, 512, 1024], v => v + " MB"),

@@ -17,7 +17,7 @@
   chat       IRC over WebSocket (irc-ws.chat.twitch.tv): anonymous to read, the token to send;
              Twitch emotes from the message tags, 7TV, BTTV and FrankerFaceZ by name
 Everything comes out as the same "cards" as vhx.py. Ids: "live:<login>", "vod:<id>",
-channels by login, categories as "cat:<name>".
+"clip:<slug>", channels by login, categories as "cat:<name>".
 """
 
 import fcntl
@@ -631,6 +631,8 @@ class Twitch:
         vid = str(vid)
         kind, _, key = vid.partition(":")
         params = {"platform": "web", "playerBackend": "mediaplayer", "playerType": "site"}
+        if kind == "clip":
+            return self.clip(key, params)
         path = os.path.join(self.dir, "playing.m3u8")
         c = self.blank()
         if kind == "live":
@@ -696,6 +698,38 @@ class Twitch:
         c["start"] = 0
         c["subtitles"] = []
         c["next"] = None
+        return c
+
+    def clip(self, slug, params):
+        """A clip ("clip:<slug>", from a link sent to the TV): an MP4 per quality, signed with
+        an access token like the streams; the best up to 1080p."""
+        d = self.gql(
+            """query($s: ID!, $p: PlaybackAccessTokenParams!) { clip(slug: $s) {
+            id title durationSeconds thumbnailURL(width: 480, height: 272) broadcaster { login displayName }
+            playbackAccessToken(params: $p) { value signature } videoQualities { quality frameRate sourceURL } } }""",
+            {"s": slug, "p": params},
+        )
+        clip = d.get("clip") or {}
+        qualities = [v for v in clip.get("videoQualities") or [] if v.get("sourceURL")]
+        if not qualities:
+            raise RuntimeError("That clip isn't on Twitch any more.")
+        height = lambda v: int(float(v.get("quality") or 0))
+        best = max([v for v in qualities if height(v) <= 1080] or qualities, key=lambda v: (height(v), float(v.get("frameRate") or 0)))
+        tok = clip.get("playbackAccessToken") or {}
+        owner = clip.get("broadcaster") or {}
+        c = self.blank()
+        c.update(
+            id=f"clip:{slug}",
+            title=clip.get("title") or "",
+            landscape=clip.get("thumbnailURL") or "",
+            background=clip.get("thumbnailURL") or "",
+            duration=int(clip.get("durationSeconds") or 0),
+            series=owner.get("displayName") or owner.get("login") or "",
+            collectionId=owner.get("login") or "",
+        )
+        sep = "&" if "?" in best["sourceURL"] else "?"
+        c["url"] = best["sourceURL"] + sep + urllib.parse.urlencode({"sig": tok.get("signature", ""), "token": tok.get("value", "")})
+        c.update(chat="", start=0, subtitles=[], next=None)
         return c
 
     def video(self, vid):
