@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/Supermaxman/couchbox/compare/v0.16.2...v0.17.0) (2026-11-05)
+
+
+### New
+
+* YouTube (beta), a native TV app built to replace VacuumTube (M1) ([#88](https://github.com/Supermaxman/couchbox/issues/88)) ([46be918](https://github.com/Supermaxman/couchbox/commit/46be918461e0c4be98eccabef6ce3287e687e18f))
+* **youtube:** sign-in, accounts and the signed-in pages (M2) ([#90](https://github.com/Supermaxman/couchbox/issues/90)) ([7f82123](https://github.com/Supermaxman/couchbox/commit/7f8212361ed05a8ddc6fa5a07826336662b034b0))
+
+
+### Fixed
+
+* give the TV's refresh rate back when a paused video is out of sight ([#91](https://github.com/Supermaxman/couchbox/issues/91)) ([75d30e7](https://github.com/Supermaxman/couchbox/commit/75d30e75cf676378950b3a0c636f9a66ee267890))
+
 ## [0.16.2](https://github.com/Supermaxman/couchbox/compare/v0.16.1...v0.16.2) (2026-11-05)
 
 
