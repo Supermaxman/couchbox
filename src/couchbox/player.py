@@ -284,7 +284,9 @@ class MpvVideo(QQuickFramebufferObject):
             self.errorChanged.emit()
 
     def _get(self, name):
-        return self.mpv[name]
+        # a property, as attribute access reads it (mpv[name] would read the option of that name:
+        # options/path and options/estimated-vf-fps don't exist, so the Follower saw nothing)
+        return getattr(self.mpv, name.replace("-", "_"))
 
     def apply_settings(self, changed):
         """Playback settings (all of them at start, then each change) on this player."""
