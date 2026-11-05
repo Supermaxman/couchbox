@@ -341,9 +341,14 @@ def snapshot(get: Callable[[str], Any]) -> dict[str, Any]:
     return out
 
 
+# The video's own frame rate (container-fps: the stream's declared rate, e.g. HLS's or the video
+# track's) is trusted when it's a TV rate and reads the same twice. Only without one does the
+# measured rate (estimated-vf-fps) decide, once STABLE_SAMPLES readings agree: on HLS with software
+# H.264 it jitters by more than that, so it must never hold up a declared rate.
+DECLARED = (20.0, 61.0)
 STABLE_SAMPLES = 3  # this many readings of the measured frame rate, a second apart, that agree
 STABLE_SPREAD = 0.005  # ... to within 0.5 %
-GIVE_UP = 30.0  # no steady frame rate by then (variable frame rate, audio only): leave the TV be
+GIVE_UP = 30.0  # no frame rate to go by then (variable frame rate, audio only): leave the TV be
 MIN_DURATION = 300.0  # shorter (trailers, clips, recordings of an event): not worth two blank screens
 RESTORE_AFTER = 10.0  # stopped this long: Settings' mode again (the next episode starts sooner)
 
@@ -352,8 +357,9 @@ class Follower:
     """Decides, from a player's properties sampled about once a second (step), which refresh rate
     its video wants, and switches the TV when that changes.
 
-    A new file is watched until the measured frame rate (estimated-vf-fps) holds steady for a few
-    seconds; then, for a video (not live, not a short clip), the TV switches once to the matching
+    A new file is watched until its declared frame rate (container-fps) reads the same twice, or,
+    without one, its measured rate (estimated-vf-fps) holds steady for a few seconds; then, for a
+    video (not live, not a short clip), the TV switches once to the matching
     mode and stays there until playback has stopped for RESTORE_AFTER, so going to the next
     episode doesn't switch twice. Live streams and clips put Settings' mode back only if this
     player switched, or, when they aren't passive (a camera pop-up is), if another player left the
@@ -369,7 +375,8 @@ class Follower:
         self.enabled = True
         self.switched: float | None = None  # the frame rate this player switched the TV for
         self.path = None
-        self.samples: list[float] = []
+        self.samples: list[float] = []  # the measured frame rate, newest last (the last few)
+        self.declared: float | None = None  # the declared rate at the last step
         self.started = 0.0
         self.decided = False
         self.paused = False
@@ -386,7 +393,8 @@ class Follower:
             self.switched = fps
             if self.on_claim:
                 self.on_claim(self.pid)
-        else:  # Settings' mode suits it (30 or 60 fps)
+        else:  # Settings' mode suits it (30 or 60 fps), or the TV has nothing better
+            _log(f"{self.who or 'player'}: Settings' mode suits {fps:.3f} fps")
             self._home(passive=False)
 
     def _home(self, passive: bool) -> None:
@@ -431,7 +439,7 @@ class Follower:
             return
         self.stopped_at = None
         if p["path"] != self.path:
-            self.path, self.samples, self.started, self.decided = p["path"], [], now, False
+            self.path, self.samples, self.declared, self.started, self.decided = p["path"], [], None, now, False
         paused = bool(p.get("paused"))
         resumed, self.paused = self.paused and not paused, paused
         if self.decided:
@@ -439,35 +447,59 @@ class Follower:
             if resumed and self.switched is not None and not self._mine():
                 self._switch(self.switched)
             return
-        fps = self._decide(p, now)
+        fps, why = self._decide(p, now)
         if fps is False:
             return
         self.decided = True
+        # once per video, with what it went by (the kind of address only: URLs carry tokens)
+        dur, cont = p.get("duration"), p.get("container_fps")
+        dur = f"{dur:.0f} s" if _num(dur) else dur
+        cont = round(cont, 3) if _num(cont) else cont
+        outcome = f"match {fps:.3f} fps" if fps else "Settings mode"
+        measured = [round(x, 3) for x in self.samples]
+        _log(
+            f"{self.who or 'player'}: {path_kind(p['path'])}, duration {dur}, declared {cont} fps, measured {measured} -> {outcome} ({why})"
+        )
         if fps:
-            _log(f"{self.who or 'player'}: {fps:.3f} fps video")
             self._switch(fps)
         else:
             self._home(passive)
 
-    def _decide(self, p: dict[str, Any], now: float) -> float | None | bool:
-        """The frame rate to match, None (Settings' mode), or False: not sure yet."""
+    def _decide(self, p: dict[str, Any], now: float) -> tuple[float | None | bool, str]:
+        """(The frame rate to match, None for Settings' mode, or False: not sure yet; why)."""
         est = p.get("est_fps")
-        if isinstance(est, int | float) and est > 0:
-            self.samples = (self.samples + [float(est)])[-STABLE_SAMPLES:]
-        if now - self.started > GIVE_UP:
-            return None
-        if len(self.samples) < STABLE_SAMPLES or (max(self.samples) - min(self.samples)) > STABLE_SPREAD * max(self.samples):
-            return False
-        dur = p.get("duration")
-        if not isinstance(dur, int | float) or dur <= 0 or dur < MIN_DURATION:
-            return None  # live (no duration) or a clip
-        measured = sorted(self.samples)[len(self.samples) // 2]
+        if _num(est) and est > 0:
+            self.samples = (self.samples + [float(est)])[-6:]
         cont = p.get("container_fps")
-        # the container's rate is exact (23.976...) when it agrees with what's measured; some
-        # streams carry a wrong one (90000, 0)
-        if isinstance(cont, int | float) and cont > 0 and abs(cont - measured) <= 0.01 * measured:
-            return float(cont)
-        return measured
+        declared = float(cont) if _num(cont) and DECLARED[0] <= cont <= DECLARED[1] else None
+        steady = declared is not None and self.declared is not None and abs(declared - self.declared) <= 0.001 * declared
+        self.declared = declared
+        recent = self.samples[-STABLE_SAMPLES:]
+        if steady:
+            fps, how = declared, "declared rate"
+        elif declared is None and len(recent) == STABLE_SAMPLES and max(recent) - min(recent) <= STABLE_SPREAD * max(recent):
+            fps, how = sorted(recent)[len(recent) // 2], "measured rate, nothing declared"
+        elif now - self.started > GIVE_UP:
+            return None, f"no frame rate to go by in {GIVE_UP:.0f} s"
+        else:
+            return False, ""
+        dur = p.get("duration")
+        if not _num(dur) or dur <= 0:
+            return None, "live: no duration"
+        if dur < MIN_DURATION:
+            return None, f"a clip: under {MIN_DURATION / 60:.0f} minutes"
+        return fps, how
+
+
+def _num(v: Any) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def path_kind(path: Any) -> str:
+    """What a player plays, for the log, without the address: "HLS https", "file", ..."""
+    p = str(path or "").lower()
+    scheme = p.split("://", 1)[0] if "://" in p else "file"
+    return ("HLS " if ".m3u8" in p else "") + scheme
 
 
 # ------------------------------------------------------------------ players that aren't ours

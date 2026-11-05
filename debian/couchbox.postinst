@@ -72,6 +72,8 @@ X
     /usr/lib/couchbox/bin/couchbox-theme >/dev/null 2>&1 || true
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
     if ! in_chroot; then
+        # the running home screen still has the old QML: couchbox-memory reloads it when no one's using the TV
+        touch /var/lib/couchbox/state/home-stale
         systemd-tmpfiles --create couchbox.conf >/dev/null 2>&1 || true
         udevadm control --reload >/dev/null 2>&1 || true
         sysctl --system -q >/dev/null 2>&1 || true
@@ -81,6 +83,7 @@ triggered)
     # Plasma Bigscreen was upgraded: lay the Couchbox home screen over the new version (or
     # fall back to its own home screen if this version isn't tested yet)
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
+    in_chroot || touch /var/lib/couchbox/state/home-stale
     ;;
 esac
 
