@@ -354,7 +354,7 @@ def test_codecs_command_for_couchbox_audio(box, capsys):
 
 def test_settings_and_their_environment():
     sch = settings.schema()["settings"]
-    for key, default in (("video.match_rate", True), ("audio.night_mode", False), ("audio.passthrough", "off")):
+    for key, default in (("video.match_rate", False), ("audio.night_mode", False), ("audio.passthrough", "off")):
         assert sch[key]["default"] == default and sch[key]["page"] == "display"
     assert sch["audio.passthrough"]["values"] == ["off", "on"]
     env = settings.env()
