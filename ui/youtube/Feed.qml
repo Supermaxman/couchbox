@@ -15,6 +15,7 @@ FocusScope {
     property alias count: list.count
     property real bottomRoom: 0
     property real cardW: Y.cardW
+    property real metaSize: Y.tMeta              // the cards' grey lines (search results: 22)
     property bool fixed: false
     property int perRow: 3                   // a grid (History, Watch later) in rows of this many
     property bool gridScroll: false          // its rows scroll under the focus like shelves (Subscriptions)
@@ -27,6 +28,7 @@ FocusScope {
         const out = [];
         if (page.nudge) out.push({kind: "nudge", title: page.nudge.title, subtitle: page.nudge.subtitle});
         for (const s of page.shelves || []) {
+            if (s.cluster) { out.push(Object.assign({kind: "cluster"}, s)); continue; }
             if (!s.grid) { out.push(Object.assign({kind: "shelf"}, s)); continue; }
             for (let i = 0; i < s.items.length; i += perRow)         // a grid: rows that don't scroll
                 out.push({kind: "shelf", title: i ? "" : s.title, subtitle: "", items: s.items.slice(i, i + perRow), more: "", fixedRow: !gridScroll});
@@ -38,8 +40,10 @@ FocusScope {
         const grid = (page.shelves || []).find(s => s.grid && s.more);
         gridMore = !more && !!grid;
         if (gridMore) more = grid.more;
-        list.currentIndex = 0;
-        list.positionViewAtBeginning();
+        // the first shelf takes the focus (its cards large, the ring on the first), not a note above it
+        const first = out.findIndex(r => r.kind === "shelf" || r.kind === "cluster");
+        list.currentIndex = first > 0 && out[0].kind === "nudge" ? first : 0;
+        list.positionViewAtIndex(list.currentIndex, ListView.Beginning);
     }
 
     ListView {
@@ -71,7 +75,7 @@ FocusScope {
             // rows above the current one are gone (as on YouTube), and their cards' corners
             // (Shapes) mustn't draw past the list's clip
             visible: index >= list.currentIndex
-            sourceComponent: ({chips: chipsC, nudge: nudgeC, tiles: tilesC})[modelData.kind] || shelfC
+            sourceComponent: ({chips: chipsC, nudge: nudgeC, tiles: tilesC, cluster: clusterC})[modelData.kind] || shelfC
             Component {
                 id: shelfC
                 Shelf {
@@ -83,13 +87,19 @@ FocusScope {
                     indent: feed.indent
                     baseW: feed.cardW
                     fixed: feed.fixed || !!cell.modelData.fixedRow
+                    metaSize: feed.metaSize
                     focus: true
                     onOpen: it => feed.open(it)
                 }
             }
             Component {
                 id: chipsC
-                Chips { chips: cell.modelData.chips || []; indent: feed.indent; focus: true }
+                // under search results: well clear of them, until it's the current row
+                Chips { chips: cell.modelData.chips || []; indent: feed.indent; focus: true; topPad: (cell.current ? -12 : cell.modelData.pad || 0) * Y.u }
+            }
+            Component {
+                id: clusterC
+                ClusterRow { row: cell.modelData; indent: feed.indent; focus: true; topPad: cell.current ? 0 : 64 * Y.u; onOpen: it => feed.open(it) }
             }
             Component {
                 id: tilesC

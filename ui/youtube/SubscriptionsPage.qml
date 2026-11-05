@@ -58,10 +58,12 @@ FocusScope {
         x: 0; y: 0; width: 600 * Y.u; height: parent.height
         color: Y.bg
     }
-    Text {
-        x: 172 * Y.u; y: 74 * Y.u
+    Text {                                     // the page's name, level with the guide's picture
+        x: 172 * Y.u; y: 68 * Y.u
+        height: 72 * Y.u
+        verticalAlignment: Text.AlignVCenter
         text: "Subscriptions"
-        color: Y.text; font.family: Y.font; font.pixelSize: 50 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
     }
     ListView {
         id: list

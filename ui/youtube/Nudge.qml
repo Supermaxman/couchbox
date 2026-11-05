@@ -32,8 +32,8 @@ FocusScope {
                 width: signIn.implicitWidth + 64 * Y.u
                 height: 64 * Y.u
                 radius: height / 2
-                color: on ? Y.text : Y.raised
-                Text { id: signIn; anchors.centerIn: parent; text: "Sign in"; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
+                color: on ? Y.text : Y.glass
+                Text { id: signIn; anchors.centerIn: parent; text: "Sign in"; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
             }
         }
     }

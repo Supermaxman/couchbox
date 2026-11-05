@@ -238,17 +238,18 @@ ApplicationWindow {
         id: ui
         anchors.fill: parent
         focus: true
-        Keys.onEscapePressed: win.back()
-        Keys.onBackPressed: win.back()
+        // Back acts once per press (a held key's repeats don't run through the pages)
+        Keys.onEscapePressed: e => { if (!e.isAutoRepeat) win.back(); }
+        Keys.onBackPressed: e => { if (!e.isAutoRepeat) win.back(); }
 
         // the video, under everything: shown while the player is the page on top
         MpvVideo {
             id: video
             readonly property bool placed: Y.videoRect.width > 0          // Shorts
             x: placed ? Y.videoRect.x : Y.videoSide ? 54 * Y.u : 0
-            y: placed ? Y.videoRect.y : Y.videoSide ? 218 * Y.u : 0
+            y: placed ? Y.videoRect.y : Y.videoSide ? 219 * Y.u : 0
             width: placed ? Y.videoRect.width : Y.videoSide ? 1146 * Y.u : parent.width
-            height: placed ? Y.videoRect.height : Y.videoSide ? 646 * Y.u : parent.height
+            height: placed ? Y.videoRect.height : Y.videoSide ? 645 * Y.u : parent.height
             visible: win.playing
         }
 
@@ -273,6 +274,7 @@ ApplicationWindow {
             visible: !stack.depth
             onChosen: key => win.choose(key)
             onEnter: win.focusPage()
+            onOpenChanged: Y.dimmed = open
         }
 
         StackView {

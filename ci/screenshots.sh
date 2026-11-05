@@ -105,7 +105,7 @@ shot yt-guide couchbox-yt --keys left
 shot yt-guide-tab couchbox-yt --keys left,down,down,down,down,down,down
 shot yt-gaming couchbox-yt --open gaming
 shot yt-search couchbox-yt --keys left,up,ok
-shot yt-search-typed couchbox-yt --open typing:sky --keys left,down
+shot yt-search-typed couchbox-yt --open typing:sky --keys down
 shot yt-results couchbox-yt --open "search:sky"
 shot yt-results-chips couchbox-yt --open "search:sky" --keys down
 shot yt-channel couchbox-yt --open channel:UCdemo0000000000000orbit
@@ -145,6 +145,13 @@ shot yt-player-end couchbox-yt --open video:demo0000003@3598
 shot yt-card-menu couchbox-yt --keys menu
 shot yt-movies couchbox-yt --open movies
 shot yt-music couchbox-yt --open music
+# ... round 1's fixes: scrubbing with the controls hidden (the chapters' strip over the bar), the
+# search results' channel section (the large card, the list in columns), the shelf under Search's
+# keys, the open guide scrolled down to Movies & TV (Settings kept at the bottom)
+shot yt-player-scrub couchbox-yt --open video:demo0000003@1500 --keys back,right
+shot yt-results-cluster couchbox-yt --open "search:sky" --keys down,down,right
+shot yt-search-landing couchbox-yt --keys left,up,ok,down,down,down
+shot yt-guide-movies couchbox-yt --keys left,down,down,down,down,down,down,down,down
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down
