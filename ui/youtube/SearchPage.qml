@@ -62,7 +62,7 @@ FocusScope {
             feed.setPage(r, extra);
             if (!feed.count) problem = "No results for “" + q + "”.";
             if (page.activeFocus || page.results) feed.forceActiveFocus();
-        }, e => { loading = false; problem = e; });
+        }, e => { if (page) { page.loading = false; page.problem = e; } });
         feed.forceActiveFocus();
     }
     function press(k) {

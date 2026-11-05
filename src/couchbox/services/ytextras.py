@@ -131,7 +131,8 @@ class Extras:
 
         try:
             data = self._get("sb:" + prefix(video_id), fetch)
-        except (requests.RequestException, ValueError):
+        except (requests.RequestException, ValueError) as err:
+            print(f"SponsorBlock: no answer ({type(err).__name__})", flush=True)
             return []
         return parse_segments(data, video_id)
 
@@ -148,7 +149,8 @@ class Extras:
 
         try:
             data = self._get("da:" + prefix(video_id), fetch)
-        except (requests.RequestException, ValueError):
+        except (requests.RequestException, ValueError) as err:
+            print(f"DeArrow: no answer ({type(err).__name__})", flush=True)
             return {}
         return parse_branding(data, video_id)
 
@@ -165,7 +167,8 @@ class Extras:
 
         try:
             data = self._get("ryd:" + video_id, fetch)
-        except (requests.RequestException, ValueError):
+        except (requests.RequestException, ValueError) as err:
+            print(f"Return YouTube Dislike: no answer ({type(err).__name__})", flush=True)
             return {}
         if not isinstance(data, dict) or "dislikes" not in data:
             return {}

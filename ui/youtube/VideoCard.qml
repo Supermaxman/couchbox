@@ -187,17 +187,17 @@ Item {
         Rectangle { width: parent.width; height: parent.radius; color: parent.color }   // square top
         Column {
             anchors { fill: parent; margins: 24 * Y.u; topMargin: 26 * Y.u }
-            spacing: 8 * Y.u
+            spacing: 2 * Y.u
             Text {
                 width: parent.width
                 text: card.title
-                color: card.on ? Y.ink : Y.text
+                color: card.on ? Y.ink : Y.dim
                 font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
                 elide: Text.ElideRight
             }
-            Item { width: 1; height: 22 * Y.u }
-            Repeater {
-                model: (card.item.lines || []).slice(0, 2)
+            Item { width: 1; height: 36 * Y.u }
+            Repeater {                       // the whole title (it's cut short above), then the channel and the rest
+                model: [card.title, (card.item.lines || []).join(" • ")].filter(x => !!x)
                 Text {
                     required property string modelData
                     width: parent.width

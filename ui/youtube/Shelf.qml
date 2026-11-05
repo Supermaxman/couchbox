@@ -70,7 +70,8 @@ FocusScope {
         visible: !shelf.row.pill && shelf.hasHead
         Text {
             text: shelf.row.title || ""
-            color: Y.dimmed || shelf.dim ? Y.dim : Y.text
+            // the current row's white; the others' (and all with the guide open) grey
+            color: Y.dimmed || shelf.dim ? Y.dim : shelf.current ? Y.text : Y.soft
             font.family: Y.font; font.pixelSize: Y.tShelf; font.weight: Font.Medium
             height: 36 * Y.u
         }
@@ -174,12 +175,13 @@ FocusScope {
         loading = true;
         const token = row.more;
         Y.call("more", {token: token}, r => {
+            if (!shelf) return;                // (gone meanwhile: its row was rebuilt or left)
             loading = false;
             if (row.more !== token) return;
             const i = list.currentIndex;
             row = Object.assign({}, row, {items: (row.items || []).concat(r.items || []), more: r.more || ""});
             list.currentIndex = i;
             list.positionViewAtIndex(i, ListView.Beginning);
-        }, () => loading = false);
+        }, () => { if (shelf) shelf.loading = false; });
     }
 }

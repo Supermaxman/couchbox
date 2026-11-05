@@ -22,11 +22,12 @@ FocusScope {
     function fetch(t) {
         loading = true;
         Y.call("comments", {token: t}, r => {
+            if (!panel) return;                // (the player closed meanwhile)
             loading = false;
             items = items.concat(r.items || []);
             more = r.more || "";
             if (!items.length) problem = "No comments yet.";
-        }, e => { loading = false; problem = e; });
+        }, e => { if (panel) { panel.loading = false; panel.problem = e; } });
     }
     Keys.onUpPressed: list.decrementCurrentIndex()
     Keys.onDownPressed: { list.incrementCurrentIndex(); if (list.currentIndex >= items.length - 3 && more && !loading) fetch(more); }

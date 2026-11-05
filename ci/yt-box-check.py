@@ -292,6 +292,16 @@ def main():
         settle=1,
     )
 
+    # the channel's panel (its picture, Subscribe, Go to channel), then its page, and Back to the player
+    remote(*["left"] * 6, "ok")
+    r.step("channel-panel", lambda f: (d(f).get("panel") == "channel" and "panel" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=2)
+    remote("down", "ok")
+    r.step("channel-page", lambda f: (f.get("page") == "channel" and "channel" in f["focus"], f"page {f.get('page')}"), settle=4)
+    remote("down")
+    r.step("channel-page-down", lambda f: (f.get("page") == "channel", "the next shelf"), settle=1.5)
+    remote("back")
+    r.step("channel-back", lambda f: (f.get("page") == "player" and "controls" in f["focus"], f"page {f.get('page')}"), settle=2)
+
     # out of the player, then the Shorts tab: straight into Shorts
     remote("back", "back")
     r.step("player-left", lambda f: (f["page"] == "home", f"page {f.get('page')}"), settle=2)

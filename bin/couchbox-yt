@@ -102,7 +102,12 @@ class Backend(QObject):
         if self.demo:                                # a sponsor read and an intro, the screenshots' video
             return {"segments": [{"category": "intro", "label": "Intro", "start": 0.0, "end": 12.0, "action": "skip"},
                                  {"category": "sponsor", "label": "Sponsor", "start": 1800.0, "end": 1860.0, "action": "skip"}]}
-        return {"segments": self.extras.segments(vid)}
+        segs = self.extras.segments(vid)
+        skip = self.settings.get()["skip"]
+        kinds = sorted({s["category"] for s in segs})
+        print(f"yt {vid}: SponsorBlock: {len(segs)} segments ({', '.join(kinds) or 'none'}); "
+              f"skipped here: {', '.join(k for k in kinds if skip.get(k)) or 'none'}", flush=True)
+        return {"segments": segs}
 
     def branding(self, vid):
         if not self.settings.get()["dearrow"]:

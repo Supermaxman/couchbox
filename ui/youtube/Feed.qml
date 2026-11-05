@@ -127,6 +127,7 @@ FocusScope {
         loading = true;
         const token = more;
         Y.call("more", {token: token}, r => {
+            if (!feed) return;                 // (gone meanwhile: its page was left)
             loading = false;
             if (more !== token) return;
             const i = list.currentIndex;
@@ -139,6 +140,6 @@ FocusScope {
             more = r.more || "";
             list.currentIndex = i;
             list.positionViewAtIndex(i, ListView.Beginning);
-        }, () => loading = false);
+        }, () => { if (feed) feed.loading = false; });
     }
 }
