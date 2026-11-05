@@ -101,6 +101,12 @@ CASES = [
     ("yt-player-description-back", "couchbox-yt", ["--open", "video:demo0000003"], "left,left,left,ok,back", "moves"),
     ("yt-shorts-tab", "couchbox-yt", [], "left,down,ok", "moves"),
     ("yt-library-guest", "couchbox-yt", ["--profile", "guest", "--open", "library"], "", "moves"),
+    # what the voice assistant, links sent to the TV and Continue watching open (M5)
+    ("yt-history", "couchbox-yt", ["--open", "history"], "", "moves"),
+    ("yt-history-player", "couchbox-yt", ["--open", "history"], "ok", "moves"),
+    ("yt-playlist", "couchbox-yt", ["--open", "playlist:PLdemo123"], "", "moves"),
+    ("yt-video-at", "couchbox-yt", ["--open", "video:demo0000006@65"], "", "moves"),
+    ("settings-apps-youtube", "couchbox-settings", ["--page", "apps", "--in", "--wait", "5000"], "down,down,down,ok", "moves"),
 ]
 STEP = 8  # compare every 8th pixel
 MIN_CHANGED = 50  # samples: a moved focus ring alone changes a few hundred

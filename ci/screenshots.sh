@@ -162,6 +162,10 @@ shot yt-player-description-back couchbox-yt --open video:demo0000003 --keys left
 shot yt-player-related-up couchbox-yt --open video:demo0000003 --keys down,up
 shot yt-shorts-tab couchbox-yt --keys left,down,ok
 shot yt-library-guest couchbox-yt --profile guest --open library
+# what the voice assistant, links sent to the TV and Continue watching open; the tile's app choice
+shot yt-history couchbox-yt --open history
+shot yt-playlist couchbox-yt --open playlist:PLdemo123
+shot settings-apps-youtube couchbox-settings --page apps --in --wait 4500 --keys down,down,down,ok
 # ... M4: Settings' SponsorBlock rows (switches), the player skipping a sponsor (the notice, OK to
 # undo) and the bar with the segments in SponsorBlock's colours
 shot yt-settings-sponsorblock couchbox-yt --open settings --keys down,down,down,ok
