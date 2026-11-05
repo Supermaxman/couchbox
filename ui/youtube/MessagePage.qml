@@ -24,8 +24,8 @@ FocusScope {
         }, () => {});
     }
     Keys.onLeftPressed: Y.toGuide()
-    Keys.onReturnPressed: if (action) Y.toast("Signing in to YouTube comes in the next update.")
-    Keys.onEnterPressed: if (action) Y.toast("Signing in to YouTube comes in the next update.")
+    Keys.onReturnPressed: if (action) Y.signIn()
+    Keys.onEnterPressed: if (action) Y.signIn()
 
     Column {
         x: Y.left; y: 120 * Y.u

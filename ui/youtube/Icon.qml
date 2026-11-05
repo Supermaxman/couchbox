@@ -49,6 +49,15 @@ Image {
         cc: "s:<rect x='3' y='5.5' width='18' height='13' rx='2'/><path d='M10.4 10.3a2.1 2.1 0 1 0 0 3.4M16.4 10.3a2.1 2.1 0 1 0 0 3.4'/>",
         check: "s:<path d='M5 12.5l4.5 4.5L19 7.5'/>",
         mic: "s:<rect x='9' y='3.5' width='6' height='11' rx='3'/><path d='M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3'/>",
+        list: "s:<path d='M9 6.5h11M9 12h11M9 17.5h11'/>|<circle cx='4.8' cy='6.5' r='1.3'/><circle cx='4.8' cy='12' r='1.3'/><circle cx='4.8' cy='17.5' r='1.3'/>",
+        "bell-all": "s:<path d='M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.8h-15z'/><path d='M10 20.5a2 2 0 0 0 4 0'/><path d='M3.5 8.5a8 8 0 0 1 2.6-4.6M20.5 8.5a8 8 0 0 0-2.6-4.6'/>",
+        "bell-filled": "f:<path d='M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.8h-15z'/><path d='M9.8 20.2h4.4a2.2 2.2 0 0 1-4.4 0z'/>",
+        "bell-off": "s:<path d='M8.2 6.1A6 6 0 0 1 18 11v4.2M6 11v5.5l-1.5 1.8h12'/><path d='M10 20.5a2 2 0 0 0 4 0'/><path d='M3.5 3.5l17 17'/>",
+        unsubscribe: "s:<circle cx='10' cy='8.5' r='3.5'/><path d='M3.5 19.5a6.5 6.5 0 0 1 10.5-5.1'/><path d='M16.5 15.5l4 4M20.5 15.5l-4 4'/>",
+        "dislike-filled": "f:<g transform='rotate(180 12 12)'><path d='M3.5 10h4v10.5h-4z'/><path d='M8.5 20.5V10l3.6-6.3a2 2 0 0 1 3.7 1.5L15 9.5h3.8a2.2 2.2 0 0 1 2.1 2.7l-1.4 6.5a2.3 2.3 0 0 1-2.2 1.8z'/></g>",
+        "save-filled": "f:<path d='M6.5 4h11v16.5L12 16.6l-5.5 3.9z'/>",
+        plus: "s:<path d='M12 5v14M5 12h14'/>",
+        lock: "s:<rect x='5.5' y='10.5' width='13' height='10' rx='1.5'/><path d='M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5'/>",
         music: "m"
     })
     function svg(name, c) {

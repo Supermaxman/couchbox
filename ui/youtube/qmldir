@@ -17,3 +17,10 @@ ChannelPage 1.0 ChannelPage.qml
 MessagePage 1.0 MessagePage.qml
 PlayerPage 1.0 PlayerPage.qml
 RoundImage 1.0 RoundImage.qml
+ProfilesPage 1.0 ProfilesPage.qml
+SignInPage 1.0 SignInPage.qml
+SubscriptionsPage 1.0 SubscriptionsPage.qml
+LibraryPage 1.0 LibraryPage.qml
+ListPage 1.0 ListPage.qml
+Tiles 1.0 Tiles.qml
+PlayerPanel 1.0 PlayerPanel.qml

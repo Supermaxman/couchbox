@@ -26,6 +26,7 @@ FocusScope {
         }
     }
     Logo {
+        premium: !!(Y.profile && Y.profile.premium)
         anchors { right: parent.right; rightMargin: 108 * Y.u }
         y: 76 * Y.u
     }

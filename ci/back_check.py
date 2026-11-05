@@ -78,6 +78,15 @@ CASES = [
     ("yt-player-related", "couchbox-yt", ["--open", "video:demo0000003"], "down", "moves"),
     ("yt-player-from-home", "couchbox-yt", [], "ok", "moves"),
     ("yt-settings", "couchbox-yt", ["--open", "settings"], "", "moves"),
+    ("yt-profiles-start", "couchbox-yt", ["--profile", "pick"], "", "quits"),
+    ("yt-profiles-menu", "couchbox-yt", ["--profile", "pick"], "down,ok", "moves"),
+    ("yt-profiles-from-guide", "couchbox-yt", ["--open", "profiles"], "", "moves"),
+    ("yt-signin", "couchbox-yt", ["--open", "signin"], "", "moves"),
+    ("yt-subscriptions", "couchbox-yt", ["--open", "subscriptions"], "", "moves"),
+    ("yt-subscriptions-feed", "couchbox-yt", ["--open", "subscriptions"], "right", "moves"),
+    ("yt-library", "couchbox-yt", ["--open", "library"], "", "moves"),
+    ("yt-library-list", "couchbox-yt", ["--open", "library"], "ok", "moves"),
+    ("yt-player-panel", "couchbox-yt", ["--open", "video:demo0000006"], "left,left,left,left,ok", "moves"),
 ]
 STEP = 8  # compare every 8th pixel
 MIN_CHANGED = 50  # samples: a moved focus ring alone changes a few hundred

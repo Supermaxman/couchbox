@@ -3,6 +3,7 @@ import QtQuick
 
 Row {
     property real h: 44 * Y.u                 // the play button's height
+    property bool premium: false              // a Premium member's: "Premium" beside the button
     spacing: h * 0.18
     Rectangle {
         width: parent.h * 1.42
@@ -28,7 +29,7 @@ Row {
         }
     }
     Text {
-        text: "YouTube"
+        text: parent.premium ? "Premium" : "YouTube"
         color: Y.text
         font.family: Y.font
         font.pixelSize: parent.h * 1.0
