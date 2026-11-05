@@ -71,10 +71,10 @@ FocusScope {
             Row {                              // 46K Likes · 2,088,453 Views · Nov 4 2026 (188 apart)
                 anchors.horizontalCenter: parent.horizontalCenter
                 Repeater {
-                    model: (panel.d.facts || []).slice(0, 3)
+                    model: (panel.d.facts || []).slice(0, 4)
                     Column {
                         required property var modelData
-                        width: 188 * Y.u
+                        width: Math.min(188 * Y.u, panel.width / Math.max(1, Math.min(4, (panel.d.facts || []).length)))
                         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.value; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Bold; height: 36 * Y.u; verticalAlignment: Text.AlignVCenter }
                         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.label; color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u; height: 36 * Y.u; verticalAlignment: Text.AlignVCenter }
                     }

@@ -20,6 +20,12 @@ QtObject {
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
     property bool shot: false                 // --shot: still (no blinking caret)
+    // the TV's settings (ytextras.Settings: SponsorBlock, DeArrow, dislikes, Hide Shorts, H.264 only)
+    property var settings: ({sponsorblock: true, skip: {sponsor: true}, dearrow: false, dislikes: false, hide_shorts: false, h264: true})
+    function setting(key, value) { call("setting", {key: key, value: value}, s => y.settings = s); }
+    // SponsorBlock's colours for its kinds of segment (its own defaults), for the progress bar
+    readonly property var segmentColors: ({sponsor: "#00d400", selfpromo: "#ffff00", interaction: "#cc00ff", intro: "#00ffff",
+                                           outro: "#0202ed", preview: "#008fd6", hook: "#395699", filler: "#7300ff", music_offtopic: "#ff9900"})
     property bool dimmed: false               // the guide has the focus: the page behind it greys
     property bool pushed: false               // the guide is open: the page is pushed right
 

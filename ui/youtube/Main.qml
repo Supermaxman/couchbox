@@ -42,6 +42,7 @@ ApplicationWindow {
         Y.shot = !!shot;
         Y.call("status", {}, r => {
             guide.entries = r.guide;
+            if (r.settings) Y.settings = r.settings;
             ready = true;
             const o = arg("--open");
             const want = args.indexOf("--profile") >= 0 ? arg("--profile") : null;
@@ -152,6 +153,18 @@ ApplicationWindow {
         if (section === "search" && search.back()) return;
         if (section === "search") { choose("home"); guide.forceActiveFocus(); return; }
         guide.forceActiveFocus();
+    }
+    // a setting that changes what the pages hold (Hide Shorts, DeArrow): they load again next time
+    property var lastSettings: ({})
+    Connections {
+        target: Y
+        function onSettingsChanged() {
+            const a = win.lastSettings, b = Y.settings;
+            if (a.hide_shorts !== undefined && (a.hide_shorts !== b.hide_shorts || a.dearrow !== b.dearrow)) {
+                home.loaded = false; tab.loaded = false; subscriptions.loaded = false; library.loaded = false;
+            }
+            win.lastSettings = b;
+        }
     }
     Connections {
         target: Y

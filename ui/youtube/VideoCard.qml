@@ -17,6 +17,14 @@ Item {
     property real metaSize: Y.tMeta           // the grey lines (search results: a little smaller)
     readonly property bool overVideo: behind.a === 0 && !round   // nothing behind to paint corners with: a Canvas rounds it
     readonly property string kind: item.type || "video"
+    // DeArrow (Settings): its viewers' title and picture in place of YouTube's, when it has them
+    property var brand: ({})
+    readonly property string title: brand.title || item.title || ""
+    readonly property string thumb: brand.thumb || item.thumb || ""
+    Component.onCompleted: {
+        if (Y.settings.dearrow && (kind === "video" || kind === "live") && item.id)
+            Y.call("branding", {id: item.id}, r => { if (card) card.brand = r || {}; }, () => {});
+    }
     property bool wide: false                 // drawn 16:9 whatever its shape (a hero shelf's row)
     readonly property string shape: wide ? "wide" : item.shape || "wide"   // wide | poster | square | hero | round
     readonly property bool round: kind === "channel" || shape === "round"
@@ -40,7 +48,7 @@ Item {
             Text {
                 visible: img.status !== Image.Ready && !card.round
                 anchors { fill: parent; margins: 26 * Y.u }
-                text: card.item.title || ""
+                text: card.title
                 color: "white"
                 font.family: Y.font; font.pixelSize: card.w * 0.075; font.weight: Font.Black
                 wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
@@ -58,7 +66,7 @@ Item {
         Image {
             id: img
             anchors.fill: parent
-            source: card.item.thumb || ""
+            source: card.thumb
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             sourceSize: Y.sz(width, height)
@@ -66,8 +74,8 @@ Item {
         }
         Loader {
             anchors.fill: parent
-            active: card.overVideo && !!card.item.thumb
-            sourceComponent: RoundImage { radius: Y.radius; cover: true; source: card.item.thumb || "" }
+            active: card.overVideo && !!card.thumb
+            sourceComponent: RoundImage { radius: Y.radius; cover: true; source: card.thumb }
         }
         Corners {
             anchors.fill: parent
@@ -123,7 +131,7 @@ Item {
         readonly property var badges: card.item.badges || []
         Text {
             width: parent.width
-            text: card.item.title || ""
+            text: card.title
             color: card.on ? Y.text : Y.dim
             font.family: Y.font; font.pixelSize: Y.tTitle; font.weight: Font.DemiBold
             wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
@@ -182,7 +190,7 @@ Item {
             spacing: 8 * Y.u
             Text {
                 width: parent.width
-                text: card.item.title || ""
+                text: card.title
                 color: card.on ? Y.ink : Y.text
                 font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
                 elide: Text.ElideRight

@@ -321,7 +321,15 @@ def main():
         ),
         settle=2,
     )
-    remote("down", "down", "down")
+    # Extras: into its rows, Hide Shorts flipped and flipped back (the TV's setting is left as it was)
+    remote("down", "down", "down", "down", "right", "down", "down")
+    f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)
+    was = d(f).get("on")
+    remote("ok")
+    r.step("settings-flip", lambda f: (d(f).get("on") == (not was), f"Hide Shorts {was} -> {d(f).get('on')}"), settle=1.5)
+    remote("ok")
+    r.step("settings-flip-back", lambda f: (d(f).get("on") == was, f"Hide Shorts back to {d(f).get('on')}"), settle=1.5)
+    remote("left", "down")
     r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
     remote("left", *["up"] * 13, "ok", gap=0.3)  # the guide, up to its picture: Who's watching
     r.step("profiles", lambda f: ("profiles" in f["focus"], f"focus {f.get('focus')}"), settle=2)

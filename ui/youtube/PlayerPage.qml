@@ -27,7 +27,39 @@ FocusScope {
     // follow from the first frame
     property real pos: video.position
     Timer { interval: 250; repeat: true; running: player.visible && !!player.s; onTriggered: player.pos = video.position }
-    Connections { target: video; function onPositionChanged() { player.pos = video.position; } }
+    Connections { target: video; function onPositionChanged() { player.pos = video.position; player.sponsorCheck(); } }
+
+    // ------------------------------------------------------------------ SponsorBlock
+    // The video's marked parts (ytextras: all kinds; the bar shows them); the kinds chosen in
+    // Settings are skipped once each as playback enters them, with a notice and OK to undo.
+    property var segments: []
+    property var skippedOnce: ({})
+    property var skipNotice: null              // {label, from} while the notice shows
+    function sponsorCheck() {
+        const st = Y.settings;
+        if (!st.sponsorblock || !segments.length || video.paused || !s || live) return;
+        for (let i = 0; i < segments.length; i++) {
+            const g = segments[i];
+            if (g.action !== "skip" || !(st.skip || {})[g.category] || skippedOnce[i]) continue;
+            if (pos >= g.start && pos < g.end - 0.5) {
+                skippedOnce[i] = true;
+                skipNotice = {label: g.label, from: pos};
+                video.seekTo(g.end);
+                noticeTimer.restart();
+                return;
+            }
+        }
+    }
+    function undoSkip() {
+        if (!skipNotice) return;
+        video.seekTo(skipNotice.from);
+        skipNotice = null;
+    }
+    Timer { id: noticeTimer; interval: 6000; onTriggered: player.skipNotice = null }
+    // DeArrow's title for this video, when that's on (ytextras.branding)
+    property string brandTitle: ""
+    // Return YouTube Dislike's count, when that's on
+    property int dislikes: -1
     property string videoId: ""
     property real startAt: 0
     property var seed: ({})                    // the card it was opened from (title while loading)
@@ -51,7 +83,7 @@ FocusScope {
     readonly property bool seeking: mode === "bar" || mode === "chapters"
     readonly property int chapter: Y.chapterAt(chapters, pos)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
-    readonly property string label: v.title || (s ? s.title : "") || seed.title || ""
+    readonly property string label: brandTitle || v.title || (s ? s.title : "") || seed.title || ""
     property string panel: ""                  // "" | channel | notify | save: a panel beside the video
     property var saveOptions: []
     property string cpn: ""                    // this playback's id in YouTube's reports
@@ -81,6 +113,10 @@ FocusScope {
             if (waitLeft <= 0) begin();
             showControls();
         }, e => { if (player && player.videoId === id) message = e || "This video can't be played."; });
+        segments = []; skippedOnce = ({}); skipNotice = null; brandTitle = ""; dislikes = -1;
+        Y.call("segments", {id: id}, r => { if (player && player.videoId === id) player.segments = r.segments || []; }, () => {});
+        if (Y.settings.dearrow) Y.call("branding", {id: id}, r => { if (player && player.videoId === id) player.brandTitle = r.title || ""; }, () => {});
+        if (Y.settings.dislikes) Y.call("votes", {id: id}, r => { if (player && player.videoId === id && r.dislikes !== undefined) player.dislikes = r.dislikes; }, () => {});
         Y.call("watch", {id: id}, r => {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             meta = r;
@@ -365,7 +401,8 @@ FocusScope {
         } else if (k === Qt.Key_AudioForward || k === Qt.Key_MediaNext) {
             skip(10);
         } else if (mode === "hidden") {
-            if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
+            if ((k === Qt.Key_Return || k === Qt.Key_Enter) && skipNotice) undoSkip();       // the notice's undo
+            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
             else if (k === Qt.Key_Left) skip(-10);
             else if (k === Qt.Key_Right) skip(10);
             else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
@@ -429,7 +466,10 @@ FocusScope {
         objectName: "description"
         visible: player.panel === "description"
         v: player.v
-        d: player.meta.details || {}
+        // with Return YouTube Dislike on: the dislikes beside the likes
+        d: player.dislikes < 0 ? player.meta.details || {} : Object.assign({}, player.meta.details || {}, {
+            facts: ((player.meta.details || {}).facts || []).slice(0, 1).concat([{value: Y.count(player.dislikes) || "0", label: "Dislikes"}],
+                                                                              ((player.meta.details || {}).facts || []).slice(1))})
         chapters: player.chapters
         onOpenChannel: { player.panel = ""; video.setPaused(true); player.openChannel(player.v.channelId); }
         onOpenComments: player.openPanel("comments")
@@ -580,6 +620,16 @@ FocusScope {
                                 radius: height / 2
                                 color: player.mode === "bar" || player.mode === "chapters" ? Y.red : Y.text
                             }
+                        }
+                    }
+                    Repeater {                 // SponsorBlock's parts, in its colours
+                        model: Y.settings.sponsorblock && player.duration > 0 ? player.segments : []
+                        Rectangle {
+                            required property var modelData
+                            x: Math.min(1, modelData.start / player.duration) * bar.width
+                            width: Math.max(3 * Y.u, (Math.min(modelData.end, player.duration) - modelData.start) / player.duration * bar.width)
+                            height: bar.height
+                            color: Y.segmentColors[modelData.category] || Y.sponsor
                         }
                     }
                     Rectangle {                // the playhead while seeking
@@ -780,6 +830,23 @@ FocusScope {
             color: Y.text
             font.family: Y.font; font.pixelSize: 32 * Y.u
             style: Text.Raised; styleColor: "#80000000"
+        }
+    }
+    Rectangle {                                // SponsorBlock: what was skipped, OK (controls hidden) undoes it
+        visible: !!player.skipNotice && !player.panel && !player.ending
+        anchors { right: parent.right; rightMargin: 96 * Y.u; top: parent.top; topMargin: 96 * Y.u }
+        height: 72 * Y.u
+        width: noticeRow.implicitWidth + 56 * Y.u
+        radius: height / 2
+        color: "#e6212121"
+        Row {
+            id: noticeRow
+            anchors.centerIn: parent
+            spacing: 16 * Y.u
+            Rectangle { width: 16 * Y.u; height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter
+                        color: player.skipNotice ? Y.segmentColors[(player.segments.find(g => g.label === player.skipNotice.label) || {}).category] || Y.sponsor : Y.sponsor }
+            Text { text: player.skipNotice ? "Skipped: " + player.skipNotice.label : ""; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
+            Text { visible: player.mode === "hidden"; text: "OK to undo"; color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; anchors.verticalCenter: parent.verticalCenter }
         }
     }
     EndScreen {

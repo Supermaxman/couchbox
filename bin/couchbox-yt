@@ -47,7 +47,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import youtube, ytauth, ytstream  # noqa: E402
+from couchbox.services import youtube, ytauth, ytextras, ytstream  # noqa: E402
 
 
 class Backend(QObject):
@@ -62,6 +62,12 @@ class Backend(QObject):
         self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube()
         self.yt.on_event = lambda name, data: self.event.emit(name, json.dumps(data))
         self.pool = ThreadPoolExecutor(max_workers=6)
+        if demo:                                     # a made-up TV's settings, fresh each time
+            import tempfile
+            self.settings = ytextras.Settings(tempfile.mkdtemp(prefix="couchbox-yt-demo-"))
+        else:
+            self.settings = ytextras.Settings(self.yt.dir)
+        self.extras = ytextras.Extras()
         if not demo:
             threading.Thread(target=ytstream.module, daemon=True).start()    # yt-dlp now: the first video starts sooner
             self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
@@ -88,7 +94,31 @@ class Backend(QObject):
     def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
-        return ytstream.resolve(vid, max_height=int(max_height or ytstream.MAX_HEIGHT))
+        h264 = self.settings.get()["h264"]
+        return ytstream.resolve(vid, h264=h264, max_height=int(max_height or ytstream.MAX_HEIGHT))
+
+    # the extras (ytextras): made up in the demo, else SponsorBlock, DeArrow, Return YouTube Dislike
+    def segments(self, vid):
+        if self.demo:                                # a sponsor read and an intro, the screenshots' video
+            return {"segments": [{"category": "intro", "label": "Intro", "start": 0.0, "end": 12.0, "action": "skip"},
+                                 {"category": "sponsor", "label": "Sponsor", "start": 1800.0, "end": 1860.0, "action": "skip"}]}
+        return {"segments": self.extras.segments(vid)}
+
+    def branding(self, vid):
+        if not self.settings.get()["dearrow"]:
+            return {}
+        if self.demo:
+            return {"title": "A Made-Up Better Title"} if vid.endswith("3") else {}
+        return self.extras.branding(vid)
+
+    def votes(self, vid):
+        if not self.settings.get()["dislikes"]:
+            return {}
+        return {"likes": 4300, "dislikes": 210} if self.demo else self.extras.votes(vid)
+
+    def page(self, out):
+        """A page as the settings want it: without Shorts if they're hidden."""
+        return ytextras.hide_shorts(out) if self.settings.get()["hide_shorts"] else out
 
     def about(self):
         a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else ytstream.about()
@@ -98,7 +128,12 @@ class Backend(QObject):
         y = self.yt
         ops = {
             "status": lambda: dict(y.profiles(), guide=[{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
-                                   demo=self.demo),
+                                   demo=self.demo, settings=self.settings.get()),
+            "settings": lambda: self.settings.get(),
+            "setting": lambda: self.settings.set(a["key"], a["value"]),
+            "segments": lambda: self.segments(a["id"]),
+            "branding": lambda: self.branding(a["id"]),
+            "votes": lambda: self.votes(a["id"]),
             "profiles": lambda: y.profiles(),
             "use": lambda: y.use(a.get("id", "")),
             "signInStart": lambda: self.sign_in("start"),
@@ -106,8 +141,8 @@ class Backend(QObject):
             "signInCancel": lambda: (None if self.demo else y.auth.cancel(), {"ok": True})[1],
             "signOut": lambda: (None if self.demo else y.auth.remove(a["account"]), y.use("") if y.profile.get("account") == a["account"] else None,
                                 {"ok": True})[2],
-            "subscriptions": lambda: y.subscriptions(),
-            "library": lambda: y.library(),
+            "subscriptions": lambda: (lambda r: dict(r, page=self.page(r["page"])))(y.subscriptions()),
+            "library": lambda: self.page(y.library()),
             "like": lambda: y.like(a["id"], a["status"]),
             "subscribe": lambda: y.subscribe(a["id"], bool(a["on"])),
             "notify": lambda: y.notify(a["params"], a.get("level", "")),
@@ -115,11 +150,11 @@ class Backend(QObject):
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
-            "home": lambda: y.home(),
-            "browse": lambda: y.browse(a["id"], a.get("params", "")),
-            "more": lambda: y.more(a["token"]),
-            "channel": lambda: y.channel(a["id"], a.get("params", "")),
-            "search": lambda: (y.remember_search(a["q"]), y.search(a["q"]))[1],
+            "home": lambda: self.page(y.home()),
+            "browse": lambda: self.page(y.browse(a["id"], a.get("params", ""))),
+            "more": lambda: self.page(y.more(a["token"])),
+            "channel": lambda: self.page(y.channel(a["id"], a.get("params", ""))),
+            "search": lambda: self.page((y.remember_search(a["q"]), y.search(a["q"]))[1]),
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
             "watch": lambda: y.watch(a["id"]),
