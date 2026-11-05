@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/Supermaxman/couchbox/compare/v0.17.0...v0.18.0) (2026-11-05)
+
+
+### New
+
+* **youtube:** Shorts, chapters, Description, comments, captions and the settings menu (M3) ([#93](https://github.com/Supermaxman/couchbox/issues/93)) ([77ea4b4](https://github.com/Supermaxman/couchbox/commit/77ea4b4705dc1344bc0dd000c3283a0feebe5320))
+
+
+### Fixed
+
+* **playback:** the refresh-rate guard runs in its own unit, so it outlives the app ([#95](https://github.com/Supermaxman/couchbox/issues/95)) ([6db9da3](https://github.com/Supermaxman/couchbox/commit/6db9da3178cdb2f8f42729170df2d497ffe19fae))
+
 ## [0.17.0](https://github.com/Supermaxman/couchbox/compare/v0.16.2...v0.17.0) (2026-11-05)
 
 
