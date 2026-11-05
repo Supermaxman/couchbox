@@ -58,7 +58,9 @@ def cast_checks(r):
         name = (re.search(r"<friendlyName>(.*?)</friendlyName>", dd) or [None, ""])[1]
     except OSError as err:
         name = f"(none: {err})"
-    ok = name == "Couchbox YouTube (beta)"
+    from couchbox.services import ytcast
+
+    ok = name == ytcast.cast_name()
     r.failed += 0 if ok else 1
     print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} cast-dial: /dd.xml names {name!r}", flush=True)
 

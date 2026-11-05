@@ -61,7 +61,7 @@ FocusScope {
                  desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
         if (item.key === "wifi")
             return {title: "Link with Wi-Fi", facts: [], rows: [{key: "cast", label: "Cast from phones", on: st.cast !== false,
-                    desc: "Phones on this Wi-Fi see the TV in the YouTube app's cast list, as “Couchbox YouTube (beta)”"}],
+                    desc: "Phones on this Wi-Fi see the TV in the YouTube app's cast list, under its name (Settings → Network → Device name)"}],
                     body: "On a phone on the same Wi-Fi, open the YouTube app, tap the cast button and pick this TV. What it plays shows here."};
         if (item.key === "tvcode")
             return {title: "Link with TV code", code: page.tvCode, facts: [],
