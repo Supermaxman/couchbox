@@ -62,3 +62,28 @@ def test_nothing_is_closed_blind_when_mediakeys_cannot_be_asked(mem, monkeypatch
     monkeypatch.setattr(mem, "front_and_players", lambda uid: None)
     apps, _ = mem.open_apps(TV, [(10, 1, "python3", TV)])
     assert apps["app:" + TWITCH]["playing"]
+
+
+def test_the_home_screen_reloads_after_an_update_only_when_no_one_would_notice(mem, monkeypatch, tmp_path):
+    flag = tmp_path / "home-stale"
+    flag.touch()
+    monkeypatch.setattr(mem, "HOME_STALE", str(flag))
+    restarted = []
+    import couchbox.home
+
+    monkeypatch.setattr(couchbox.home, "restart_plasmashell", lambda: restarted.append(1))
+    m = mem.Memory.__new__(mem.Memory)
+    m.uid, m.log = TV, lambda *_: None
+    home = {"window": {"shell": True}, "players": []}
+    state = {"st": home}
+    monkeypatch.setattr(mem, "media_state", lambda uid: state["st"])
+    m.reload_home({}, quiet=60)  # the remote was used a minute ago
+    m.reload_home({"YouTube": {"playing": True}}, quiet=3600)  # something plays
+    state["st"] = {"window": {"shell": False, "unit": TWITCH}, "players": []}
+    m.reload_home({}, quiet=3600)  # an app is in front
+    state["st"] = {"window": {"shell": True}, "players": [{"effective": "Playing"}]}
+    m.reload_home({}, quiet=3600)  # Spotify plays on the home screen
+    assert not restarted and flag.exists()
+    state["st"] = home
+    m.reload_home({}, quiet=3600)
+    assert restarted == [1] and not flag.exists()
