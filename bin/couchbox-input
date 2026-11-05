@@ -10,7 +10,11 @@ once per press, "run-repeat:couchbox-tv volume-up" also keeps running while the 
 "mouse-mode" toggles mouse mode: the arrows move a pointer (faster the longer they're held),
 OK clicks, Rewind and Fast-forward scroll; it switches itself off after 2 minutes unused.
 "voice-or:KEY_ESC" (the Back button) first asks couchbox-voice to cancel: if the voice assistant
-was busy or showing something, it's dismissed and the press ends there; otherwise KEY_ESC.
+was busy or showing something, it's dismissed and the press ends there; else, if the Frigate
+pop-up is showing, it's dismissed instead; otherwise KEY_ESC.
+"popup-or:KEY_ENTER" (OK): while the Frigate pop-up shows (couchbox-frigate-popup), OK opens
+its camera in the Frigate app and the press (its repeats and release too) ends there; otherwise
+KEY_ENTER. Both only stat the pop-up's flag file unless it's showing, so the keys aren't slowed.
 "media:playpause" (and play, pause, stop, next, previous, rewind, forward) goes to
 couchbox-mediakeys, which plays or pauses whatever is playing (the app in front's player, else
 the one playing, else the one paused last) over MPRIS; with nothing to control, or if that
@@ -99,6 +103,8 @@ def load_sections(path):
                 target = ("mouse",)
             elif dst.startswith("voice-or:"):
                 target = ("voice", keycode(dst.split(":", 1)[1]))
+            elif dst.startswith("popup-or:"):
+                target = ("popup", keycode(dst.split(":", 1)[1]))
             elif dst.startswith("media:"):
                 action = dst.split(":", 1)[1]
                 if action not in MEDIA_ACTIONS:
@@ -208,6 +214,43 @@ def voice_cancel():
         return False
 
 
+_popup = {}   # the Frigate pop-up's flag file, worked out once
+
+
+def popup_flag():
+    """Where couchbox-frigate-popup (the TV user's) keeps its flag while a pop-up shows."""
+    if "flag" not in _popup:
+        try:
+            from couchbox import frigate_popup
+            _popup["flag"] = str(frigate_popup.flag_path())
+        except Exception:  # noqa: BLE001 - no pop-up then: keys work as before
+            _popup["flag"] = ""
+    return _popup["flag"]
+
+
+def popup_key(key):
+    """Hand OK ("ok") or Back ("back") to the Frigate pop-up if it's showing: what it did (true)
+    if it took the key (opened the camera, or dismissed itself), else False. Only a stat while
+    there's no pop-up; a flag the pop-up doesn't answer for is a leftover: it goes, and the key
+    goes on."""
+    flag = popup_flag()
+    if not flag or not os.path.exists(flag):
+        return False
+    try:
+        from couchbox import appctl, frigate_popup
+        r = appctl.call(frigate_popup.SITE, {"op": "key", "key": key}, timeout=0.5)
+    except Exception as err:  # noqa: BLE001 - not running, timed out: the key is the app's
+        print(f"frigate pop-up didn't answer ({err.__class__.__name__}): its flag is a leftover", flush=True)
+        r = None
+    if isinstance(r, dict) and r.get("handled"):
+        return r.get("did") or True
+    try:
+        os.unlink(flag)
+    except OSError:
+        pass
+    return False
+
+
 def media_key(action):
     """Hand a media key to couchbox-mediakeys (the TV user's): {"player", "identity", "did",
     "why"}. "pass" when the key itself should go on: nothing to control, or the service isn't
@@ -309,6 +352,18 @@ def run(sections):
             if value == 1:
                 mouse_mode(not mouse["on"])
             return
+        if isinstance(target, tuple) and target[0] == "popup":   # OK: the Frigate pop-up's, if it shows
+            code = target[1]
+            did = value == 1 and popup_key("ok")
+            if did:
+                swallowed.add(code)
+                print(f"key {label} -> frigate pop-up: {did}", flush=True)
+                return
+            if code in swallowed:
+                if value == 0:
+                    swallowed.discard(code)
+                return
+            target = code
         if mouse["on"] and isinstance(target, int) and mouse_key(target, value):
             if value == 1:
                 print(f"key {label} -> mouse", flush=True)
@@ -354,6 +409,11 @@ def run(sections):
             if value == 1 and voice_cancel():
                 swallowed.add(code)
                 print(f"key {label} -> dismissed the voice assistant", flush=True)
+                return
+            did = value == 1 and popup_key("back")
+            if did:
+                swallowed.add(code)
+                print(f"key {label} -> frigate pop-up: {did}", flush=True)
                 return
             if code in swallowed:
                 if value == 0:

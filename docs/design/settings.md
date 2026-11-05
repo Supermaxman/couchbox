@@ -57,6 +57,15 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `apps.maps.google_api_key` 🔒 | unset | Optional. Maps uses Google Maps Platform (traffic, transit, Google places and map) with it, OpenStreetMap services without | — |
 | `media.tmdb.token` 🔒 | unset | Movies & TV on a box without Seerr: a TMDB API Read Access Token (or v3 key). The app reads TMDB through couchbox-voice's proxy, which adds it. Its tile shows once Seerr or this is set | — |
 | `media.frigate.url` | unset | Frigate (cameras). Tile hidden until set; the app signs in with a Frigate user (kept in the TV user's `~/.local/share/couchbox-frigate`, mode 600) | — |
+| `media.frigate.popup.enabled` | `true` | Frigate pop-ups: a camera's live picture in a corner over whatever is on, when it sees something (couchbox-frigate-popup). OK opens the camera in the Frigate app, Back dismisses it. Set up in the Frigate app → Pop-ups, which has a test button | — |
+| `media.frigate.popup.cameras` | `[]` | Camera names; empty = every camera | — |
+| `media.frigate.popup.labels` | `["person"]` | Frigate's labels (person, car, package, dog, speech ...); empty = anything | — |
+| `media.frigate.popup.severity` | `alert` | `alert` (alerts only) or `any` (alerts and detections) | — |
+| `media.frigate.popup.seconds` | `30` | 10–300. Longer while the event goes on (until 5 s after it ends), at most 3× | — |
+| `media.frigate.popup.cooldown` | `60` | 0–3600 s: after a camera's pop-up is dismissed or times out, that camera waits this long | — |
+| `media.frigate.popup.position` | `top-right` | top-right, top-left, bottom-right, bottom-left | — |
+| `media.frigate.popup.size` | `medium` | small, medium, large | — |
+| `media.frigate.popup.picture` | `live` | `live` (mpv, muted) or `snapshots` (a picture a second: lighter on a busy box) | — |
 | `apps.youtube.captions` | `en` | Captions language turned on for each video; empty = off | `MTV_YT_CAPTIONS` |
 | `apps.player.captions` | `on` | Native apps: subtitles on by default | per-app setting |
 | `apps.twitch.chat` | `overlay` | overlay, side, off | per-app setting |

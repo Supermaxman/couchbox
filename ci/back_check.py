@@ -56,6 +56,8 @@ CASES = [
     ("frigate-recording", "couchbox-frigate", ["--open", "review"], "right,ok", "moves"),
     ("frigate-timeline", "couchbox-frigate", ["--open", "timeline"], "", "moves"),
     ("frigate-timeline-camera", "couchbox-frigate", ["--open", "timeline:driveway"], "", "moves"),
+    ("frigate-popups", "couchbox-frigate", ["--open", "popups"], "", "moves"),
+    ("frigate-popups-rows", "couchbox-frigate", ["--open", "popups"], "down,down,down,down,down", "moves"),
     ("frigate-live", "couchbox-frigate", [], "", "quits"),
     ("settings-page", "couchbox-settings", ["--page", "network", "--in"], "", "moves"),
     ("settings-access", "couchbox-settings", ["--page", "access", "--in"], "", "moves"),

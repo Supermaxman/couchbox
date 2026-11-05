@@ -1,16 +1,18 @@
-// The sidebar, like Frigate's: Live with the camera groups, Review, Timeline, and the account.
+// The sidebar, like Frigate's: Live with the camera groups, Review, Timeline, Pop-ups (what pops
+// up over the TV), and the account.
 // Up/Down move, OK opens, Right goes to the page.
 import QtQuick
 
 FocusScope {
     id: rail
-    property int section: 0                  // 0 live, 1 review, 2 timeline
+    property int section: 0                  // 0 live, 1 review, 2 timeline, 3 pop-ups
     property int group: 0
     property int unreviewed: 0               // alerts not looked at yet (the Review badge)
     readonly property var entries: {
         const e = F.groups.map((g, i) => ({kind: "group", index: i, label: g.name, count: g.cameras.length}));
         e.push({kind: "review", label: "Review", count: 0, icon: "object"});
         e.push({kind: "timeline", label: "Timeline", count: 0, icon: "timeline"});
+        e.push({kind: "popups", label: "Pop-ups", count: 0, icon: "popup"});
         e.push({kind: "signout", label: "Sign out", count: 0});
         return e;
     }
@@ -18,7 +20,7 @@ FocusScope {
     signal chosen(var entry)
     signal toPage()
 
-    function sync() { idx = section === 1 ? entries.length - 3 : section === 2 ? entries.length - 2 : Math.min(group, entries.length - 1); }
+    function sync() { idx = section > 0 ? entries.length - 5 + section : Math.min(group, entries.length - 1); }
     onActiveFocusChanged: if (activeFocus) sync()
     Keys.onUpPressed: idx = Math.max(0, idx - 1)
     Keys.onDownPressed: idx = Math.min(entries.length - 1, idx + 1)
@@ -60,6 +62,7 @@ FocusScope {
                     readonly property bool sel: (entryCol.modelData.kind === "group" && rail.section === 0 && rail.group === entryCol.modelData.index)
                                                 || (entryCol.modelData.kind === "review" && rail.section === 1)
                                                 || (entryCol.modelData.kind === "timeline" && rail.section === 2)
+                                                || (entryCol.modelData.kind === "popups" && rail.section === 3)
                     readonly property bool cur: rail.activeFocus && rail.idx === entryCol.index
                     width: parent.width; height: 68 * F.u; radius: 12 * F.u
                     color: cur ? F.panel2 : sel ? F.panel : "transparent"

@@ -58,6 +58,7 @@ QtObject {
     // ------------------------------------------------------------------ data
     property var cameras: []                 // [{name, label, stream, aspect}]
     property var groups: []                  // [{name, icon, cameras: [names]}]
+    property var labels: []                  // what the cameras track: [{name, label, kind}] (the Pop-ups page)
     property var activeCams: []              // cameras with something going on now
     property var activeKinds: ({})           //   and what: {camera: [kind, ...]}
     property var status: ({})                // {configured, url, signedIn, user}

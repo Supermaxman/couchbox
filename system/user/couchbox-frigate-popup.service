@@ -1,0 +1,14 @@
+[Unit]
+Description=Couchbox Frigate pop-up (a camera's live picture over whatever is on when it sees something)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-frigate-popup
+# the "pop-up showing" flag (couchbox-input hands it OK and Back while it's there): never left behind
+ExecStopPost=/bin/rm -f %t/couchbox/frigate-popup.shown
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

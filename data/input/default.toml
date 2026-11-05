@@ -34,9 +34,10 @@ KEY_SEARCH = "drop"                             # mic button: couchbox-voice han
 KEY_VOLUMEUP = "drop"                           # Volume and Mute: IR straight to the TV too
 KEY_VOLUMEDOWN = "drop"                         # (couchbox-remote-ir); over CEC they were one slow step
 KEY_MUTE = "drop"                               # at a time. Back to CEC: "run-repeat:couchbox-tv volume-up" etc.
-KEY_BACK = "voice-or:KEY_ESC"                   # dismisses the voice assistant if it's up
-KEY_SELECT = "KEY_ENTER"
-KEY_KPENTER = "KEY_ENTER"          # the D-pad centre sends keypad Enter (seen on the Pi)
+KEY_BACK = "voice-or:KEY_ESC"                   # dismisses the voice assistant, else the Frigate pop-up, if up
+KEY_SELECT = "popup-or:KEY_ENTER"  # OK: while the Frigate pop-up shows, opens its camera; else Enter
+KEY_KPENTER = "popup-or:KEY_ENTER" # the D-pad centre sends keypad Enter (seen on the Pi)
+KEY_ENTER = "popup-or:KEY_ENTER"
 "hid:ef:a1" = "mouse-mode"         # Prime Video button: mouse mode on/off (arrows move a pointer,
                                    # OK clicks, Rewind / Fast-forward scroll), for web pages
 KEY_HOMEPAGE = "KEY_HOMEPAGE+run:couchbox-pause-all"  # Home: the home screen, and pause what's playing
@@ -51,8 +52,9 @@ KEY_FASTFORWARD = "media:forward"   # by couchbox-mediakeys; in mouse mode Rewin
 match = { name_contains = "hdmi" }
 
 [device.tv-remote-cec.map]
-KEY_OK = "KEY_ENTER"
-KEY_SELECT = "KEY_ENTER"
+KEY_OK = "popup-or:KEY_ENTER"       # OK: the Frigate pop-up's camera while it shows; else Enter
+KEY_SELECT = "popup-or:KEY_ENTER"
+KEY_ENTER = "popup-or:KEY_ENTER"
 KEY_EXIT = "voice-or:KEY_ESC"
 KEY_BACK = "voice-or:KEY_ESC"
 KEY_ROOT_MENU = "KEY_HOMEPAGE+run:couchbox-pause-all"   # TV remote Home/Menu -> home screen, pause
