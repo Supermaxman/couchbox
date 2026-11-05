@@ -1,4 +1,5 @@
-// Display and sound: resolution (from what the TV offers), interface size, sound output.
+// Display and sound: resolution (from what the TV offers), interface size, sound output, and how
+// video plays (couchbox.playback: refresh-rate matching, night mode, passthrough, drawing).
 import QtQuick
 
 SettingsPage {
@@ -18,6 +19,11 @@ SettingsPage {
              act: () => T.pick("Interface size", [1.0, 1.25, 1.5, 1.75, 2.0].map(x => ({label: Math.round(x * 100) + "%", value: x})),
                                s["appearance.scale"], x => T.set("appearance.scale", x))},
             T.row("audio.output"),
+            T.section("Playback"),
+            T.row("video.match_rate"),
+            T.row("audio.night_mode"),
+            T.row("audio.passthrough"),
+            T.row("video.drawing"),
         ];
     }
 }

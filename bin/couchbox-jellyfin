@@ -26,8 +26,18 @@ if [ -x "$app" ] && [ "${COUCHBOX_MEDIA_JELLYFIN_CLIENT:-native}" = native ]; th
   # - mpv's fast scalers: the default high-quality ones still dropped 622 of 900
   # - Dolby Vision profile 5 and 10-bit H.264 go through the server (force_transcode_*)
   # - its CEC off: Jellyfin's libCEC took over the HDMI-CEC adapter and broke couchbox-tv
-  # - an IPC socket for couchbox-jellyfin-stats
-  oc="input-ipc-server=$XDG_RUNTIME_DIR/mpv-jellyfin.sock
+  # - an IPC socket for couchbox-jellyfin-stats and couchbox-playback
+  # - when the server has to convert a video, HEVC first (Allow + Prefer transcode to H.265 put
+  #   h265,hevc ahead of h264 in the device profile's transcoding codecs): the Pi decodes HEVC in
+  #   hardware, H.264 only in software. Client side only: a server with HEVC encoding turned
+  #   off still sends H.264.
+  # - its own refresh-rate switching off: it changes modes through X11's XRandR, which under
+  #   KWin's Wayland reaches Xwayland, not the TV. couchbox-playback matches the rate instead.
+  # Settings → Display and sound (couchbox-playback jellyfin-conf): Night mode as an "af=" line of
+  # mpv options (then live, through the socket); Surround sound passthrough as its HDMI device
+  # type with the codecs the TV lists (from its next start: off while night mode is on)
+  sock=$XDG_RUNTIME_DIR/mpv-jellyfin.sock
+  oc="input-ipc-server=$sock
 scale=bilinear
 dscale=bilinear
 cscale=bilinear
@@ -37,13 +47,21 @@ linear-downscaling=no
 sigmoid-upscaling=no
 deband=no
 hdr-compute-peak=no"
+  pb=$(/usr/lib/couchbox/bin/couchbox-playback jellyfin-conf 2>/dev/null) || pb='{"af": "", "passthrough": []}'
+  af=$(printf '%s' "$pb" | jq -r '.af // ""')
+  [ -z "$af" ] || oc="$oc
+af=$af"
   for conf in "$HOME"/.local/share/jellyfin-desktop/*.conf "$HOME"/.local/share/jellyfin-desktop/*/*.conf; do
     [ -f "$conf" ] || continue
     case $conf in *jellyfin-desktop.conf) ;; *) continue ;; esac
     tmp=$(mktemp)
     jq --arg oc "$oc" '.sections.video.hardwareDecoding = "enabled" | .sections.video.force_transcode_dovi = true
-      | .sections.video.force_transcode_hi10p = true | .sections.cec.enable = false | .sections.other.other_conf = $oc' \
-      "$conf" > "$tmp" && mv "$tmp" "$conf"
+      | .sections.video.force_transcode_hi10p = true | .sections.cec.enable = false | .sections.other.other_conf = $oc
+      | .sections.video.allow_transcode_to_hevc = true | .sections.video.prefer_transcode_to_h265 = true
+      | .sections.video["refreshrate.auto_switch"] = false
+      | .sections.audio.devicetype = (if ($pb.passthrough | length) > 0 then "hdmi" else "basic" end)
+      | reduce ("ac3", "eac3", "dts") as $c (.; .sections.audio["passthrough." + $c] = ($pb.passthrough | any(. == $c)))' \
+      --argjson pb "$pb" "$conf" > "$tmp" && mv "$tmp" "$conf"
   done
   # DevTools on 127.0.0.1:9224 so couchbox-voice can drive it (search, play) as text
   QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:9224
@@ -53,6 +71,9 @@ hdr-compute-peak=no"
   # crash Jellyfin after ~6 minutes of video, the hard limit after hours.
   # shellcheck disable=SC3045  # dash (/bin/sh here) has ulimit -n and -H
   ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+  # The TV's refresh rate follows its videos, and night mode follows Settings, until it quits
+  # (this shell's PID becomes Jellyfin's with exec). Its messages go to the journal with ours.
+  /usr/lib/couchbox/bin/couchbox-playback watch $$ --mpv "$sock" &
   LD_LIBRARY_PATH=/opt/couchbox/ffmpeg-rpi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
   export LD_LIBRARY_PATH
   exec "$app" --fullscreen --tv "$@"

@@ -1,0 +1,19 @@
+#!/usr/bin/python3
+"""couchbox-playback: Settings → Display and sound's playback settings for players that aren't
+ours, and tools to check them (the logic is couchbox.playback).
+
+  couchbox-playback [status]        the TV's modes, and the one each frame rate would get
+  couchbox-playback match FPS       switch the TV as a FPS video would (e.g. 23.976)
+  couchbox-playback restore         back to Settings → Resolution
+  couchbox-playback codecs [--pipewire] [--card N]
+                                    the passthrough codecs the TV lists (its ELD): couchbox-audio
+  couchbox-playback jellyfin-conf   night filter and passthrough codecs, as JSON: couchbox-jellyfin
+  couchbox-playback watch PID [--mpv SOCKET]
+                                    until PID exits, follow the mpv at SOCKET (Jellyfin Desktop's:
+                                    refresh rate, night mode); then put Settings' mode back if it
+                                    switched. Without --mpv: the guard our own player starts.
+status, match and restore run as the TV user (as root too: sudo couchbox-playback status).
+"""
+from couchbox.playback import main
+
+main()
