@@ -36,7 +36,7 @@ from couchbox import paths, system
 
 # The settings players follow while they run (player.py, couchbox-playback watch), with their
 # defaults should the settings not be readable.
-LIVE = {"video.drawing": "fast", "video.match_rate": True, "audio.night_mode": False, "audio.passthrough": "off"}
+LIVE = {"video.drawing": "fast", "video.match_rate": False, "audio.night_mode": False, "audio.passthrough": "off"}
 
 
 def live_settings() -> dict[str, Any]:
