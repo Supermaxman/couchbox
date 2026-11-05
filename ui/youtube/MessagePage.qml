@@ -24,8 +24,8 @@ FocusScope {
         }, () => {});
     }
     Keys.onLeftPressed: Y.toGuide()
-    Keys.onReturnPressed: if (action) Y.signIn()
-    Keys.onEnterPressed: if (action) Y.signIn()
+    Keys.onReturnPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
+    Keys.onEnterPressed: if (action) { if (key === "shorts") Y.open({type: "shorts", id: "-"}); else Y.signIn(); }
 
     Column {
         x: Y.left; y: 120 * Y.u

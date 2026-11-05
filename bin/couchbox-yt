@@ -85,10 +85,10 @@ class Backend(QObject):
             out["qr"] = path if os.path.exists(path) else ""
         return out
 
-    def stream(self, vid):
+    def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
-        return ytstream.resolve(vid)
+        return ytstream.resolve(vid, max_height=int(max_height or ytstream.MAX_HEIGHT))
 
     def about(self):
         a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else ytstream.about()
@@ -123,7 +123,10 @@ class Backend(QObject):
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
             "watch": lambda: y.watch(a["id"]),
-            "stream": lambda: self.stream(a["id"]),
+            "stream": lambda: self.stream(a["id"], a.get("max_height")),
+            "comments": lambda: y.comments(a["token"]),
+            "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
+            "short": lambda: y.short(a["id"]),
         }
         return ops[op]()
 
@@ -219,7 +222,7 @@ class Shooter(QObject):
         from PySide6.QtCore import QCoreApplication, QEvent, Qt
         from PySide6.QtGui import QKeyEvent
         key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
-               "ok": Qt.Key_Return, "back": Qt.Key_Escape, "play": Qt.Key_MediaTogglePlayPause}.get(name)
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape, "play": Qt.Key_MediaTogglePlayPause, "menu": Qt.Key_Menu}.get(name)
         if key is None:
             return
         for t in (QEvent.KeyPress, QEvent.KeyRelease):

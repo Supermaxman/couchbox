@@ -13,12 +13,14 @@ Item {
     property real w: Y.cardW                  // the thumbnail's width (a 16:9 card)
     property bool boxed: false
     property color behind: Y.bg               // the colour around the card (its rounded corners)
+    property bool captioned: true             // the title and lines under it (a hero shelf shows them above)
     readonly property string kind: item.type || "video"
-    readonly property bool round: kind === "channel"
+    readonly property string shape: item.shape || "wide"   // wide | poster | square | hero | round
+    readonly property bool round: kind === "channel" || shape === "round"
     readonly property real thumbH: Math.round(w * 9 / 16)
-    readonly property real artW: round ? thumbH : kind === "game" ? Math.round(thumbH * 0.75) : w
+    readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
     width: artW
-    height: art.height + (boxed ? panel.height : caption.implicitHeight + 26 * Y.u)
+    height: art.height + (boxed ? panel.height : captioned ? caption.implicitHeight + 26 * Y.u : 0)
 
     Item {
         id: art
@@ -94,9 +96,9 @@ Item {
     // ------------------------------------------------------------------ text
     Column {
         id: caption
-        visible: !card.boxed
+        visible: !card.boxed && card.captioned
         anchors { left: art.left; top: art.bottom; topMargin: 26 * Y.u }
-        width: card.round ? card.artW : card.w
+        width: card.artW
         spacing: 6 * Y.u
         Text {
             width: parent.width
@@ -133,7 +135,7 @@ Item {
                 }
             }
             Text {
-                width: Math.min(implicitWidth, card.w - x)
+                width: Math.min(implicitWidth, card.artW - x)
                 text: (card.item.lines || []).slice(1).join(" • ")
                 color: Y.dim
                 font.family: Y.font; font.pixelSize: card.round ? Y.tSmall + 2 * Y.u : Y.tMeta

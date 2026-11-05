@@ -361,6 +361,21 @@ class MpvVideo(QQuickFramebufferObject):
         except Exception:
             pass
 
+    @Slot(str, str)
+    def addSubtitleTrack(self, url, title):
+        """A subtitle file (the YouTube app's captions), shown at once."""
+        try:
+            self.mpv.command("sub-add", url, "select", title or "Captions")
+        except Exception:
+            pass
+
+    @Slot(float)
+    def setSpeed(self, speed):
+        try:
+            self.mpv.speed = max(0.25, min(4.0, speed))
+        except Exception:
+            pass
+
     @Slot()
     def togglePause(self):
         self.mpv.pause = not self.mpv.pause

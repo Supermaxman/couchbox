@@ -98,6 +98,13 @@ FocusScope {
                     font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
+                Text {
+                    visible: !!opt.modelData.value
+                    anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }
+                    text: opt.modelData.value || ""
+                    color: opt.on ? "#606060" : Y.dim
+                    font.family: Y.font; font.pixelSize: 26 * Y.u
+                }
                 Icon {
                     visible: !!opt.modelData.checked || !!opt.modelData.trailing
                     anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }

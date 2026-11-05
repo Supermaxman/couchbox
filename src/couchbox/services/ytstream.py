@@ -124,9 +124,29 @@ def extract(video_id: str) -> dict[str, Any]:
         try:
             return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False, process=False)
         except Exception as err:  # yt-dlp's DownloadError, ExtractorError, ...
-            msg = str(err).replace("ERROR: ", "")
-            msg = msg.split("] ", 1)[-1] if msg.startswith("[") else msg
-            raise Unavailable(msg.split("\n")[0][:200]) from err
+            raise Unavailable(friendly(str(err))) from err
+
+
+# yt-dlp's errors as the TV says them (the first that matches)
+FRIENDLY = (
+    ("not a bot", "YouTube wants this TV to prove it isn't a bot right now. Try again in a few minutes."),
+    ("Private video", "This video is private."),
+    ("members-only", "This video is for the channel's members."),
+    ("confirm your age", "This video is age-restricted."),
+    ("not available in your country", "This video isn't available here."),
+    ("Video unavailable", "This video isn't available."),
+    ("live event will begin", "This live stream hasn't started yet."),
+)
+
+
+def friendly(msg: str) -> str:
+    """What yt-dlp said, for the TV: a known reason in plain words, else its first line."""
+    for needle, said in FRIENDLY:
+        if needle.lower() in msg.lower():
+            return said
+    msg = msg.replace("ERROR: ", "")
+    msg = msg.split("] ", 1)[-1] if msg.startswith("[") else msg
+    return msg.split("\n")[0].split(" Use --cookies")[0][:200]
 
 
 # ------------------------------------------------------------------ choosing formats
@@ -240,6 +260,41 @@ def chapters(info: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"start": float(c.get("start_time") or 0), "title": c.get("title") or ""} for c in info.get("chapters") or [] if c.get("title")]
 
 
+def captions(info: dict[str, Any], want: tuple[str, ...] = ("en",)) -> list[dict[str, Any]]:
+    """Captions to offer: the video's own (its languages, the wanted ones first), then YouTube's
+    automatic ones in the wanted languages: [{lang, name, url, auto}] (WebVTT, which mpv reads)."""
+    out = []
+
+    def add(subs, auto):
+        for lang, tracks in (subs or {}).items():
+            if auto and lang.split("-")[0] not in want:
+                continue
+            vtt = next((t for t in tracks if t.get("ext") == "vtt" and t.get("url")), None)
+            if vtt and lang != "live_chat":
+                name = vtt.get("name") or lang
+                out.append(
+                    {
+                        "lang": lang,
+                        "name": f"{name} (auto-generated)" if auto and "auto" not in name.lower() else name,
+                        "url": vtt["url"],
+                        "auto": auto,
+                    }
+                )
+
+    add(info.get("subtitles"), False)
+    add(info.get("automatic_captions"), True)
+    out.sort(key=lambda c: (c["auto"], c["lang"].split("-")[0] not in want, c["lang"]))
+    return out[:12]
+
+
+def heights(formats: list[dict[str, Any]], h264: bool = True) -> list[int]:
+    """The qualities to offer (the short side, as YouTube names them: 1080, 720...)."""
+    vids = [f for f in formats if (f.get("vcodec") or "none") != "none" and f.get("url")]
+    if h264 and any(_is_h264(f) for f in vids):
+        vids = [f for f in vids if _is_h264(f)]
+    return sorted({_lines(f) for f in vids if _lines(f) >= 144}, reverse=True)
+
+
 def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts)."""
@@ -258,6 +313,9 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
             "likes": info.get("like_count") or 0,
             "timestamp": info.get("timestamp") or info.get("release_timestamp") or 0,
             "portrait": bool(out["height"] and out["width"] and out["height"] > out["width"]),
+            "captions": captions(info),
+            "heights": [h for h in heights(info.get("formats") or [], h264) if h <= MAX_HEIGHT],
+            "maxHeight": max_height,
             "took": round(time.monotonic() - t, 2),
         }
     )
