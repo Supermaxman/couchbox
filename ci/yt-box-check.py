@@ -8,8 +8,13 @@ had the focus then (the app's control socket: {"op": "focus"}).
 It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running), then:
 Home; Search from the guide, typing on a keyboard and Enter; back Home; a video from Home;
 Description and Back; scrubbing with the controls hidden; the related row and Up; the clock
-moving; the Shorts tab. Each step prints PASS or FAIL with what it saw, and saves
-OUT/NN-name.png and OUT/NN-name.json. --keep leaves the app running at the end.
+moving; a paused seek back to 0:00 still showing a picture; the Shorts tab. Each step prints
+PASS or FAIL with what it saw, and saves OUT/NN-name.png and OUT/NN-name.json. --keep leaves
+the app running at the end.
+
+Before every key and every reading it checks that couchbox-yt is still the window in front and
+that no Frigate pop-up is up; if either fails it stops at once ("ABORT: ..."), pressing nothing
+more: a stray OK into a pop-up would open a camera on the TV.
 """
 
 import argparse
@@ -31,8 +36,53 @@ def tv_env():
     return ["sudo", "-u", TV_USER, "env", f"XDG_RUNTIME_DIR={run}", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus"]
 
 
+def guard():
+    """Stop here, pressing nothing more, if a Frigate pop-up is up or couchbox-yt isn't in front."""
+    uid = pwd.getpwnam(TV_USER).pw_uid
+    why = ""
+    if os.path.exists(f"/run/user/{uid}/couchbox/frigate-popup.shown"):
+        why = "a Frigate pop-up is showing"
+    else:
+        try:
+            front = subprocess.run(
+                [*tv_env(), "WAYLAND_DISPLAY=wayland-0", "/usr/lib/couchbox/bin/couchbox-active-window"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            ).stdout
+        except (OSError, subprocess.TimeoutExpired) as err:
+            front = f"(couldn't tell: {err})"
+        if "couchbox-yt" not in front:
+            why = f"the window in front is {front.strip()[:200] or 'unknown'}"
+    if why:
+        print(f"ABORT: pop-up / another window in front ({why}); pressing nothing more", flush=True)
+        os._exit(4)
+
+
 def remote(*keys, gap=0.4):
-    subprocess.run(["couchbox-remote", "--gap", str(gap), *keys], check=False, stdout=subprocess.DEVNULL)
+    for k in keys:  # one at a time, checking before each
+        guard()
+        subprocess.run(["couchbox-remote", k], check=False, stdout=subprocess.DEVNULL)
+        time.sleep(gap)
+
+
+def brightness(png, box):
+    """The mean brightness (0-255) of box = (x, y, w, h) in a screenshot, sampled on a grid."""
+    from PySide6.QtGui import QImage
+
+    img = QImage(png)
+    if img.isNull():
+        return -1.0
+    sx, sy = img.width() / 1920, img.height() / 1080
+    x0, y0, w, h = box
+    total = n = 0
+    for j in range(20):
+        for i in range(40):
+            c = img.pixelColor(int((x0 + w * (i + 0.5) / 40) * sx), int((y0 + h * (j + 0.5) / 20) * sy))
+            total += (c.red() + c.green() + c.blue()) / 3
+            n += 1
+    return total / n
 
 
 def focus():
@@ -53,8 +103,10 @@ class Run:
     def step(self, name, ok, settle=1.5):
         """Wait, screenshot, read the focus; ok(f) -> (passed, what it saw)."""
         time.sleep(settle)
+        guard()
         self.n += 1
         base = os.path.join(self.out, f"{self.n:02d}-{name}")
+        self.png = base + ".png"
         f = focus()  # first: the picture comes a moment later, and the focus is what's checked
         subprocess.run(["couchbox-screenshot", base + ".png"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         f2 = focus()
@@ -170,6 +222,24 @@ def main():
     # the clock moves; scrubbing with the controls hidden
     p1 = d(focus()).get("position", 0)
     r.step("clock", lambda f: (d(f).get("position", 0) > p1, f"position {p1} -> {d(f).get('position')}"), settle=3)
+
+    # paused, then back to 0:00: the picture there still shows (not black). Up: the bar, where Left seeks
+    remote("playpause")
+    r.step("paused", lambda f: (bool(d(f).get("paused")), f"paused {d(f).get('paused')}"), settle=1)
+    remote("up", "left", "left", "left", "left", "left")
+    f = r.step(
+        "paused-seek-0",
+        lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"),
+        settle=2.5,
+    )
+    lum = brightness(r.png, (200, 60, 1520, 260))  # above the strip and the bar: the video (dimmed 45%)
+    ok = lum > 10
+    r.failed += 0 if ok else 1
+    print(
+        f"{'PASS' if ok else 'FAIL'} {r.n:02d} paused-seek-0-picture: mean brightness {lum:.1f} of the video area (black is under 10)",
+        flush=True,
+    )
+    remote("playpause", "down")
     time.sleep(6)  # the controls hide
     r.step("controls-hidden", lambda f: (d(f).get("mode") == "hidden", f"mode {d(f).get('mode')}"), settle=0)
     remote("right")

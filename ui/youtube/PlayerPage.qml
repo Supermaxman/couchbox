@@ -22,7 +22,7 @@ FocusScope {
     // the controls' keys land here (the player handles them): the focus comes back to it, not
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
-    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), row: related.index, rows: related.count}; }
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
