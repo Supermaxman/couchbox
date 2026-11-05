@@ -31,6 +31,22 @@ APP = "/usr/lib/couchbox/bin/couchbox-yt"
 UNIT = "couchbox-yt-check"
 
 
+def save_log(unit, out):
+    """The app's output (its journal) beside the screenshots: OUT/app.log."""
+    try:
+        log = subprocess.run(
+            [*tv_env(), "journalctl", "--user", "-u", unit, "--no-pager", "-o", "short-monotonic"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        ).stdout
+        with open(os.path.join(out, "app.log"), "w") as fh:
+            fh.write(log)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        print(f"(no app log: {err})")
+
+
 def tv_env():
     uid = pwd.getpwnam(TV_USER).pw_uid
     run = f"/run/user/{uid}"
@@ -131,6 +147,14 @@ def d(f):
     return f.get("detail") or {}
 
 
+def picture(r, name):
+    """The last screenshot's video area (above the chapters' strip and the bar, dimmed 45%) isn't black."""
+    lum = brightness(r.png, (200, 60, 1520, 260))
+    ok = lum > 10
+    r.failed += 0 if ok else 1
+    print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} {name}: mean brightness {lum:.1f} of the video area (black is under 10)", flush=True)
+
+
 def show_controls():
     """The player's controls up (from hidden, Down shows them, on Play/Pause)."""
     if d(focus()).get("mode") == "hidden":
@@ -149,6 +173,7 @@ def main():
     # a fresh app, muted, as the TV user in its session
     subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
     time.sleep(1)
+    unit = f"{UNIT}-{int(time.time())}"
     subprocess.run(
         [
             *tv_env(),
@@ -156,8 +181,9 @@ def main():
             "--user",
             "--quiet",
             "--collect",
-            f"--unit={UNIT}-{int(time.time())}",
+            f"--unit={unit}",
             "--setenv=COUCHBOX_MUTE=1",
+            "--setenv=COUCHBOX_MPV_LOG=1",  # mpv's warnings, and what draws after a seek (mpv-debug lines)
             "--",
             APP,
             "--profile",
@@ -224,22 +250,26 @@ def main():
     p1 = d(focus()).get("position", 0)
     r.step("clock", lambda f: (d(f).get("position", 0) > p1, f"position {p1} -> {d(f).get('position')}"), settle=3)
 
-    # paused, then back to 0:00: the picture there still shows (not black). Up: the bar, where Left seeks
+    # paused seeks still show a picture (not black): one back into the middle, one back to 0:00 and
+    # one forward to 30 s, so "any paused seek" can be told from "only to the start". Up: the bar,
+    # where Left / Right seek 10 s
     remote("playpause")
-    r.step("paused", lambda f: (bool(d(f).get("paused")), f"paused {d(f).get('paused')}"), settle=1)
-    remote("up", "left", "left", "left", "left", "left")
-    f = r.step(
+    f = r.step("paused", lambda f: (bool(d(f).get("paused")), f"paused at {d(f).get('position')}"), settle=1)
+    picture(r, "paused-picture")
+    at = d(f).get("position", 0)
+    remote("up", *(["left"] if at >= 12 else []))
+    r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
+    picture(r, "paused-seek-mid-picture")
+    remote("left", "left", "left", "left")
+    r.step(
         "paused-seek-0",
         lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"),
         settle=2.5,
     )
-    lum = brightness(r.png, (200, 60, 1520, 260))  # above the strip and the bar: the video (dimmed 45%)
-    ok = lum > 10
-    r.failed += 0 if ok else 1
-    print(
-        f"{'PASS' if ok else 'FAIL'} {r.n:02d} paused-seek-0-picture: mean brightness {lum:.1f} of the video area (black is under 10)",
-        flush=True,
-    )
+    picture(r, "paused-seek-0-picture")
+    remote("right", "right", "right")
+    r.step("paused-seek-30", lambda f: (bool(d(f).get("paused")), f"position {d(f).get('position')}"), settle=2.5)
+    picture(r, "paused-seek-30-picture")
     remote("playpause", "down")
     time.sleep(6)  # the controls hide
     r.step("controls-hidden", lambda f: (d(f).get("mode") == "hidden", f"mode {d(f).get('mode')}"), settle=0)
@@ -298,6 +328,7 @@ def main():
     remote("back")
     r.step("profiles-back", lambda f: ("guide" in f["focus"], f"focus {f.get('focus')}"), settle=1.5)
 
+    save_log(unit, a.out)
     if not a.keep:
         subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
     print(f"{r.n - r.failed}/{r.n} passed; screenshots and focus in {a.out}")

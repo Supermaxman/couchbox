@@ -26,7 +26,7 @@ import time
 import weakref
 
 import mpv
-from PySide6.QtCore import Property, Qt, Signal, Slot
+from PySide6.QtCore import Property, Qt, QTimer, Signal, Slot
 from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat
 from PySide6.QtQuick import QQuickFramebufferObject
 
@@ -101,6 +101,7 @@ FAST = {
     "sigmoid-upscaling": "no",
     "hdr-compute-peak": "no",
 }
+_DEBUG = bool(os.environ.get("COUCHBOX_MPV_LOG"))  # also: what draws after a seek (MpvVideo._debug)
 _players = weakref.WeakSet()
 _live = {}  # the playback settings (playback.LIVE), followed while the app runs
 
@@ -151,9 +152,12 @@ class _Renderer(QQuickFramebufferObject.Renderer):
     def render(self):
         if self.ctx is None:
             self.ctx = mpv.MpvRenderContext(self.item.mpv, "opengl", opengl_init_params={"get_proc_address": _proc_fn})
-            self.ctx.update_cb = self.item.frameReady.emit
+            self.ctx.update_cb = self.item._on_update
         fbo = self.framebufferObject()
         _gl["last"] = None
+        # render.h: mpv_render_context_update() after each update callback, before rendering
+        new = self.ctx.update()
+        self.item._debug(f"render {fbo.width()}x{fbo.height()} new-frame={new}")
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
         _drop_frame_fence()
         if QQuickOpenGLUtils:
@@ -213,6 +217,7 @@ class MpvVideo(QQuickFramebufferObject):
             if os.environ.get("COUCHBOX_MPV_LOG")
             else None,
         )
+        self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)
         self._pos = 0.0
         self._dur = 0.0
         self._paused = False
@@ -260,6 +265,7 @@ class MpvVideo(QQuickFramebufferObject):
         if name == "time-pos":
             self._pos = float(value or 0)
             self.positionChanged.emit()
+            self._debug("time-pos")
         elif name == "duration":
             self._dur = float(value or 0)
             self.durationChanged.emit()
@@ -396,6 +402,7 @@ class MpvVideo(QQuickFramebufferObject):
                 self.mpv.command("seek", delta, "relative+exact" if abs(delta) < 15 else "relative")
         except Exception:
             pass
+        self._after_seek(f"seek {delta:+g} from {self._pos:.1f}")
 
     @Slot(float)
     def seekTo(self, pos):
@@ -403,6 +410,26 @@ class MpvVideo(QQuickFramebufferObject):
             self.mpv.command("seek", pos, "absolute")
         except Exception:
             pass
+        self._after_seek(f"seek to {pos:.1f} from {self._pos:.1f}")
+
+    def _after_seek(self, what):
+        """Paused, nothing plays on to draw the new picture: ask Qt to draw it again a few times
+        while mpv decodes it (the TV showed black after a paused seek). COUCHBOX_MPV_LOG=1: log
+        what happens for the next 4 s (mpv's update calls, our renders, the position)."""
+        self._dbg_until = time.monotonic() + 4
+        self._debug(f"{what} paused={self._paused}")
+        if self._paused:
+            for ms in (60, 200, 450, 900, 1600, 2500):
+                QTimer.singleShot(ms, self.update)
+
+    def _on_update(self):
+        """mpv's render update callback (from mpv's thread): Qt draws the next frame."""
+        self._debug("update-cb")
+        self.frameReady.emit()
+
+    def _debug(self, msg):
+        if _DEBUG and time.monotonic() < self._dbg_until:
+            print(f"mpv-debug {time.monotonic():.3f} pos={self._pos:.2f} {msg}", flush=True)
 
     @Slot(int)
     def setSubtitle(self, sid):
