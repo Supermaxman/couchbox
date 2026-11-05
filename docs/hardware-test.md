@@ -44,6 +44,7 @@ Record each run in `tests/hardware/RESULTS.md`: date, release, board RAM, bootlo
 | C5 | Home: move, hide, rename a tile; add a website | Takes effect at once, and survives a restart |
 | C6 | TV off with its remote, then on | The box sleeps and wakes with the TV |
 | C7 | Settings → Remote access → phone page | Pairs by QR. Typing works in YouTube search |
+| C8 | Phone page → Send to TV: a YouTube link with ?t=, a Twitch channel, a web page | Each opens in its app (YouTube from that time), and the phone says what's playing |
 
 ## D. Options
 
