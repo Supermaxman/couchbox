@@ -121,7 +121,7 @@ def _follow_rate(ref):
         if p is None or p._closed:
             return
         try:
-            p._rate.step(playback.snapshot(p._get), passive=p._live_cam)
+            p._rate.step(playback.snapshot(p._get), passive=p._live_cam, shown=p._shown)
         except Exception:  # noqa: BLE001
             pass
         del p
@@ -222,6 +222,8 @@ class MpvVideo(QQuickFramebufferObject):
         self._error = ""
         self._closed = False
         self._live_cam = False  # loadLive(): a camera (never takes the TV's mode from another player)
+        self._shown = True  # the item is visible (apps hide it when the player page isn't on top)
+        self.visibleChanged.connect(self._on_visible)
         self._rate = playback.Follower(who=f"player-{id(self)}", on_claim=playback.start_guard)
         self._quality = {}  # mpv's defaults, as text for "set" (cscale's default "" reads back as 0)
         for k in FAST:
@@ -282,6 +284,10 @@ class MpvVideo(QQuickFramebufferObject):
         elif name == "error":
             self._error = value
             self.errorChanged.emit()
+
+    @Slot()
+    def _on_visible(self):
+        self._shown = self.isVisible()  # (Qt's thread; the Follower's thread reads it)
 
     def _get(self, name):
         # a property, as attribute access reads it (mpv[name] would read the option of that name:
