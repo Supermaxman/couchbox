@@ -20,6 +20,7 @@ UNIT_NAMES = {
     "plasma-plasmashell.service": "Home screen",
     "couchbox-frigate-popup.service": "Camera pop-up",
     "couchbox-spotify-connect.service": "Spotify",
+    "couchbox-yt-cast.service": "YouTube casting",
     "pipewire.service": "Sound",
     "couchbox-voice-overlay.service": "Voice indicator",
 }
@@ -40,8 +41,8 @@ def _read(path: str, default: str = "") -> str:
 
 
 def unit_name(unit: str) -> str:
-    """app-couchbox\\x2dtwitch@ab12.service -> Twitch; app-flatpak-rocks.shy.VacuumTube-12.scope ->
-    VacuumTube; known services by what they do; others by their name."""
+    """app-couchbox\\x2dtwitch@ab12.service -> Twitch; app-couchbox\\x2dyt@ab12.service and
+    app-flatpak-rocks.shy.VacuumTube-12.scope -> YouTube; known services by what they do; others by their name."""
     if unit in UNIT_NAMES:
         return UNIT_NAMES[unit]
     if unit.startswith("session-") and unit.endswith(".scope"):
@@ -53,7 +54,7 @@ def unit_name(unit: str) -> str:
             name = name.removesuffix(".scope").removeprefix("flatpak-").rsplit("-", 1)[0]
         name = re.sub(r"\\x([0-9a-f]{2})", lambda m: chr(int(m.group(1), 16)), name)
     name = name.removesuffix(".service").removeprefix("couchbox-").rsplit(".", 1)[-1]
-    return {"VacuumTube": "YouTube", "JellyfinDesktop": "Jellyfin"}.get(name, name[:1].upper() + name[1:])
+    return {"VacuumTube": "YouTube", "yt": "YouTube", "JellyfinDesktop": "Jellyfin"}.get(name, name[:1].upper() + name[1:])
 
 
 def _cpu_total() -> tuple[int, int]:

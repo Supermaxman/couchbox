@@ -30,8 +30,9 @@ PLASMOID = "org.kde.bigscreen.homescreen"
 STOCK = Path("/usr/share/plasma/plasmoids") / PLASMOID
 # /usr/local/share comes before /usr/share in the session's XDG_DATA_DIRS, so Plasma prefers it.
 LOCAL_SHARE = Path("/usr/local/share")
-# YouTube opens DevTools on localhost for the voice assistant's tools.
-EXTRA_ARGS = {"rocks.shy.VacuumTube.desktop": "--remote-debugging-port=9222"}
+# Launch arguments an app's own .desktop lacks, by desktop id (none now: VacuumTube, the YouTube
+# tile's fallback, gets its DevTools port from bin/couchbox-youtube-tv).
+EXTRA_ARGS: dict[str, str] = {}
 
 
 def home_dir() -> Path:

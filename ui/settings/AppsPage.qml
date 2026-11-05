@@ -15,6 +15,8 @@ SettingsPage {
                    url => T.set("media.jellyfin.url", url));
         }, e => { p.finding = false; T.toast(e); });
     }
+    // the YouTube tile's app ("native" means hardware HEVC elsewhere on this page)
+    readonly property var ytApps: ({native: "Couchbox's own", vacuumtube: "VacuumTube"})
     readonly property var unofficial: [["dropout", "Dropout"], ["2ndtry", "2nd Try"], ["nebula", "Nebula"], ["twitch", "Twitch"]]
     rows: {
         T.rev;
@@ -23,6 +25,10 @@ SettingsPage {
             T.row("media.jellyfin.url", {help: "Your Jellyfin server. The Jellyfin tile shows once it's set."}),
             T.action(finding ? "Looking for Jellyfin…" : "Find Jellyfin on my network", findJellyfin),
             T.row("media.jellyfin.client"),
+            T.section("YouTube"),
+            T.row("media.youtube.client", {value: ytApps[s["media.youtube.client"]] || "",
+                                           act: () => T.pick("YouTube app", Object.keys(ytApps).map(x => ({label: ytApps[x], value: x})),
+                                                             s["media.youtube.client"], x => T.set("media.youtube.client", x))}),
             T.section("Seerr"),
             T.row("media.seerr.url", {help: "Your Seerr server, for requesting movies and shows."}),
             T.secretRow("media.seerr.api_key", {help: "Seerr → Settings → General → API key. The Seerr app and voice requests use it."}),

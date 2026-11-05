@@ -60,12 +60,8 @@ NAMES = {
     "twitch": "Twitch",
     "movies": "Movies & TV",
     "youtube": "YouTube",
-    "youtube-beta": "YouTube (beta)",
 }
-DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {
-    "youtube": "rocks.shy.VacuumTube.desktop",
-    "youtube-beta": "couchbox-yt.desktop",
-}
+DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {"youtube": "couchbox-yt.desktop"}
 
 # each app's colour, as its home tile's glow (shell/theme/tiles): where home.json isn't at hand
 GLOW = {

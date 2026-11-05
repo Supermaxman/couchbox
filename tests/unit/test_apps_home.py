@@ -11,14 +11,23 @@ def ids(row):
 
 def test_default_row_hides_apps_that_need_setup():
     row = ids(apps.home_row())
-    assert row == ["youtube", "youtube-beta", "spotify", "dropout", "2ndtry", "nebula", "twitch", "search", "maps", "settings"]
+    assert row == ["youtube", "spotify", "dropout", "2ndtry", "nebula", "twitch", "search", "maps", "settings"]
     assert "jellyfin" not in row and "seerr" not in row  # no server set
     assert "fcast" not in row and "twitch-web" not in row  # hidden by default
 
 
+def test_youtube_tile_is_the_native_app_unless_vacuumtube_is_chosen(box):
+    assert apps.get("youtube").desktop == "couchbox-yt.desktop"
+    assert apps.youtube_native()
+    settings.update({"media.youtube.client": "vacuumtube"})
+    assert apps.youtube_native()  # VacuumTube isn't installed: the tile still opens the native app
+    (box / "var/lib/flatpak/app/rocks.shy.VacuumTube").mkdir(parents=True)
+    assert not apps.youtube_native()
+
+
 def test_configured_servers_show_their_apps():
     settings.update({"media.jellyfin.url": "http://jf.local:8096"})
-    assert ids(apps.home_row())[:3] == ["youtube", "youtube-beta", "jellyfin"]
+    assert ids(apps.home_row())[:2] == ["youtube", "jellyfin"]
 
 
 def test_user_order_hidden_names_and_disabled():
@@ -26,7 +35,7 @@ def test_user_order_hidden_names_and_disabled():
         {"home.layout": ["twitch", "youtube"], "home.hidden": ["nebula"], "home.names": {"youtube": "YT"}, "apps.disabled": ["dropout"]}
     )
     row = apps.home_row()
-    assert ids(row) == ["twitch", "youtube", "youtube-beta", "spotify", "2ndtry", "search", "maps", "settings"]
+    assert ids(row) == ["twitch", "youtube", "spotify", "2ndtry", "search", "maps", "settings"]
     assert row[1].name == "YT"
 
 
@@ -82,14 +91,15 @@ def test_build_writes_home_json_and_launchers(box, runner):
 
 
 def test_renamed_app_gets_a_user_desktop_override(box, runner):
-    src = box / "var/lib/flatpak/exports/share/applications/rocks.shy.VacuumTube.desktop"
-    src.parent.mkdir(parents=True)
-    src.write_text("[Desktop Entry]\nName=VacuumTube\nName[de]=VacuumTube\nExec=flatpak run rocks.shy.VacuumTube\nIcon=vt\n")
+    src = box / "usr/share/applications/couchbox-yt.desktop"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("[Desktop Entry]\nName=YouTube\nName[de]=YouTube\nExec=/usr/lib/couchbox/bin/couchbox-youtube-tv\nIcon=yt\n")
+    settings.update({"home.names": {"youtube": "Videos"}})
     home.build()
-    o = (box / "home/tv/.local/share/applications/rocks.shy.VacuumTube.desktop").read_text()
-    assert "Name=YouTube" in o and "Name[de]" not in o and "--remote-debugging-port=9222" in o
+    o = (box / "home/tv/.local/share/applications/couchbox-yt.desktop").read_text()
+    assert "Name=Videos" in o and "Name[de]" not in o and "Exec=/usr/lib/couchbox/bin/couchbox-youtube-tv" in o
     favs = (box / "home/tv/.config/bigscreen-favs").read_text()
-    assert "storageId=rocks.shy.VacuumTube.desktop" in favs and "icon=vt" in favs
+    assert "storageId=couchbox-yt.desktop" in favs and "icon=yt" in favs
 
 
 def test_overlay_falls_back_for_untested_bigscreen(box, monkeypatch):

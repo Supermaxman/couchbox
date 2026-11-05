@@ -33,6 +33,7 @@ def test_which_units_are_apps(mem):
     assert mem.unit_app("app-org.kde.plasma.bigscreen.inputhandler@62e3.service") == ""
     assert mem.unit_app("couchbox-spotify-connect.service") == ""
     assert mem.app_name("couchbox-twitch") == "Twitch" and mem.app_name("org.example.Player") == "Player"
+    assert mem.app_name("couchbox-yt") == "YouTube"  # the YouTube tile
 
 
 def test_launched_apps_leave_out_those_already_watched(mem, monkeypatch):

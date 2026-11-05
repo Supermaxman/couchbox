@@ -29,6 +29,7 @@
 
     "media.jellyfin.url": {"type": "url", "default": "", "page": "apps", "label": "Jellyfin server"},
     "media.jellyfin.client": {"type": "enum", "values": ["native", "web"], "default": "native", "page": "apps", "label": "Jellyfin player", "help": "Native plays HEVC on the Pi's hardware decoder."},
+    "media.youtube.client": {"type": "enum", "values": ["native", "vacuumtube"], "default": "native", "page": "apps", "label": "YouTube app", "help": "Native: Couchbox's own YouTube TV app (no ads, SponsorBlock, casting from phones). VacuumTube: YouTube's web TV app, as before."},
     "media.seerr.url": {"type": "url", "default": "", "page": "apps", "label": "Seerr server"},
     "media.frigate.url": {"type": "url", "default": "", "page": "apps", "label": "Frigate server"},
     "media.frigate.popup.enabled": {"type": "bool", "default": true, "page": "apps", "label": "Frigate pop-ups", "help": "A camera's live picture in a corner of the TV, over whatever is on, when Frigate sees something. OK opens the camera, Back dismisses it. Set up in the Frigate app → Pop-ups."},

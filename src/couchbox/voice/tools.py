@@ -150,6 +150,8 @@ def window_classes(app_id, name):
         out.append("chrome-" + re.sub(r"^https?://", "", url).split("/")[0] + "__-Default")
     if name.lower() == "jellyfin":
         out += ["jellyfin-desktop", "org.jellyfin.JellyfinDesktop", "org.jellyfin.jellyfin-desktop"]
+    if app_id == "couchbox-yt.desktop":
+        out += ["rocks.shy.VacuumTube"]  # the tile's fallback (Settings → Apps → YouTube app)
     return out
 
 
