@@ -45,8 +45,8 @@ FocusScope {
         s = null;
         info = {};
         const id = items[i].id;
-        Y.call("stream", {id: id}, r => { if (page.videoId !== id) return; page.s = r; video.loadWith(r.url, 0, "loop-file=inf"); });
-        Y.call("short", {id: id}, r => { if (page.videoId === id) page.info = r; }, () => {});
+        Y.call("stream", {id: id}, r => { if (!page || page.videoId !== id) return; page.s = r; video.loadWith(r.url, 0, "loop-file=inf"); });
+        Y.call("short", {id: id}, r => { if (page && page.videoId === id) page.info = r; }, () => {});
         fetchNext();
         if (items.length - i < 4 && more) loadMore();
     }

@@ -55,8 +55,11 @@ class Run:
         time.sleep(settle)
         self.n += 1
         base = os.path.join(self.out, f"{self.n:02d}-{name}")
+        f = focus()  # first: the picture comes a moment later, and the focus is what's checked
         subprocess.run(["couchbox-screenshot", base + ".png"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        f = focus()
+        f2 = focus()
+        if f2.get("detail", {}).get("mode") != f.get("detail", {}).get("mode"):
+            f["changedDuringShot"] = f2  # the controls hid (or showed) while the picture was taken
         with open(base + ".json", "w") as fh:
             json.dump(f, fh, indent=1)
         try:
@@ -73,6 +76,13 @@ class Run:
 
 def d(f):
     return f.get("detail") or {}
+
+
+def show_controls():
+    """The player's controls up (from hidden, Down shows them, on Play/Pause)."""
+    if d(focus()).get("mode") == "hidden":
+        remote("down")
+        time.sleep(0.6)
 
 
 def main():
@@ -139,8 +149,9 @@ def main():
             f["page"] == "player" and "controls" in f["focus"] and d(f).get("button") == "play",
             f"mode {d(f).get('mode')}, on {d(f).get('button')}",
         ),
-        settle=8,
+        settle=4,
     )
+    show_controls()  # (they hide after 5 s: Left would seek instead)
     remote("left", "left", "left", "ok")
     r.step(
         "description",
@@ -164,7 +175,8 @@ def main():
     remote("right")
     r.step("scrub", lambda f: (d(f).get("mode") == "bar" and "controls" in f["focus"], f"mode {d(f).get('mode')}"), settle=0.6)
     remote("down")
-    r.step("scrub-down", lambda f: (d(f).get("mode") == "controls", f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=0.6)
+    f = r.step("scrub-down", lambda f: (d(f).get("mode") == "controls", f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=0.6)
+    last = d(f).get("button") or "play"  # Up from the related row comes back to this one
 
     # the related row, and Up back to the controls
     remote("down")
@@ -173,7 +185,7 @@ def main():
     r.step(
         "related-up",
         lambda f: (
-            d(f).get("mode") == "controls" and "controls" in f["focus"] and d(f).get("button") == "description",
+            d(f).get("mode") == "controls" and "controls" in f["focus"] and d(f).get("button") == last,
             f"mode {d(f).get('mode')}, on {d(f).get('button')}",
         ),
         settle=1,

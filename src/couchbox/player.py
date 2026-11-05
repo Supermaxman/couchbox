@@ -192,6 +192,7 @@ class MpvVideo(QQuickFramebufferObject):
             keep_open="yes",
             idle="yes",
             osc="no",
+            osd_bar="no",  # the apps draw their own progress bars (mpv's showed on seeks, mid-screen)
             input_default_bindings="no",
             ytdl="no",
             cache="yes",
@@ -386,8 +387,13 @@ class MpvVideo(QQuickFramebufferObject):
 
     @Slot(float)
     def seek(self, delta):
+        # back past the start: to 0 exactly (a relative seek before the start of a stream made of
+        # a video and a sound track, the YouTube app's EDL, can leave no picture while paused)
         try:
-            self.mpv.command("seek", delta, "relative+exact" if abs(delta) < 15 else "relative")
+            if self._pos + delta < 0.5:
+                self.mpv.command("seek", 0, "absolute+exact")
+            else:
+                self.mpv.command("seek", delta, "relative+exact" if abs(delta) < 15 else "relative")
         except Exception:
             pass
 

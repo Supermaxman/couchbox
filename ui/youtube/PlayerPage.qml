@@ -72,7 +72,7 @@ FocusScope {
         if (speed !== 1) video.setSpeed(speed);
         showControls();
         Y.call("stream", {id: id}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             // where this profile left off: the card's (a part-watched card's red bar) unless told
             const p = player.seed.progress || 0;
@@ -80,9 +80,9 @@ FocusScope {
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
             if (waitLeft <= 0) begin();
             showControls();
-        }, e => { if (player.videoId === id) message = e || "This video can't be played."; });
+        }, e => { if (player && player.videoId === id) message = e || "This video can't be played."; });
         Y.call("watch", {id: id}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             meta = r;
             // YouTube's own resume point for this profile, when the card didn't have one
             if (r.start > 0 && !player.startAt) {
@@ -251,7 +251,7 @@ FocusScope {
     function setQuality(h) {
         const id = videoId, at = video.position;
         Y.call("stream", {id: id, max_height: h}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             if (r.url.indexOf("demo://") === 0) video.load(r.url, at); else video.loadWith(r.url, at, r.opts || "");
             if (captionsOn) { const c = (r.captions || []).find(x => x.name === captionsOn); if (c) video.addSubtitleTrack(c.url, c.name); }
