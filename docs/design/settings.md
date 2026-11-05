@@ -34,6 +34,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `home.web_apps` | `[]` | User websites: name, URL, optional icon. They open as remote-friendly Chromium app windows | `apps.tsv` |
 | `home.clock` | `12h` (US) / `24h` | 12-hour or 24-hour | 12h hard-coded |
 | `home.weather` | `on` when a location is set | Weather in the top bar | `MTV_WEATHER` |
+| `home.continue` | `on` | The Continue watching row under the apps (couchbox-ontv): part-watched Jellyfin, Dropout, 2nd Try and Nebula items and live followed Twitch channels, from the apps on the home row | new |
 | `appearance.theme` | `graphite` | graphite, neon, amber, sakura, matrix | `mtv-theme` |
 | `appearance.scale` | `1.5` | UI size (1.0–2.0). Applies with confirmation | `MTV_SCALE` |
 

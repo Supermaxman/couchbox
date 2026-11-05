@@ -1,7 +1,8 @@
 """The TV home screen, built from the apps registry and settings.
 
 build() writes everything the home screen reads:
-  /var/lib/couchbox/home/home.json   the row (watched by the home QML: changes show at once)
+  /var/lib/couchbox/home/home.json   the row (watched by the home QML: changes show at once), and
+                                     where couchbox-ontv keeps Continue watching
   /var/lib/couchbox/home/tiles/*.png tile artwork (from share/tiles/*.svg)
   /usr/local/share/applications/couchbox-web-*.desktop   website launchers
   ~tv/.local/share/applications/<id>  renamed apps / extra launch arguments (same storage id)
@@ -19,7 +20,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from couchbox import apps, paths, settings
+from couchbox import apps, ontv, paths, settings
 from couchbox.system import sh
 
 log = logging.getLogger("couchbox.home")
@@ -120,7 +121,9 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
     w = None
     if d["weather"]:
         w = {"lat": s["location.lat"], "lon": s["location.lon"], "name": s["location.name"], "units": d["units"]}
-    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"]}
+    # Continue watching: the TV user's couchbox-ontv service keeps it in this file
+    cw = {"file": str(ontv.continue_file(tv_home()))} if s["home.continue"] else None
+    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw}
 
 
 def _write(path: Path, text: str, owner: str | None = None) -> None:

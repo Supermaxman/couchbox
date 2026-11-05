@@ -11,9 +11,10 @@ S=/usr/share/plasma/plasmoids/org.kde.bigscreen.homescreen
 if [ -d $S ]; then
   O=$(mktemp -d)
   cp -a $S/. "$O/" && cp -r shell/home/. "$O/contents/ui/"
-  printf '.pragma library\nvar data = {"apps": [], "weather": null, "clock24": false};\n' > "$O/contents/ui/couchbox/home-data.js"
+  printf '.pragma library\nvar data = {"apps": [], "weather": null, "clock24": false, "continueWatching": null};\n' > "$O/contents/ui/couchbox/home-data.js"
   (cd "$O/contents/ui" && $Q --unqualified disable --missing-property disable --max-warnings 0 \
-     couchbox/Home.qml couchbox/TileMenu.qml couchbox/AppTile.qml couchbox/HomeData.qml couchbox/Weather.qml HomeHeader.qml)
+     couchbox/Home.qml couchbox/TileMenu.qml couchbox/AppTile.qml couchbox/HomeData.qml couchbox/Weather.qml \
+     couchbox/ContinueRow.qml couchbox/ContinueCard.qml HomeHeader.qml)
   rm -rf "$O"
 else
   find shell -name '*.qml' -exec $Q --import disable --unresolved-type disable --unqualified disable --missing-property disable --max-warnings 1000 {} + >/dev/null

@@ -1,0 +1,13 @@
+[Unit]
+Description=Couchbox On this TV: keeps the home screen's Continue watching row fresh, opens items in their apps
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-ontv
+Restart=on-failure
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=graphical-session.target

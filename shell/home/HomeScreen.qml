@@ -1,5 +1,6 @@
 // couchbox: the TV home screen. Replaces Bigscreen's HomeScreen.qml (6.7.5): a clock and a few
-// settings buttons at the top, and one row of app tiles in the order of /etc/couchbox/home.tsv.
+// settings buttons at the top, and one row of app tiles in the order of /etc/couchbox/home.tsv;
+// with something to continue, the apps move up and Continue watching sits under them.
 // Installed by couchbox-home.
 // Based on Bigscreen's HomeScreen.qml:
 // SPDX-FileCopyrightText: 2015 Marco Martin <mart@kde.org>
@@ -37,7 +38,7 @@ Item {
             name: "focused"
             when: root.Window.activeFocusItem !== null
             PropertyChanges { target: root; opacity: 1; zoomScale: 1 }
-            StateChangeScript { script: home.forceActiveFocus() }
+            StateChangeScript { script: home.becameVisible() }
         },
         State {
             name: "unfocused"
@@ -79,7 +80,7 @@ Item {
         z: -1   // its glow goes behind the header
         anchors {
             top: parent.top
-            topMargin: Math.round(root.height * 0.54 - home.tileHeight / 2)
+            topMargin: Math.round(root.height * (home.hasContinue ? 0.36 : 0.54) - home.tileHeight / 2)
             left: parent.left
             right: parent.right
             bottom: parent.bottom
@@ -88,5 +89,6 @@ Item {
         }
         navigationUp: header
         KeyNavigation.backtab: header
+        Behavior on anchors.topMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
     }
 }

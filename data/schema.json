@@ -23,6 +23,7 @@
     "home.web_apps": {"type": "list", "items": "object", "default": [], "page": "home", "label": "Websites", "help": "Each: {id, name, url}."},
     "home.clock": {"type": "enum", "values": ["auto", "12h", "24h"], "default": "auto", "page": "home", "label": "Clock"},
     "home.weather": {"type": "bool", "default": true, "page": "home", "label": "Weather", "help": "Shown when a location is set. Uses Open-Meteo."},
+    "home.continue": {"type": "bool", "default": true, "page": "home", "label": "Continue watching", "help": "A row under the apps: what's part-watched in Jellyfin, Dropout, 2nd Try and Nebula, and followed Twitch channels that are live. Apps hidden from the home row are left out."},
     "appearance.theme": {"type": "enum", "values": ["graphite", "neon", "amber", "sakura", "matrix"], "default": "graphite", "page": "home", "label": "Theme", "restart": "session"},
     "appearance.scale": {"type": "number", "min": 1.0, "max": 2.0, "default": 1.5, "page": "display", "label": "Interface size", "restart": "session"},
 

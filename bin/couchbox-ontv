@@ -1,0 +1,378 @@
+#!/usr/bin/python3
+"""couchbox-ontv: what's on this TV across its apps. Keeps the home screen's Continue watching row
+fresh, and opens what's picked there (or in Search's "On this TV") in its own app. Runs in the
+TV session as the TV user (couchbox-ontv.service), so it uses each app's own sign-in.
+
+Every 5 minutes, and when the home screen comes to the front (--refresh, at most once in 45 s),
+it asks the apps on the home row what's part-watched: Jellyfin (its Resume list), Dropout,
+2nd Try and Nebula (their Continue Watching), Twitch (followed channels live now). One row,
+newest first (couchbox.ontv), goes to ~/.cache/couchbox-ontv/continue.json, which the home screen
+reads. Each app is asked on its own thread with a time limit; an app that can't be reached
+keeps its last items for a while (6 hours; Twitch's live channels 15 minutes), one that isn't
+signed in is said once in the log and left out. Nothing runs while Settings → Home screen →
+Continue watching is off.
+
+  couchbox-ontv                     run the service
+  couchbox-ontv --refresh           ask it to look again now (the home screen does, when shown)
+  couchbox-ontv --open TARGET       open an item in its app (dropout:play:123, jellyfin:<id>, ...)
+  couchbox-ontv --status            what the service knows: each app, when it answered, why not
+  couchbox-ontv --list              the row as the home screen has it
+  couchbox-ontv --once              look now, without the service, and print the row
+  couchbox-ontv --search TEXT       what Search's "On this TV" finds, app by app
+  couchbox-ontv --demo --shot FILE [--keys down,right,...] [--empty]
+                                    draw the home screen's rows off screen, with made-up items
+"""
+import json
+import os
+import signal
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
+
+from couchbox import ontv, paths, settings
+
+SITE = "ontv"           # its control socket (couchbox.appctl)
+EVERY = 300             # seconds between looks
+MIN_GAP = 45            # --refresh: not again sooner than this
+ASK_LIMIT = 45          # seconds one app may take
+QUIET = 60              # while turned off: how often to check the setting again
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def arg(name, default=""):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else default
+
+
+class Service:
+    """The look loop and the control socket. self.lock guards the state between them."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.wake = threading.Event()
+        self.clients = ontv.Clients()
+        self.pool = ThreadPoolExecutor(max_workers=len(ontv.CONTINUE_APPS))
+        self.state_file = ontv.data_dir() / "continue-state.json"
+        st = ontv.read_json(self.state_file, {}) or {}
+        self.seen = st.get("seen") or {}
+        self.known = set(st.get("known") or [])
+        self.status = {}             # source -> {ok, at, problem, count}
+        self.last = {}               # source -> (when it answered, its items)
+        self.looked = 0.0
+        self.said = {}               # source -> the problem last logged
+        old = ontv.read_json(ontv.continue_file(), {}) or {}
+        for src, s in (old.get("sources") or {}).items():
+            if s.get("ok"):
+                self.last[src] = (s.get("at", 0), [it for it in old.get("items", []) if it.get("app") == src])
+
+    def note(self, src, problem):
+        """Log an app's problem once (and once that it's answering again)."""
+        if self.said.get(src, "") != problem:
+            log(f"{src}: {problem} (trying again quietly)" if problem else f"{src}: answering again")
+            self.said[src] = problem
+
+    def look(self):
+        """Ask every app on the home row, write the row."""
+        now = time.time()
+        srcs = ontv.sources("continue")
+        futs = {src: self.pool.submit(ontv.fetch_continue, src, self.clients) for src in srcs}
+        status = {}
+        for src, fut in futs.items():
+            try:
+                items = fut.result(timeout=max(1, ASK_LIMIT - (time.time() - now)))
+            except ontv.NotSignedIn as err:
+                self.note(src, str(err))
+                self.last.pop(src, None)
+                status[src] = {"ok": False, "at": now, "problem": str(err), "signedIn": False}
+                continue
+            except FutureTimeout:
+                problem = f"no answer in {ASK_LIMIT} s"
+            except Exception as err:  # noqa: BLE001 - unreachable, timed out, an odd answer
+                problem = f"{err.__class__.__name__}: {str(err)[:160]}"
+            else:
+                with self.lock:
+                    ontv.place(src, items, self.seen, now, first=src not in self.known)
+                    self.known.add(src)
+                self.last[src] = (now, items)
+                status[src] = {"ok": True, "at": now, "count": len(items)}
+                self.note(src, "")
+                continue
+            self.note(src, problem)
+            at, items = self.last.get(src, (0, []))
+            keep = now - at < ontv.KEEP.get(src, ontv.KEEP_DEFAULT)
+            if not keep:
+                self.last.pop(src, None)
+            status[src] = {"ok": keep, "at": at, "problem": problem, "count": len(items) if keep else 0}
+        for src in [s for s in self.last if s not in srcs]:          # hidden or turned off since
+            del self.last[src]
+        row = ontv.merge({src: items for src, (_, items) in self.last.items()})
+        ontv.write_json(ontv.continue_file(), {"updated": now, "items": row, "sources": status})
+        with self.lock:
+            ontv.write_json(self.state_file, {"seen": self.seen, "known": sorted(self.known)}, 0o600)
+            self.status, self.looked = status, now
+        return row
+
+    def run(self):
+        while True:
+            wait = EVERY
+            try:
+                if settings.load()["home.continue"]:
+                    self.look()
+                else:
+                    wait = QUIET
+            except Exception as err:  # noqa: BLE001 - never stop over one bad look
+                log(f"look: {err.__class__.__name__}: {err}")
+                wait = 60
+            self.wake.wait(wait)
+            self.wake.clear()
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "refresh":
+            due = time.time() - self.looked >= MIN_GAP
+            if due:
+                self.wake.set()
+            return {"ok": True, "looking": due}
+        if op == "status":
+            with self.lock:
+                return {"looked": self.looked, "sources": self.status, "on": settings.load()["home.continue"],
+                        "apps": ontv.sources("continue")}
+        return {"error": f"unknown op {op}"}
+
+
+# ------------------------------------------------------------------ the command line
+def ask(req):
+    from couchbox import appctl
+    try:
+        return appctl.call(SITE, req, timeout=5)
+    except appctl.NotRunning:
+        return None
+
+
+def show(items, empty="Nothing to continue."):
+    for it in items:
+        bits = [it["subtitle"], it["left"], it["viewers"]]
+        log(f"{it['name']:<12} {it['title']}" + "".join(f" · {b}" for b in bits if b) + f"   [{it['target']}]")
+    if not items and empty:
+        log(empty)
+
+
+def cli():
+    if "--refresh" in sys.argv:
+        ask({"op": "refresh"})                      # quietly nothing when it isn't running
+        return 0
+    if "--open" in sys.argv:
+        try:
+            log(ontv.open_target(arg("--open")))
+        except Exception as err:  # noqa: BLE001
+            log(f"couldn't open {arg('--open')}: {err}")
+            return 1
+        return 0
+    if "--status" in sys.argv:
+        r = ask({"op": "status"})
+        if r is None:
+            sys.exit("couchbox-ontv isn't running (systemctl --user status couchbox-ontv).")
+        print(json.dumps(r, indent=2))
+        return 0
+    if "--list" in sys.argv:
+        show((ontv.read_json(ontv.continue_file(), {}) or {}).get("items", []))
+        return 0
+    if "--once" in sys.argv:
+        clients, now, lists = ontv.Clients(), time.time(), {}
+        for src in ontv.sources("continue"):
+            try:
+                lists[src] = ontv.fetch_continue(src, clients)
+                ontv.place(src, lists[src], {}, now, first=True)
+            except Exception as err:  # noqa: BLE001
+                log(f"{src}: {err}")
+        show(ontv.merge(lists))
+        return 0
+    if "--search" in sys.argv:
+        q = arg("--search")
+        for src in ontv.SEARCH_APPS if "--demo" in sys.argv else ontv.sources("search"):
+            try:
+                found = ontv.demo_search(src, q) if "--demo" in sys.argv else ontv.search(src, q)
+            except Exception as err:  # noqa: BLE001
+                log(f"{src}: {err}")
+                continue
+            show(found, empty="")
+        return 0
+    return None
+
+
+# ------------------------------------------------------------------ --demo --shot: the rows off screen
+PREVIEW = """
+import QtQuick
+import QtQuick.Window
+
+Window {
+    id: win
+    width: 1920; height: 1080
+    visible: true
+    color: "#0b0d12"
+    readonly property real margin: Math.round(width * 0.05)
+    readonly property int gap: 22
+    readonly property real tileWidth: Math.floor((width - 2 * margin - gap * 5) / 6)
+    readonly property real tileHeight: Math.round(tileWidth * 9 / 16)
+
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0; color: "#1a2233" }
+            GradientStop { position: 1; color: "#07080b" }
+        }
+    }
+    Text {
+        x: win.margin; y: Math.round(win.margin * 0.8)
+        text: "9:41"; color: Style.text; font.family: Style.font; font.pixelSize: 56; font.weight: Font.Light
+    }
+    Item {
+        x: win.margin
+        y: Math.round(win.height * (rowView.shown ? 0.36 : 0.54) - win.tileHeight / 2)
+        width: win.width - 2 * win.margin
+        height: win.height - y
+
+        ListView {                                   // a stand-in for the app row (Home.qml)
+            id: appRow
+            width: parent.width; height: win.tileHeight
+            orientation: ListView.Horizontal
+            spacing: win.gap
+            focus: true
+            interactive: false
+            model: demoApps
+            delegate: Rectangle {
+                required property var modelData
+                required property int index
+                readonly property bool cur: ListView.isCurrentItem && appRow.activeFocus
+                width: win.tileWidth; height: win.tileHeight
+                radius: Math.round(width * 0.045)
+                color: "#1d2028"
+                scale: cur ? 1.1 : 1
+                z: cur ? 1 : 0
+                Image { anchors.fill: parent; source: "file://" + modelData.tile; sourceSize.width: 800; fillMode: Image.PreserveAspectCrop }
+                Rectangle {
+                    anchors.fill: parent; anchors.margins: -4; radius: parent.radius + 4
+                    color: "transparent"; border.color: Style.ring; border.width: 2.5; visible: parent.cur
+                }
+            }
+            Keys.onLeftPressed: decrementCurrentIndex()
+            Keys.onRightPressed: incrementCurrentIndex()
+            Keys.onDownPressed: if (rowView.shown) rowView.forceActiveFocus()
+        }
+        ContinueRow {
+            id: rowView
+            anchors { left: parent.left; right: parent.right }
+            y: appRow.y + win.tileHeight + 104
+            visible: rowView.shown
+            items: demoItems
+            apps: demoApps
+            navigationUp: appRow
+            cardWidth: win.tileWidth
+            cardHeight: win.tileHeight
+            gap: win.gap
+            onOpened: (it) => console.log("open " + it.target)
+        }
+    }
+
+    property var keys: shotKeys
+    Timer {
+        interval: 700; repeat: true; running: win.keys.length > 0
+        onTriggered: { const k = win.keys.shift(); win.keys = win.keys; shooter.press(k); }
+    }
+    Timer { interval: 1500 + shotKeys.length * 700; running: true; onTriggered: { shooter.save(shotFile); Qt.quit(); } }
+}
+"""
+
+
+def shot():
+    import re
+
+    if "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QUrl, Slot
+    from PySide6.QtGui import QGuiApplication, QKeyEvent
+    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQuick import QQuickWindow  # noqa: F401  (the root object typed as QQuickWindow: grabWindow)
+
+    class Shooter(QObject):
+        window = None
+
+        @Slot(str)
+        def save(self, path):
+            from couchbox import qtcheck
+
+            qtcheck.clipped(self.window)
+            self.window.grabWindow().save(path)
+
+        @Slot(str)
+        def press(self, name):
+            key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+                   "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+            if key is not None:
+                for t in (QEvent.KeyPress, QEvent.KeyRelease):
+                    QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+    import shutil
+    import subprocess
+    import tempfile
+
+    app = QGuiApplication(sys.argv)
+    tmp = tempfile.mkdtemp(prefix="couchbox-ontv-shot.")
+    tiles = paths.share() / "tiles"
+    apps = []
+    for a in ("youtube", "jellyfin", "dropout", "2ndtry", "nebula", "twitch", "spotify"):
+        svg = tiles / f"{a}.svg"
+        glow = re.search(r'data-couchbox-glow="([^"]+)"', svg.read_text()) if svg.is_file() else None
+        tile = os.path.join(tmp, f"{a}.png")            # as couchbox.home renders them (logos and all)
+        try:
+            subprocess.run(["rsvg-convert", "-w", "800", "-h", "450", str(svg), "-o", tile], check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError):
+            tile = str(svg)
+        apps.append({"app": a, "name": ontv.NAMES.get(a, a.title()), "tile": tile, "glow": glow.group(1) if glow else ""})
+    engine = QQmlApplicationEngine()
+    shooter = Shooter()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demoApps", apps)
+    ctx.setContextProperty("demoItems", [] if "--empty" in sys.argv else ontv.demo_continue())
+    ctx.setContextProperty("shotFile", arg("--shot"))
+    ctx.setContextProperty("shotKeys", [k for k in arg("--keys").split(",") if k])
+    # in a copy of the home screen's folder, so ContinueRow, ContinueCard and Style resolve as they
+    # do there (with the first-paint data couchbox.home would write)
+    shutil.copytree(paths.share() / "shell/home/couchbox", tmp, dirs_exist_ok=True)
+    with open(os.path.join(tmp, "home-data.js"), "w") as f:
+        f.write(".pragma library\nvar data = " + json.dumps({"apps": apps, "weather": None, "clock24": False}) + ";\n")
+    engine.loadData(PREVIEW.encode(), QUrl.fromLocalFile(os.path.join(tmp, "Preview.qml")))
+    if not engine.rootObjects():
+        sys.exit("the preview didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    shutil.rmtree(tmp, ignore_errors=True)
+    os._exit(code)
+
+
+def main():
+    if "--shot" in sys.argv:
+        return shot()
+    done = cli()
+    if done is not None:
+        sys.exit(done)
+    from couchbox import appctl
+
+    svc = Service()
+    server = appctl.Server(SITE, svc.handle)
+    server.start()
+    signal.signal(signal.SIGTERM, lambda *a: (server.close(), os._exit(0)))
+    log(f"ready: Continue watching {'on' if settings.load()['home.continue'] else 'off'}, apps: "
+        f"{', '.join(ontv.sources('continue')) or 'none'}")
+    svc.run()
+
+
+if __name__ == "__main__":
+    main()

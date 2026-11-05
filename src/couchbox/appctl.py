@@ -6,7 +6,8 @@ can connect). One JSON request per connection, one JSON reply:
 
     {"op": "ping"}                                   -> {"ok": true, "site": ...}
     {"op": "call", "fn": "search", "args": {...}}    -> the app's own back-end call (its sign-in)
-    {"op": "open", "target": "play:ID"}              -> play:ID, series:ID, search:TEXT, home, mylist, series
+    {"op": "open", "target": "play:ID"}              -> play:ID, series:ID, category:NAME (Twitch), search:TEXT,
+                                                        home, mylist, series
     {"op": "media", "action": "pause", "seconds": 0} -> play, pause, toggle, forward, back, seek, restart
     {"op": "state"}                                  -> what's on screen: page, title, playing...
 """
