@@ -980,12 +980,12 @@ class YouTube:
     channels: ytauth). The guest's visitor id is kept, so YouTube sees the same TV each time (as a
     real one is)."""
 
-    def __init__(self, data_dir: str | None = None, hl: str = "en", gl: str = "US"):
+    def __init__(self, data_dir: str | None = None, hl: str = "en", gl: str = "US", client: dict[str, str] | None = None):
         from couchbox.services import ytauth
 
         self.dir = data_dir or os.path.expanduser("~/.local/share/couchbox-yt")
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
-        self.client = dict(tv_client(), hl=hl, gl=gl)
+        self.client = dict(client or tv_client(), hl=hl, gl=gl)
         self.s = requests.Session()
         self.s.headers.update(
             {

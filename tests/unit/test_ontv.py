@@ -214,12 +214,17 @@ def write_home(box, ids):
 
 def test_only_apps_on_the_home_row_are_asked(box):
     write_home(box, ["youtube", "twitch", "nebula", "jellyfin", "settings"])
-    assert ontv.sources("continue") == ["jellyfin", "nebula", "twitch"]
+    assert ontv.sources("continue") == ["jellyfin", "nebula", "twitch", "youtube"]
     assert ontv.sources("search") == ["jellyfin", "nebula", "twitch", "youtube"]
+    # VacuumTube as the tile's app: its history is only in its page
+    settings.update({"media.youtube.client": "vacuumtube"})
+    (box / "var/lib/flatpak/app/rocks.shy.VacuumTube").mkdir(parents=True)
+    assert ontv.sources("continue") == ["jellyfin", "nebula", "twitch"]
+    settings.update({"media.youtube.client": "native"})
     # no home.json yet: the registry's row (Jellyfin needs its server set)
     (box / "var/lib/couchbox/home/home.json").unlink()
     settings.update({"apps.disabled": ["twitch"], "home.hidden": ["nebula"]})
-    assert ontv.sources("continue") == ["dropout", "2ndtry"]
+    assert ontv.sources("continue") == ["dropout", "2ndtry", "youtube"]
 
 
 def test_home_json_names_the_rows_file_unless_turned_off(box, runner):
@@ -236,7 +241,19 @@ def test_targets_are_checked_before_anything_runs():
     assert ontv.split_target("twitch:category:Just Chatting") == ("twitch", "category:Just Chatting")
     assert ontv.split_target("movies:tv:1399") == ("movies", "tv:1399")
     assert ontv.split_target("jellyfin:0f3a9c2e8b7d4e10") == ("jellyfin", "0f3a9c2e8b7d4e10")
-    for bad in ("", "dropout", "dropout:", "spotify:play:1", "dropout:rm -rf", "movies:person:3", "jellyfin:../x", "youtube:play:x"):
+    assert ontv.split_target("youtube:video:dQw4w9WgXcQ") == ("youtube", "video:dQw4w9WgXcQ")
+    bads = (
+        "",
+        "dropout",
+        "dropout:",
+        "spotify:play:1",
+        "dropout:rm -rf",
+        "movies:person:3",
+        "jellyfin:../x",
+        "youtube:play:x",
+        "youtube:video:x y",
+    )
+    for bad in bads:
         with pytest.raises(ValueError):
             ontv.split_target(bad)
 
@@ -257,13 +274,19 @@ def test_how_each_app_is_opened():
     assert ontv.launch_command("twitch", "play:live:x")[4].startswith("--unit=app-couchbox-twitch@ontv-")
     assert ontv.voice_request("jellyfin", "ep1") == ("/play/jellyfin", {"id": "ep1"})
     assert ontv.voice_request("youtube", "search:lofi beats") == ("/search/youtube", {"query": "lofi beats"})
+    yt = ontv.launch_command("youtube", "video:dQw4w9WgXcQ")
+    assert yt[4].startswith("--unit=app-couchbox-yt@ontv-") and yt[-3:] == [
+        "/usr/lib/couchbox/bin/couchbox-yt",
+        "--open",
+        "video:dQw4w9WgXcQ",
+    ]
 
 
 def test_open_uses_the_running_app_or_starts_it(monkeypatch):
     from couchbox import appctl
 
     calls, ran = [], []
-    monkeypatch.setattr(appctl, "running", lambda site: site == "nebula")
+    monkeypatch.setattr(appctl, "running", lambda site: site in ("nebula", "yt"))
     monkeypatch.setattr(appctl, "call", lambda site, req, timeout=0: calls.append((site, req)))
     monkeypatch.setattr(ontv, "kwin_raise", lambda app_id: calls.append(("raise", app_id)))
     monkeypatch.setattr(ontv.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
@@ -271,6 +294,33 @@ def test_open_uses_the_running_app_or_starts_it(monkeypatch):
     assert calls == [("nebula", {"op": "open", "target": "play:v9"}), ("raise", "couchbox-nebula")]
     ontv.open_target("dropout:series:7")
     assert ran[0][-3:] == ["/usr/lib/couchbox/bin/couchbox-dropout", "--open", "series:7"]
+    calls.clear()
+    ontv.open_target("youtube:video:dQw4w9WgXcQ")  # Couchbox's own YouTube app: where the profile left off
+    ontv.open_target("youtube:search:lofi")
+    assert calls == [
+        ("yt", {"op": "open", "target": "video:dQw4w9WgXcQ"}),
+        ("raise", "couchbox-yt"),
+        ("yt", {"op": "open", "target": "search:lofi"}),
+        ("raise", "couchbox-yt"),
+    ]
+
+
+def test_youtube_continues_the_part_watched_videos_of_its_history():
+    from couchbox.services import youtube
+
+    page = youtube.Demo("demo1:").browse("FEhistory")
+    items = ontv.youtube_continue(page)
+    assert [i["key"] for i in items] == ["youtube:demo0000006", "youtube:demo0000010"]
+    it = items[0]
+    assert it["target"] == "youtube:video:demo0000006" and it["subtitle"] == "Orbit Lab" and it["progress"] == 0.35
+    assert it["left"] == "30 min left" and it["desktop"] == "couchbox-yt.desktop" and it["position"] == 0.35
+    assert ontv.length("1:02:03") == 3723 and ontv.length("LIVE") == 0
+
+
+def test_youtube_needs_a_signed_in_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(ontv.NotSignedIn):
+        ontv.fetch_continue("youtube", ontv.Clients())
 
 
 # ------------------------------------------------------------------ Jellyfin's sign-in
