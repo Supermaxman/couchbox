@@ -31,6 +31,73 @@ APP = "/usr/lib/couchbox/bin/couchbox-yt"
 UNIT = "couchbox-yt-check"
 
 
+def cast_checks(r):
+    """Casting (couchbox-yt-cast, which the app starts): its control socket, DIAL's device
+    description, and an answer to an SSDP search (and whose answers came back: VacuumTube's?)."""
+    import re
+    import socket
+    import urllib.request
+
+    from couchbox import appctl
+
+    r.n += 1
+    ping = {}
+    for _ in range(20):
+        try:
+            ping = appctl.call("yt-cast", {"op": "ping"}, timeout=3)
+            break
+        except Exception:  # noqa: BLE001  (still starting)
+            time.sleep(1)
+    ok = bool(ping.get("ok"))
+    r.failed += 0 if ok else 1
+    print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} cast-running: {ping or 'no answer on its control socket'}", flush=True)
+
+    r.n += 1
+    try:
+        dd = urllib.request.urlopen("http://127.0.0.1:56789/dd.xml", timeout=5).read().decode()
+        name = (re.search(r"<friendlyName>(.*?)</friendlyName>", dd) or [None, ""])[1]
+    except OSError as err:
+        name = f"(none: {err})"
+    ok = name == "Couchbox YouTube (beta)"
+    r.failed += 0 if ok else 1
+    print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} cast-dial: /dd.xml names {name!r}", flush=True)
+
+    r.n += 1
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+    sock.settimeout(0.5)
+    msg = (
+        b'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\n'
+        b"ST: urn:dial-multiscreen-org:service:dial:1\r\n\r\n"
+    )
+    seen = {}
+    try:
+        sock.sendto(msg, ("239.255.255.250", 1900))
+        end = time.time() + 3
+        while time.time() < end:
+            try:
+                data, _addr = sock.recvfrom(4096)
+            except TimeoutError:
+                continue
+            loc = (re.search(r"(?im)^location:\s*(\S+)", data.decode("utf-8", "replace")) or [None, ""])[1]
+            if loc and loc not in seen:
+                try:
+                    dd = urllib.request.urlopen(loc, timeout=3).read().decode()
+                    seen[loc] = (re.search(r"<friendlyName>(.*?)</friendlyName>", dd) or [None, "?"])[1]
+                except OSError:
+                    seen[loc] = "?"
+    finally:
+        sock.close()
+    ours = any(":56789/" in loc for loc in seen)
+    r.failed += 0 if ours else 1
+    others = [f"{name} ({loc})" for loc, name in seen.items() if ":56789/" not in loc]
+    print(
+        f"{'PASS' if ours else 'FAIL'} {r.n:02d} cast-ssdp: our answer {'came' if ours else 'did not come'}; "
+        f"others: {', '.join(others) or 'none'}",
+        flush=True,
+    )
+
+
 def save_log(unit, out):
     """The app's output (its journal) beside the screenshots: OUT/app.log."""
     try:
@@ -349,6 +416,7 @@ def main():
     remote("back")
     r.step("profiles-back", lambda f: ("guide" in f["focus"], f"focus {f.get('focus')}"), settle=1.5)
 
+    cast_checks(r)
     save_log(unit, a.out)
     if not a.keep:
         subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
