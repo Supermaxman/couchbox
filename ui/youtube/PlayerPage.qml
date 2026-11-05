@@ -209,7 +209,7 @@ FocusScope {
     }
     onPanelChanged: {
         Y.videoSide = !!panel;
-        const checked = panelOptions.findIndex(o => o.checked);     // the current choice, as YouTube's does
+        const checked = optionsFor(panel).findIndex(o => o.checked);     // the current choice, as YouTube's does
         sidePanel.index = checked >= 0 && panel !== "save" ? checked : 0;
         // the panel takes the focus now (keys pressed right after go to it), and again once it's
         // surely shown (an item can't take it while hidden); closed, the controls have it again, on
@@ -223,27 +223,29 @@ FocusScope {
         {level: "all", label: "All", icon: "bell-all"}, {level: "personalized", label: "Personalized", icon: "bell"},
         {level: "none", label: "None", icon: "bell-off"}
     ]
-    readonly property var panelOptions: {
-        if (panel === "channel")
+    // the panel's rows (a function, so onPanelChanged reads them for the new panel, not the last)
+    readonly property var panelOptions: optionsFor(panel)
+    function optionsFor(p) {
+        if (p === "channel")
             return [{label: v.subscribed ? "Subscribed" : "Subscribe", trailing: v.subscribed ? ({all: "bell-all", none: "bell-off"})[v.notify] || "bell" : ""},
                     {label: "Go to channel"}];
-        if (panel === "notify") {
+        if (p === "notify") {
             const have = (v.notifyOptions || []).map(o => o.level);
             return notifyLevels.filter(l => have.length === 0 || have.indexOf(l.level) >= 0)
                 .map(l => ({label: l.label, icon: l.icon, checked: v.notify === l.level, level: l.level}))
                 .concat([{label: "Unsubscribe", icon: "unsubscribe", level: "unsubscribe"}]);
         }
-        if (panel === "save")
+        if (p === "save")
             return saveOptions.map(o => ({label: o.title, icon: o.id === "WL" ? "history" : "list", checked: o.saved, id: o.id}));
-        if (panel === "settings")
+        if (p === "settings")
             return [{label: "Quality", value: qualityLabel, icon: "settings"}, {label: "Playback speed", value: speed === 1 ? "Normal" : speed + "×", icon: "speed"},
                     {label: "Captions", value: captionsOn || "Off", icon: "cc"}];
-        if (panel === "quality")
+        if (p === "quality")
             return [{label: "Auto", checked: !s || !s.maxHeight || s.maxHeight >= 1080, h: 1080}]
                 .concat(((s && s.heights) || []).map(h => ({label: h + "p", checked: s.maxHeight === h && h < 1080, h: h})));
-        if (panel === "speed")
+        if (p === "speed")
             return [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(x => ({label: x === 1 ? "Normal" : x + "×", checked: speed === x, x: x}));
-        if (panel === "captions")
+        if (p === "captions")
             return [{label: "Off", checked: !captionsOn}].concat(((s && s.captions) || []).map(c => ({label: c.name, checked: captionsOn === c.name, c: c})));
         return [];
     }

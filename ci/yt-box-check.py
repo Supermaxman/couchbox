@@ -8,7 +8,8 @@ had the focus then (the app's control socket: {"op": "focus"}).
 It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running), then:
 Home; Search from the guide, typing on a keyboard and Enter; back Home; a video from Home;
 Description and Back; scrubbing with the controls hidden; the related row and Up; the clock
-moving; a paused seek back to 0:00 still showing a picture; the Shorts tab. Each step prints
+moving; a paused seek back to 0:00 still showing a picture; the Shorts tab; a guest's Library,
+Subscriptions and Settings; Who's watching from the guide (and Back). Each step prints
 PASS or FAIL with what it saw, and saves OUT/NN-name.png and OUT/NN-name.json. --keep leaves
 the app running at the end.
 
@@ -268,6 +269,34 @@ def main():
     r.step("shorts", lambda f: ("shorts" in f["focus"], f"focus {f.get('focus')}"), settle=5)
     remote("back")
     r.step("shorts-back", lambda f: ("guide" in f["focus"], "back on the guide"), settle=1.5)
+
+    # a guest's Library (the tiles that need no account), Subscriptions (the sign-in note), Settings
+    # beside the open guide, and Who's watching from the guide's picture (and Back from it)
+    remote("down", "down", "down", "ok")  # Shorts -> Music, Subscriptions, Library
+    r.step("library", lambda f: (f.get("section") == "library" and "tiles" in f["focus"], f"section {f.get('section')}"), settle=2)
+    remote("down")
+    r.step("library-signin", lambda f: ("action" in f["focus"], "the Sign in button"), settle=1)
+    remote("left", "up", "ok")
+    r.step(
+        "subscriptions",
+        lambda f: (f.get("section") == "subscriptions" and "message" in f["focus"], f"section {f.get('section')}"),
+        settle=2,
+    )
+    remote("left", *["down"] * 8, "ok", gap=0.35)  # Subscriptions -> ... -> Settings
+    r.step(
+        "settings",
+        lambda f: (
+            f.get("section") == "settings" and "settings" in f["focus"] and f.get("guideOpen"),
+            f"guide open {f.get('guideOpen')}, on {d(f).get('item')}",
+        ),
+        settle=2,
+    )
+    remote("down", "down", "down")
+    r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
+    remote("left", *["up"] * 13, "ok", gap=0.3)  # the guide, up to its picture: Who's watching
+    r.step("profiles", lambda f: ("profiles" in f["focus"], f"focus {f.get('focus')}"), settle=2)
+    remote("back")
+    r.step("profiles-back", lambda f: ("guide" in f["focus"], f"focus {f.get('focus')}"), settle=1.5)
 
     if not a.keep:
         subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)

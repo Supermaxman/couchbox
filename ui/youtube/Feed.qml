@@ -16,6 +16,7 @@ FocusScope {
     property real bottomRoom: 0
     property real cardW: Y.cardW
     property real metaSize: Y.tMeta              // the cards' grey lines (search results: 22)
+    property bool dimIdle: false                 // the headers grey while the focus is elsewhere on the page
     property bool fixed: false
     property int perRow: 3                   // a grid (History, Watch later) in rows of this many
     property bool gridScroll: false          // its rows scroll under the focus like shelves (Subscriptions)
@@ -95,6 +96,7 @@ FocusScope {
                     baseW: feed.cardW
                     fixed: feed.fixed || !!cell.modelData.fixedRow
                     metaSize: feed.metaSize
+                    dim: feed.dimIdle && !feed.activeFocus
                     focus: true
                     onOpen: it => feed.open(it)
                 }

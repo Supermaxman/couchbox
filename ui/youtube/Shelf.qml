@@ -17,6 +17,7 @@ FocusScope {
     property real baseW: Y.cardW
     property bool fixed: false                // a row that doesn't scroll (the player's rows of three)
     property real metaSize: Y.tMeta
+    property bool dim: false                  // the header grey (the guide open, the focus elsewhere)
     readonly property real cardW: row.hero ? 288 * Y.u : grow && current ? Y.bigW : baseW
     readonly property bool hasHead: !row.hero && !!(row.title || row.pill)    // a hero's title is the focused card's
     readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 106 : 70) * Y.u : 0) + (row.hero ? 468 * Y.u : 0)
@@ -69,7 +70,7 @@ FocusScope {
         visible: !shelf.row.pill && shelf.hasHead
         Text {
             text: shelf.row.title || ""
-            color: Y.dimmed ? Y.dim : Y.text
+            color: Y.dimmed || shelf.dim ? Y.dim : Y.text
             font.family: Y.font; font.pixelSize: Y.tShelf; font.weight: Font.Medium
             height: 36 * Y.u
         }

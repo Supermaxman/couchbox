@@ -77,7 +77,7 @@ Item {
             visible: card.behind.a > 0
         }
         Rectangle {                          // the length, bottom right (LIVE in red)
-            visible: !!card.item.duration || card.item.live
+            visible: !!card.item.duration || card.item.live || card.kind === "short"
             anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 14 : 8) * Y.u }
             width: badgeRow.implicitWidth + 16 * Y.u
             height: badge.implicitHeight + 4 * Y.u
@@ -88,8 +88,13 @@ Item {
                 anchors.centerIn: parent
                 spacing: 4 * Y.u
                 Icon { visible: !!card.item.music && !card.item.live; name: "note"; size: 26 * Y.u; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+                Icon {                       // a Short: its mark instead of a length
+                    visible: card.kind === "short" && !card.item.duration
+                    name: "shorts"; filled: true; size: 30 * Y.u; color: "white"; anchors.verticalCenter: parent.verticalCenter
+                }
                 Text {
                     id: badge
+                    visible: !!text
                     text: card.item.live ? "LIVE" : card.item.duration || ""
                     color: "white"
                     font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium

@@ -32,9 +32,9 @@ Row {
         text: parent.premium ? "Premium" : "YouTube"
         color: Y.text
         font.family: Y.font
-        font.pixelSize: parent.h * 1.0
+        font.pixelSize: parent.h * 0.95           // YouTube's own type is narrower than Roboto: tighter
         font.weight: Font.Bold
-        font.letterSpacing: -parent.h * 0.04
+        font.letterSpacing: -parent.h * 0.05
         anchors.verticalCenter: parent.verticalCenter
     }
 }

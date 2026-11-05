@@ -139,7 +139,7 @@ ApplicationWindow {
     function back() {
         if (picking) {
             if (pickedAtStart) Qt.quit();
-            else { picking = false; focusPage(); }
+            else { picking = false; guide.forceActiveFocus(); }   // opened from the guide's picture: back to it
             return;
         }
         if (stack.depth) { pop(); return; }
@@ -384,7 +384,7 @@ ApplicationWindow {
         const cur = stack.depth ? stack.currentItem : null;
         const st = {focus: names.join("/"), item: String(it).split("(")[0], shown: shown, section: section, guideOpen: guide.open};
         if (cur && cur.focusDetail) st.detail = cur.focusDetail();
-        else if (!cur && section === "search") st.detail = search.focusDetail();
+        else if (!cur && page(section).focusDetail) st.detail = page(section).focusDetail();
         return st;
     }
     Timer {

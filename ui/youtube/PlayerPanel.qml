@@ -30,7 +30,7 @@ FocusScope {
 
     Column {
         width: parent.width
-        y: panel.avatar || panel.name ? 36 * Y.u : 40 * Y.u
+        y: panel.avatar || panel.name ? 36 * Y.u : 38 * Y.u
         spacing: 12 * Y.u
         RoundImage {
             visible: !!panel.name
@@ -61,6 +61,7 @@ FocusScope {
             width: parent.width
             text: panel.title
             color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
+            height: 40 * Y.u; verticalAlignment: Text.AlignVCenter
         }
         Text {
             visible: !!panel.subtitle
@@ -68,7 +69,7 @@ FocusScope {
             text: panel.subtitle
             color: Y.dim; font.family: Y.font; font.pixelSize: 30 * Y.u
             wrapMode: Text.WordWrap
-            lineHeight: 1.1
+            lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
         }
         Item { width: 1; height: (panel.name ? 18 : 30) * Y.u }
         Repeater {
@@ -95,7 +96,7 @@ FocusScope {
                     anchors { left: parent.left; leftMargin: opt.modelData.icon ? 96 * Y.u : 24 * Y.u; right: parent.right; rightMargin: 84 * Y.u; verticalCenter: parent.verticalCenter }
                     text: opt.modelData.label
                     color: opt.on ? Y.ink : Y.text
-                    font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.Medium
+                    font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Text {

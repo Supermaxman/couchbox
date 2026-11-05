@@ -18,7 +18,7 @@ FocusScope {
     onActiveFocusChanged: if (activeFocus && !feed.activeFocus) feed.forceActiveFocus()
     Feed {
         id: feed
-        y: 78 * Y.u
+        y: 71 * Y.u
         width: parent.width
         height: parent.height - y
         onOpen: it => Y.open(it)

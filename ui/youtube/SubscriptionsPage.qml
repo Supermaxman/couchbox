@@ -45,6 +45,7 @@ FocusScope {
 
     Feed {
         id: feed
+        dimIdle: true                          // its headers grey while the channels have the focus
         x: 0; y: 175 * Y.u
         width: parent.width
         height: parent.height - y
@@ -123,7 +124,7 @@ FocusScope {
                     anchors { left: pic.right; leftMargin: 18 * Y.u; right: parent.right; rightMargin: 18 * Y.u; verticalCenter: parent.verticalCenter }
                     text: row.modelData.title || ""
                     color: row.on ? Y.ink : Y.text
-                    font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.Medium
+                    font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
             }

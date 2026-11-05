@@ -101,10 +101,10 @@ FocusScope {
         spacing: 55 * Y.u
         model: page.count
         highlightRangeMode: ListView.ApplyRange
-        preferredHighlightBegin: 71 * Y.u
+        preferredHighlightBegin: 95 * Y.u
         preferredHighlightEnd: parent.width - 420 * Y.u
         highlightMoveDuration: 200
-        header: Item { width: 71 * Y.u; height: 1 }
+        header: Item { width: 95 * Y.u; height: 1 }
         delegate: Item {
             id: cell
             required property int index
@@ -112,9 +112,8 @@ FocusScope {
             readonly property var p: add ? ({}) : page.profiles[index]
             readonly property bool on: page.index === index && page.activeFocus
             readonly property real d: on ? 342 * Y.u : 296 * Y.u
-            width: on ? 342 * Y.u : 296 * Y.u
+            width: 296 * Y.u                   // the focused one grows past its cell (the next one stays put)
             height: list.height
-            Behavior on width { NumberAnimation { duration: 140 } }
             Item {
                 id: face
                 width: cell.d; height: cell.d
@@ -151,7 +150,7 @@ FocusScope {
                     horizontalAlignment: Text.AlignHCenter
                     text: cell.add ? "Add account" : cell.p.name || ""
                     color: cell.on ? Y.text : "#c9c4c6"
-                    font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: cell.on ? Font.Bold : Font.Medium
+                    font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: cell.on ? Font.Bold : Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Text {
@@ -187,8 +186,8 @@ FocusScope {
         readonly property bool on: page.area === "guest" && page.activeFocus
         anchors.horizontalCenter: parent.horizontalCenter
         y: 912 * Y.u
-        width: guestT.implicitWidth + 74 * Y.u; height: 72 * Y.u; radius: height / 2
-        color: on ? Y.text : "#33ffffff"
+        width: guestT.implicitWidth + 58 * Y.u; height: 72 * Y.u; radius: height / 2
+        color: on ? Y.text : "#1fffffff"
         Text { id: guestT; anchors.centerIn: parent; text: "Watch as guest"; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
     }
 
