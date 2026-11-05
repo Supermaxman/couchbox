@@ -17,6 +17,8 @@ QtObject {
     property var profile: null                // who's watching: {id, account, name, handle, photo, premium}, null: a guest
     readonly property bool signedIn: !!profile
     property bool videoSide: false            // the player's side panel is open: the video sits to its left
+    property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
+    property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
     property bool shot: false                 // --shot: still (no blinking caret)
 
     // ------------------------------------------------------------------ look
@@ -61,6 +63,7 @@ QtObject {
         if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
         return String(n);
     }
+    function html(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
     // a made-up thumbnail for cards without one (the demo): two colours from the title
     function hue(s) { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h / 360; }
     // the chapter at a position (chapters: [{start, title}], in order)
@@ -101,4 +104,5 @@ QtObject {
     signal whoIsWatching()                    // the guide's picture: the profiles
     signal signIn()                           // Add account, a "Sign in" button
     signal openList(string title, string browseId)   // Library's tiles: History, Watch later, a playlist
+    signal cardMenu(var item, var focusItem)  // OK held (or Menu) on a card: Play next, Add to queue...
 }

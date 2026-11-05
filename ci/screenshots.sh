@@ -128,6 +128,23 @@ shot yt-player-channel couchbox-yt --open video:demo0000006 --keys left,left,lef
 shot yt-player-notify couchbox-yt --open video:demo0000006 --keys left,left,ok
 shot yt-player-save couchbox-yt --open video:demo0000006 --keys right,right,right,right,right,right,ok
 shot yt-guide-settings couchbox-yt --keys left,down,down,down,down,down,down,down,down,down,down,down
+# ... the player's M3 parts: Shorts (and its buttons), seeking with the chapters' pictures (and picking
+# one), the Description panel, comments, the settings menu (quality), captions on, the end screen with
+# Up next; a card's menu (Play next, Add to queue); the Movies & TV tab's large title and posters, and
+# Music's square albums
+shot yt-shorts couchbox-yt --open shorts:
+shot yt-shorts-side couchbox-yt --open shorts: --keys right
+shot yt-player-seek couchbox-yt --open video:demo0000003 --keys up
+shot yt-player-chapters couchbox-yt --open video:demo0000003 --keys up,up,right,right
+shot yt-player-description couchbox-yt --open video:demo0000003 --keys left,left,left,ok
+shot yt-player-comments couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok
+shot yt-player-settings couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok
+shot yt-player-quality couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,ok
+shot yt-player-cc couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,ok
+shot yt-player-end couchbox-yt --open video:demo0000003@3598
+shot yt-card-menu couchbox-yt --keys menu
+shot yt-movies couchbox-yt --open movies
+shot yt-music couchbox-yt --open music
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down

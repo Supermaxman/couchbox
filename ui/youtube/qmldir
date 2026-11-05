@@ -24,3 +24,8 @@ LibraryPage 1.0 LibraryPage.qml
 ListPage 1.0 ListPage.qml
 Tiles 1.0 Tiles.qml
 PlayerPanel 1.0 PlayerPanel.qml
+ShortsPage 1.0 ShortsPage.qml
+DescriptionPanel 1.0 DescriptionPanel.qml
+CommentsPanel 1.0 CommentsPanel.qml
+EndScreen 1.0 EndScreen.qml
+CardMenu 1.0 CardMenu.qml

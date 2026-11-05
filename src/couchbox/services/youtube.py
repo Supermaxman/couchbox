@@ -248,7 +248,11 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     out["thumb"] = thumb(header.get("thumbnail"))
     _overlays(header.get("thumbnailOverlays"), out)
     meta = dig(t, "metadata", "tileMetadataRenderer") or {}
+    for o in header.get("thumbnailOverlays") or []:  # posters and wormholes keep their text on the picture
+        if not meta.get("title") and "tileMetadataRenderer" in o:
+            meta = o["tileMetadataRenderer"]
     out["title"] = text(meta.get("title"))
+    out["shape"] = tile_shape(t.get("style") or "", header.get("thumbnail"))
     for line in meta.get("lines") or []:
         parts = []
         for li in dig(line, "lineRenderer", "items") or []:
@@ -283,6 +287,22 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
         out["type"], out["params"] = "browse", target.get("params", "")
     out["channelId"] = _menu_channel(t.get("onLongPressCommand"))
     return out if out["id"] and out["title"] else None
+
+
+def tile_shape(style: str, thumbnail: Any) -> str:
+    """How a card is drawn: "wide" (16:9, most), "poster" (2:3 movie art), "square" (albums,
+    podcasts), "hero" (a large wide card) or "round"."""
+    if style.endswith("_SQUARE"):
+        return "square"
+    if style.endswith("_HERO"):
+        return "hero"
+    t = (dig(thumbnail, "thumbnails") or [{}])[-1]
+    w, h = t.get("width") or 16, t.get("height") or 9
+    if h > w * 1.2:
+        return "poster"
+    if 0.85 < w / h < 1.2:
+        return "square"
+    return "wide"
 
 
 def _menu_channel(cmd):
@@ -327,12 +347,17 @@ def parse_lockup(v: dict[str, Any]) -> dict[str, Any] | None:
                 out["badges"].append(label)
         if parts:
             out["lines"].append(delim.join(parts))
+    if v.get("contentType") == "LOCKUP_CONTENT_TYPE_TV_NETWORK":
+        out["type"], out["shape"] = "browse", "round"
     target = endpoint(dig(v, "rendererContext", "commandContext", "onTap"))
+    if out["type"] == "browse":
+        out["id"], out["params"] = target.get("id", ""), target.get("params", "")
     if target.get("type") == "short":
         out["type"] = "short"
     if out["live"] and out["type"] == "video":
         out["type"] = "live"
-    out["id"] = (target.get("id") if target.get("type") != "browse" else "") or v.get("contentId", "")
+    if out["type"] != "browse":
+        out["id"] = (target.get("id") if target.get("type") != "browse" else "") or v.get("contentId", "")
     if target.get("start"):
         out["start"] = target["start"]
     if out["type"] == "channel" and target.get("type") == "channel":
@@ -417,8 +442,11 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
         if not items:
             return []
         out = {"title": title, "subtitle": sub, "items": items, "more": _continuation(lst)}
-        if r.get("tvhtml5ShelfRendererType") == "TVHTML5_SHELF_RENDERER_TYPE_GRID":
+        kind = r.get("tvhtml5ShelfRendererType") or ""
+        if kind == "TVHTML5_SHELF_RENDERER_TYPE_GRID":
             out["grid"] = True
+        elif kind == "TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF":
+            out["hero"] = True  # Movies & TV: the focused title large above the row
         return [out]
     if "clusterShelfRenderer" in s:
         shelves = []
@@ -620,7 +648,128 @@ def parse_watch(resp: dict[str, Any]) -> dict[str, Any]:
     if not video.get("channelId") and video.get("subscribeChannel"):
         video["channelId"] = video["subscribeChannel"]
     start = dig(resp, "currentVideoEndpoint", "watchEndpoint", "startTimeSeconds")
-    return {"video": video, "related": rel, "next": nxt, "start": int(start or 0)}
+    count = dig(results, "autoplay", "autoplay", "countDownSecs")
+    return {
+        "video": video,
+        "related": rel,
+        "next": nxt,
+        "start": int(start or 0),
+        "details": description(resp),
+        "chapters": chapter_markers(resp),
+        "countdown": int(count) if count else 5,
+    }
+
+
+def description(resp: dict[str, Any]) -> dict[str, Any]:
+    """The Description panel: the factoids (likes, views, date), the text, YouTube's summary, the
+    comments' count and first comment, and the comments' continuation."""
+    out: dict[str, Any] = {"facts": [], "text": "", "summary": "", "comments": "", "teaser": None, "commentsToken": ""}
+    for h in _find(resp, "videoDescriptionHeaderRenderer"):
+        for f in h.get("factoid") or []:
+            fr = f.get("factoidRenderer") or {}
+            if fr:
+                out["facts"].append({"value": text(fr.get("value")), "label": text(fr.get("label"))})
+        break
+    for b in _find(resp, "expandableVideoDescriptionBodyRenderer"):
+        out["text"] = text(b.get("descriptionBodyText")) or text(b.get("attributedDescriptionBodyText"))
+        break
+    for m in _find(resp, "expandableMetadataRenderer"):
+        out["summary"] = text(dig(m, "header", "collapsedTitle"))
+        break
+    for c in _find(resp, "commentsEntryPointRenderer"):
+        out["comments"] = text(c.get("commentCount"))
+        out["teaser"] = {
+            "author": text(c.get("authorText")),
+            "text": text(c.get("contentText")),
+            "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
+        }
+        break
+    for p in resp.get("engagementPanels") or []:
+        e = p.get("engagementPanelSectionListRenderer") or {}
+        if e.get("panelIdentifier") == "comment-item-section":
+            content = e.get("content") or {}
+            cmd = next(iter(_find(content, "continuationCommand")), {}) or {}
+            out["commentsToken"] = cmd.get("token") or next(
+                (_continuation({"continuations": c}) for c in _find(content, "continuations")), ""
+            )
+            if not out["comments"]:
+                out["comments"] = text(dig(e, "header", "engagementPanelTitleHeaderRenderer", "contextualInfo"))
+    return out
+
+
+def chapter_markers(resp: dict[str, Any]) -> list[dict[str, Any]]:
+    """The chapters with their pictures (the seek strip, the Description panel)."""
+    for m in _find(resp.get("frameworkUpdates") or {}, "macroMarkersListEntity"):
+        ml = m.get("markersList") or {}
+        if ml.get("markerType") != "MARKER_TYPE_CHAPTERS":
+            continue
+        return [
+            {"title": text(k.get("title")), "start": int(k.get("startMillis") or 0) / 1000, "thumb": thumb(k.get("thumbnailDetails"), 320)}
+            for k in ml.get("markers") or []
+        ]
+    return []
+
+
+def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
+    """A page of comments (a next continuation): [{author, photo, text, time, likes, replies, pinned}], more."""
+    items, more = [], ""
+    for c in _find(resp, "commentRenderer"):
+        items.append(
+            {
+                "author": text(c.get("authorText")),
+                "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
+                "text": text(c.get("contentText")),
+                "time": text(c.get("publishedTimeText")),
+                "likes": text(c.get("voteCount")),
+                "replies": int(c.get("replyCount") or 0),
+                "pinned": "pinnedCommentBadge" in c,
+            }
+        )
+    for x in _find(resp, "continuationItemRenderer"):
+        more = (
+            dig(x, "continuationEndpoint", "continuationCommand", "token")
+            or dig(x, "button", "buttonRenderer", "command", "continuationCommand", "token")
+            or more
+        )
+    if not more:
+        more = next(
+            (t for cs in _find(resp.get("continuationContents") or {}, "continuations") if (t := _continuation({"continuations": cs}))), ""
+        )
+    return {"items": items, "more": more}
+
+
+def parse_short_sequence(resp: dict[str, Any]) -> dict[str, Any]:
+    """reel/reel_watch_sequence: the Shorts to play next: [{id, thumb, color}], more."""
+    out = []
+    for e in resp.get("entries") or []:
+        r = dig(e, "command", "reelWatchEndpoint") or {}
+        if r.get("videoId"):
+            pal = dig(r, "thumbnail", "darkColorPalette", "section1Color")
+            out.append(
+                {
+                    "type": "short",
+                    "id": r["videoId"],
+                    "thumb": thumb(r.get("thumbnail"), 360),
+                    "color": f"#{pal:06x}" if isinstance(pal, int) else "",
+                }
+            )
+    return {"items": out, "more": resp.get("continuation") or ""}
+
+
+def parse_short(resp: dict[str, Any]) -> dict[str, Any]:
+    """reel/reel_item_watch: a Short's title, channel and Subscribe (the right of the Shorts player)."""
+    h = next(iter(_find(resp, "reelPlayerHeaderRenderer")), {}) or {}
+    sub = next((b for b in _find(resp.get("overlay") or resp, "subscribeButtonRenderer") if isinstance(b, dict) and "subscribed" in b), {})
+    out = {
+        "title": text(h.get("reelTitleText")),
+        "handle": text(h.get("channelTitleText")),
+        "avatar": avatar(thumb(h.get("channelThumbnail"), 88)),
+        "channelId": endpoint(h.get("channelNavigationEndpoint")).get("id", ""),
+        "subscribed": bool(sub.get("subscribed")),
+        "age": text(h.get("timestampText")),
+    }
+    out.update({k: v for k, v in engagement(resp).items() if k in ("like", "likes")})
+    return out
 
 
 def _find(o: Any, key: str, depth: int = 0):
@@ -1012,6 +1161,17 @@ class YouTube:
         out["signedIn"] = bool(self.profile)
         return out
 
+    def comments(self, token: str) -> dict[str, Any]:
+        return parse_comments(self.call("next", {"continuation": token}))
+
+    def shorts(self, params: str = "", token: str = "") -> dict[str, Any]:
+        """The Shorts to play: a sequence (the guide's Shorts, or after one), then its continuation."""
+        body = {"continuation": token} if token else {"sequenceParams": params or SHORTS_PARAMS}
+        return parse_short_sequence(self.call("reel/reel_watch_sequence", body, cache=False))
+
+    def short(self, video_id: str) -> dict[str, Any]:
+        return parse_short(self.call("reel/reel_item_watch", {"playerRequest": {"videoId": video_id}, "params": "CAUwAg%3D%3D"}))
+
     # ---------------------------------------------------------------- actions (signed in)
     def like(self, video_id: str, status: str) -> dict[str, Any]:
         """status: like | dislike | none."""
@@ -1100,6 +1260,8 @@ class YouTube:
         self._write("searches.json", {"recent": [q, *recent][:20]})
 
 
+# The guide's Shorts: YouTube's TV app asks for this sequence (reelWatchEndpoint.params)
+SHORTS_PARAMS = "CA8%3D"
 # Library's tiles (as YouTube's TV app has them): title, what they open, their two colours
 LIBRARY_TILES = [
     ("History", "FEhistory", ["#3b0ca3", "#7a3fe0"]),
@@ -1229,6 +1391,30 @@ class Demo(YouTube):
             return {"shelves": [shelf], "more": "", "nudge": None, "header": None}
         label = next((g[1] for g in GUIDE if g[2] == browse_id), "Videos")
         n = sum(map(ord, browse_id)) % 20
+        if browse_id == "FEtopics_movies":
+            films = self._shelf("Top selling", 30, n=8)
+            for k, it in enumerate(films["items"]):
+                it.update(
+                    shape="poster",
+                    badges=["Buy", "PG-13" if k % 2 else "PG"],
+                    lines=[f"Drama • {2020 + k}", "A made-up film for the screenshots, about a lighthouse keeper and a very long winter."],
+                )
+            films["hero"] = True
+            nets = {
+                "title": "Channels",
+                "subtitle": "",
+                "more": "",
+                "items": [
+                    item(type="browse", id=f"FEdemo{k}", title=t, shape="round")
+                    for k, t in enumerate(["Harbor TV", "Northwind", "Atlas Films", "Juniper+"])
+                ],
+            }
+            return {"shelves": [films, nets, self._shelf("Free with ads", 40)], "more": "", "nudge": None, "header": None}
+        if browse_id == "FEtopics_music":
+            albums = self._shelf("Albums for you", 50, n=8)
+            for it in albums["items"]:
+                it.update(shape="square", duration="")
+            return {"shelves": [self._shelf("Music videos", 44), albums], "more": "", "nudge": None, "header": None}
         return {
             "shelves": [
                 self._shelf(f"Top in {label}", n),
@@ -1332,6 +1518,74 @@ class Demo(YouTube):
             "next": f"demo{n + 1:07d}",
             "start": 0,
             "signedIn": bool(self.profile),
+            "details": {
+                "facts": [
+                    {"value": f"{1 + n % 9}.{n % 10}K", "label": "Likes"},
+                    {"value": f"{(n * 37) % 900 + 12},{n % 1000:03d}", "label": "Views"},
+                    {"value": "Nov 2", "label": "2026"},
+                ],
+                "text": "We tried it so you don't have to. Notes, sources and the full parts list are on our site.\n\n0:00 Intro\n8:34 The question",
+                "summary": "A made-up summary for the screenshots: the team tries, fails, and tries again, and explains what changed.",
+                "comments": "1.2K",
+                "teaser": {"author": "@quietviewer", "text": "The part where it finally works made my week.", "photo": ""},
+                "commentsToken": "demo-comments",
+            },
+            "chapters": [
+                {"title": t, "start": i * 514.0, "thumb": ""}
+                for i, t in enumerate(["Intro", "The question", "First try", "What went wrong", "Second try", "The answer", "Wrapping up"])
+            ],
+            "countdown": 5,
+        }
+
+    def comments(self, token):
+        names = ["@quietviewer", "@marlin.k", "@sundaybaker", "@trailmix", "@orbitfan", "@notabot"]
+        texts = [
+            "The part where it finally works made my week.",
+            "I've watched this three times now.",
+            "Can you do one about clocks next?",
+            "Love how honest the failures are.",
+            "The diagram at 12:40 explained it better than my teacher did.",
+            "First!",
+        ]
+        return {
+            "items": [
+                {
+                    "author": a,
+                    "photo": "",
+                    "text": t,
+                    "time": f"{k + 1} days ago",
+                    "likes": f"{(k + 3) * 41}",
+                    "replies": k % 3,
+                    "pinned": k == 0,
+                }
+                for k, (a, t) in enumerate(zip(names, texts, strict=True))
+            ],
+            "more": "",
+        }
+
+    def shorts(self, params="", token=""):
+        if token:
+            return {"items": [], "more": ""}
+        return {
+            "items": [
+                {"type": "short", "id": f"demo{100 + k:07d}", "thumb": "", "color": c}
+                for k, c in enumerate(["#3b2f29", "#1f3340", "#3a2440", "#20382a"])
+            ],
+            "more": "",
+        }
+
+    def short(self, video_id):
+        n = int(video_id[4:]) if video_id[4:].isdigit() else 0
+        cid, name, handle, _subs = DEMO_CHANNELS[n % len(DEMO_CHANNELS)]
+        return {
+            "title": DEMO_TITLES[n % len(DEMO_TITLES)] + " #shorts",
+            "handle": handle,
+            "avatar": "",
+            "channelId": cid,
+            "subscribed": cid in self.state["subs"],
+            "age": "2 days ago",
+            "like": "none",
+            "likes": 1200,
         }
 
     def like(self, video_id, status):
@@ -1391,9 +1645,15 @@ def demo_stream(video_id: str) -> dict[str, Any]:
         "channelId": DEMO_CHANNELS[n % len(DEMO_CHANNELS)][0],
         "duration": 3600.0,
         "chapters": [{"start": i * 3600 / len(names) + (i * 97) % 200 * (1 if i else 0), "title": t} for i, t in enumerate(names)],
+        "captions": [
+            {"lang": "en", "name": "English", "url": "demo://captions/en", "auto": False},
+            {"lang": "en", "name": "English (auto-generated)", "url": "demo://captions/en-auto", "auto": True},
+        ],
+        "heights": [1080, 720, 480, 360, 240, 144],
+        "maxHeight": 1080,
         "views": 0,
         "likes": 0,
         "timestamp": 0,
-        "portrait": False,
+        "portrait": n >= 100,
         "took": 0,
     }

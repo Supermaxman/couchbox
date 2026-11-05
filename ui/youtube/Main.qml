@@ -96,7 +96,7 @@ ApplicationWindow {
             message.key = key;
             message.facts = [];
             message.action = "";
-            if (key === "shorts") { message.title = "Shorts"; message.body = "Shorts play here in a later update. Until then, Shorts in the shelves and search results open in the player."; }
+            if (key === "shorts") { message.title = "Shorts"; message.body = "Short videos, one after another: Down for the next one."; message.action = "Watch Shorts"; }
             else if (key === "subscriptions" || key === "library") {
                 message.title = e.label;
                 message.body = key === "library" ? "Sign in to see your history, Watch later, playlists and the videos you've liked." : "Sign in to see the latest from the channels you subscribe to.";
@@ -125,6 +125,7 @@ ApplicationWindow {
     function play(id, at, seed) {
         // one player at a time: a new video replaces what's playing (and what was opened over it)
         while (stack.depth && !win.playing) stack.pop(StackView.Immediate);
+        if (win.playing && !stack.currentItem.start) stack.pop(StackView.Immediate);       // Shorts: a video replaces it
         if (win.playing) { stack.currentItem.seed = seed || {}; stack.currentItem.start(id, at || 0); stack.currentItem.forceActiveFocus(); updateState(); return; }
         push(playerC, {videoId: id, startAt: at || 0, seed: seed || {}});
     }
@@ -149,7 +150,8 @@ ApplicationWindow {
         target: Y
         function onOpen(it) {
             if (!it || !it.id) return;
-            if (it.type === "video" || it.type === "live" || it.type === "short") win.play(it.id, it.start || 0, it);
+            if (it.type === "short" || it.type === "shorts") win.push(shortsC, {startId: it.type === "short" ? it.id : ""});
+            else if (it.type === "video" || it.type === "live") win.play(it.id, it.start || 0, it);
             else if (it.type === "channel" || it.type === "game") win.push(channelC, {channelId: it.id});
             else if (it.type === "playlist") win.push(channelC, {channelId: "VL" + it.id});
             else if (it.type === "browse") win.push(channelC, {channelId: it.id});
@@ -164,6 +166,7 @@ ApplicationWindow {
         function onWhoIsWatching() { win.pickedAtStart = false; win.showProfiles(); }
         function onSignIn() { win.push(signInC, {}); }
         function onOpenList(title, id) { win.push(listC, {title: title, browseId: id}); }
+        function onCardMenu(it, back) { cardMenu.open(it, back); }
         function onSearch(q) {
             win.choose("search");
             if (q) search.search(q);
@@ -184,6 +187,7 @@ ApplicationWindow {
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
         else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
         else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
+        else if (k === "shorts") { stack.clear(StackView.Immediate); push(shortsC, {startId: rest}); }
         else if (k === "signin") push(signInC, {});
     }
     function updateState() {
@@ -240,10 +244,11 @@ ApplicationWindow {
         // the video, under everything: shown while the player is the page on top
         MpvVideo {
             id: video
-            x: Y.videoSide ? 54 * Y.u : 0
-            y: Y.videoSide ? 218 * Y.u : 0
-            width: Y.videoSide ? 1146 * Y.u : parent.width
-            height: Y.videoSide ? 646 * Y.u : parent.height
+            readonly property bool placed: Y.videoRect.width > 0          // Shorts
+            x: placed ? Y.videoRect.x : Y.videoSide ? 54 * Y.u : 0
+            y: placed ? Y.videoRect.y : Y.videoSide ? 218 * Y.u : 0
+            width: placed ? Y.videoRect.width : Y.videoSide ? 1146 * Y.u : parent.width
+            height: placed ? Y.videoRect.height : Y.videoSide ? 646 * Y.u : parent.height
             visible: win.playing
         }
 
@@ -291,6 +296,19 @@ ApplicationWindow {
     }
     Component { id: channelC; ChannelPage { onClosed: win.pop() } }
     Component { id: listC; ListPage { onClosed: win.pop() } }
+    Component { id: shortsC; ShortsPage { onClosed: win.pop() } }
+    CardMenu {
+        id: cardMenu
+        anchors.fill: parent
+        onPicked: (k, it) => {
+            if (k === "next") { Y.queue = [it].concat(Y.queue); toast.show("Plays next: " + it.title); }
+            else if (k === "queue") { Y.queue = Y.queue.concat([it]); toast.show("Added to the queue (" + Y.queue.length + ")"); }
+            else if (k === "later") {
+                if (!Y.signedIn) toast.show("Sign in to save videos: the guide's picture, then Add account.");
+                else Y.call("save", {id: it.id, playlist: "WL", add: true}, () => toast.show("Saved to Watch later"));
+            } else if (k === "channel") win.push(channelC, {channelId: it.channelId});
+        }
+    }
     Component {
         id: signInC
         SignInPage {

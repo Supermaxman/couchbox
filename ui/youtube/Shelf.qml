@@ -16,14 +16,45 @@ FocusScope {
     property alias count: list.count
     property real baseW: Y.cardW
     property bool fixed: false                // a row that doesn't scroll (the player's rows of three)
-    readonly property real cardW: grow && current ? Y.bigW : baseW
+    readonly property real cardW: row.hero ? 533 * Y.u : grow && current ? Y.bigW : baseW
     readonly property bool hasHead: !!(row.title || row.pill)
-    readonly property real headH: row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 100 : 70) * Y.u : 0
+    readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 100 : 70) * Y.u : 0) + (row.hero ? 300 * Y.u : 0)
+    readonly property var focused: (row.items || [])[list.currentIndex] || ({})
     signal open(var item)
     signal search(string query)
     width: parent ? parent.width : 0
     height: headH + list.height
     Behavior on height { enabled: shelf.grow; NumberAnimation { duration: 160 } }
+
+    // ------------------------------------------------------------------ a hero: the focused title, large
+    Column {
+        visible: !!shelf.row.hero
+        x: shelf.indent
+        y: shelf.hasHead ? 70 * Y.u : 0
+        width: shelf.width - shelf.indent - 280 * Y.u
+        spacing: 16 * Y.u
+        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 64 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width }
+        Row {
+            spacing: 10 * Y.u
+            Text { text: (shelf.focused.lines || [])[0] || ""; color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; anchors.verticalCenter: parent.verticalCenter }
+            Repeater {
+                model: shelf.focused.badges || []
+                Rectangle {
+                    required property string modelData
+                    width: hb.implicitWidth + 14 * Y.u; height: hb.implicitHeight + 4 * Y.u; radius: 4 * Y.u
+                    color: Y.raised
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { id: hb; anchors.centerIn: parent; text: parent.modelData; color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium }
+                }
+            }
+        }
+        Text {
+            width: parent.width * 0.7
+            text: (shelf.focused.lines || []).slice(1).join(" • ")
+            color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u
+            wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+        }
+    }
 
     // ------------------------------------------------------------------ header
     Column {
@@ -80,7 +111,7 @@ FocusScope {
         id: list
         y: shelf.headH
         width: parent.width
-        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : 210) * Y.u
+        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 24 : 210) * Y.u
         orientation: ListView.Horizontal
         spacing: Y.gap
         clip: false
@@ -99,8 +130,19 @@ FocusScope {
         interactive: false
         Keys.onLeftPressed: e => { if (currentIndex === 0) Y.toGuide(); else decrementCurrentIndex(); }
         Keys.onRightPressed: incrementCurrentIndex()
-        Keys.onReturnPressed: shelf.open(shelf.row.items[currentIndex])
-        Keys.onEnterPressed: shelf.open(shelf.row.items[currentIndex])
+        // OK opens the card; held, or the Menu key, its menu (Play next, Add to queue...)
+        Keys.onPressed: e => {
+            if (e.key === Qt.Key_Menu) { Y.cardMenu(shelf.row.items[currentIndex], list); e.accepted = true; }
+            else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { if (!e.isAutoRepeat) hold.restart(); e.accepted = true; }
+        }
+        Keys.onReleased: e => {
+            if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter) && !e.isAutoRepeat && hold.running) {
+                hold.stop();
+                shelf.open(shelf.row.items[currentIndex]);
+                e.accepted = true;
+            }
+        }
+        Timer { id: hold; interval: 650; onTriggered: Y.cardMenu(shelf.row.items[list.currentIndex], list) }
         onCurrentIndexChanged: if (count && currentIndex >= count - 5) shelf.loadMore()
         delegate: VideoCard {
             required property var modelData
@@ -110,6 +152,7 @@ FocusScope {
             w: shelf.cardW
             boxed: shelf.boxed
             behind: shelf.behind
+            captioned: !shelf.row.hero
         }
     }
 
