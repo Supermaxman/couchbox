@@ -1,0 +1,11 @@
+[Unit]
+Description=Couchbox: daily yt-dlp update (YouTube changes often)
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* 04:45
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

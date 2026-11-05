@@ -1,0 +1,256 @@
+#!/usr/bin/python3
+"""couchbox-yt: YouTube as a native TV app (the "YouTube (beta)" tile), built to look and work like
+YouTube's own TV app: the guide on the left (Search, Home, Shorts, Music, Subscriptions, Library,
+Gaming, News, Podcasts, Movies & TV, Live, Sports, Settings), shelves of videos, search with
+suggestions, channel pages, and the player (libmpv, couchbox.player) with YouTube's controls and
+the related videos under them.
+
+Pages come from InnerTube as YouTube's TV client (couchbox.services.youtube); streams from yt-dlp
+(couchbox.services.ytstream: H.264 up to 1080p60, no ads). The QML is in
+/usr/share/couchbox/ui/youtube. VacuumTube (the YouTube tile) stays as it is until this app
+reaches it.
+
+  couchbox-yt [--open video:ID[@SECONDS] | search:TEXT | channel:ID | browse:ID | home]
+                                     open on that (a second launch hands it to the running app)
+  couchbox-yt --demo --shot FILE [--open ...] [--keys down,ok,...]
+                                     render once off screen (made-up videos, no network)
+Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1 (don't take the remote's media keys).
+"""
+import json
+import locale
+import os
+import sys
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import paths  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_YT_QML", str(paths.share() / "ui/youtube/Main.qml"))
+TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))
+SITE = "yt"                                        # appctl socket, MPRIS name (couchbox_yt)
+# The Pi's build of ffmpeg (HEVC hardware decoding), as couchbox-streaming uses: libmpv picks it
+# up from LD_LIBRARY_PATH, which only counts at start, so start again with it.
+RPI_FFMPEG = "/opt/couchbox/ffmpeg-rpi/lib"
+if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PATH", ""):
+    os.environ["LD_LIBRARY_PATH"] = RPI_FFMPEG + (":" + os.environ["LD_LIBRARY_PATH"] if os.environ.get("LD_LIBRARY_PATH") else "")
+    os.execv(sys.executable, [sys.executable] + sys.argv)  # noqa: S606
+# libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
+
+from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox.services import youtube, ytstream  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to youtube.py and ytstream.py: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        self.demo = demo
+        self.yt = youtube.Demo() if demo else youtube.YouTube()
+        self.pool = ThreadPoolExecutor(max_workers=6)
+        if not demo:                                 # load yt-dlp now: the first video starts sooner
+            threading.Thread(target=ytstream.module, daemon=True).start()
+
+    def stream(self, vid):
+        if self.demo:
+            return youtube.demo_stream(vid)
+        return ytstream.resolve(vid)
+
+    def about(self):
+        a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else ytstream.about()
+        return dict(a, client=self.yt.client.get("clientVersion", ""))
+
+    def run(self, op, a):
+        y = self.yt
+        ops = {
+            "status": lambda: {"guide": [{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
+                               "signedIn": False, "demo": self.demo},
+            "about": self.about,
+            "home": lambda: y.home(),
+            "browse": lambda: y.browse(a["id"], a.get("params", "")),
+            "more": lambda: y.more(a["token"]),
+            "channel": lambda: y.channel(a["id"]),
+            "search": lambda: (y.remember_search(a["q"]), y.search(a["q"]))[1],
+            "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
+            "searches": lambda: {"items": y.searches()},
+            "watch": lambda: y.watch(a["id"]),
+            "stream": lambda: self.stream(a["id"]),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except ytstream.Unavailable as err:
+                out = {"error": str(err)}
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one, and
+    the voice assistant can open videos, searches and channels."""
+    command = Signal(str)
+
+    def __init__(self, backend):
+        super().__init__()
+        self.backend = backend
+        self.state = {"page": "starting"}
+        self.server = None
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="YouTube")
+        if op == "call":
+            return self.backend.run(req["fn"], req.get("args") or {})
+        if op in ("open", "media"):
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+def forward_to_running():
+    """Already running: hand it this launch's --open (if any) and leave."""
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    target = sys.argv[sys.argv.index("--open") + 1] if "--open" in sys.argv else ""
+    appctl.call(SITE, {"op": "open", "target": target})
+    return True
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        from couchbox import qtcheck
+
+        qtcheck.clipped(self.window)
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        from PySide6.QtCore import QCoreApplication, QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape, "play": Qt.Key_MediaTogglePlayPause}.get(name)
+        if key is None:
+            return
+        for t in (QEvent.KeyPress, QEvent.KeyRelease):
+            QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+class Network(QQmlNetworkAccessManagerFactory):
+    """The QML's downloads (thumbnails, channel pictures), through a disk cache, so going back to a
+    page doesn't fetch its pictures again."""
+
+    def __init__(self):
+        super().__init__()
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        self.dir = os.path.join(base, "couchbox-yt", "network")
+        self.lock = threading.Lock()
+        self.made = 0
+
+    def create(self, parent):                       # once per thread that loads things
+        with self.lock:
+            n, self.made = self.made, self.made + 1
+        nam = QNetworkAccessManager(parent)
+        cache = QNetworkDiskCache(nam)
+        cache.setCacheDirectory(os.path.join(self.dir, str(n)))     # a cache isn't shared between threads
+        cache.setMaximumCacheSize(96 * 1024 * 1024)
+        nam.setCache(cache)
+        return nam
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
+    if forward_to_running():
+        sys.exit(0)
+    app.setOrganizationName("couchbox")
+    app.setApplicationName("couchbox-yt")
+    app.setApplicationDisplayName("YouTube")
+    app.setDesktopFileName("couchbox-yt")            # Wayland app id: matches couchbox-yt.desktop
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        from couchbox import player
+        qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")
+    else:                                            # no GPU off screen: a stand-in for the video
+        os.environ["COUCHBOX_NO_VIDEO"] = "1"
+    engine = QQmlApplicationEngine()
+    network = Network()                              # kept: the engine doesn't own it
+    if not demo:
+        engine.setNetworkAccessManagerFactory(network)
+    engine.addImportPath(TVKIT)
+    if os.environ.get("COUCHBOX_NO_VIDEO"):
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control(backend)
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("demo", demo)
+    ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
+    mpris = None
+    if not os.environ.get("COUCHBOX_NO_VIDEO") and not os.environ.get("COUCHBOX_NO_MPRIS"):   # media keys arrive over MPRIS
+        try:
+            from couchbox import mpris as mpris_mod
+            mpris = mpris_mod.Mpris(f"couchbox_{SITE}", "YouTube", "couchbox-yt")
+        except Exception as err:
+            print(f"MPRIS not available: {err}", flush=True)
+    ctx.setContextProperty("mpris", mpris)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)                                   # don't wait for requests in flight
+
+
+if __name__ == "__main__":
+    main()

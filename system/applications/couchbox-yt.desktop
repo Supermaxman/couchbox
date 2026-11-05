@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=YouTube (beta)
+Comment=YouTube as a native TV app: Home, Search, channels and the player, with no ads
+Icon=applications-multimedia
+Exec=/usr/lib/couchbox/bin/couchbox-yt
+StartupWMClass=couchbox-yt
+Categories=AudioVideo;Video;

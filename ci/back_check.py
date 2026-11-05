@@ -66,6 +66,18 @@ CASES = [
     ("settings-dialog", "couchbox-settings", ["--page", "time", "--in"], "ok", "moves"),
     ("setup-step", "couchbox-setup", ["--step", "3"], "", "moves"),
     ("home-continue", "couchbox-ontv", [], "down,right", "moves"),
+    ("yt-home", "couchbox-yt", [], "", "moves"),
+    ("yt-guide", "couchbox-yt", [], "left", "quits"),
+    ("yt-guide-tab", "couchbox-yt", [], "left,down,down,down,down,down,down", "moves"),
+    ("yt-tab", "couchbox-yt", ["--open", "gaming"], "", "moves"),
+    ("yt-search-keys", "couchbox-yt", ["--open", "typing:sky"], "", "moves"),
+    ("yt-results", "couchbox-yt", ["--open", "search:sky"], "", "moves"),
+    ("yt-channel", "couchbox-yt", ["--open", "channel:UCdemo0000000000000orbit"], "", "moves"),
+    ("yt-channel-from-results", "couchbox-yt", ["--open", "search:sky"], "right,ok", "moves"),
+    ("yt-player", "couchbox-yt", ["--open", "video:demo0000003"], "", "moves"),
+    ("yt-player-related", "couchbox-yt", ["--open", "video:demo0000003"], "down", "moves"),
+    ("yt-player-from-home", "couchbox-yt", [], "ok", "moves"),
+    ("yt-settings", "couchbox-yt", ["--open", "settings"], "", "moves"),
 ]
 STEP = 8  # compare every 8th pixel
 MIN_CHANGED = 50  # samples: a moved focus ring alone changes a few hundred
