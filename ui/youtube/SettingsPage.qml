@@ -19,6 +19,7 @@ FocusScope {
         {header: "Account", items: [{key: "accounts", label: "Accounts"}]},
         {header: "Playback", items: [{key: "video", label: "Video"}, {key: "player", label: "Player"}, {key: "ads", label: "Ads"}]},
         {header: "Appearance", items: [{key: "guide", label: "Guide tabs"}]},
+        {header: "Link TV & phone", items: [{key: "wifi", label: "Link with Wi-Fi"}, {key: "tvcode", label: "Link with TV code"}]},
         {header: "Extras", items: [{key: "sponsorblock", label: "SponsorBlock"}, {key: "extras", label: "DeArrow and more"}]},
         {header: "About", items: [{key: "about", label: "About"}]},
     ]
@@ -29,7 +30,14 @@ FocusScope {
         Y.call("about", {}, a => page.about = a, () => {});
         Y.call("settings", {}, st => Y.settings = st, () => {});
     }
-    onCurChanged: { area = "list"; row = 0; }
+    onCurChanged: { area = "list"; row = 0; if (item.key === "tvcode" && !tvCode) newCode(); }
+    // "Link with TV code": 12 digits from couchbox-yt-cast for the phone app's Settings → Watch on TV
+    property string tvCode: ""
+    property string codeProblem: ""
+    function newCode() {
+        codeProblem = "";
+        Y.call("castCode", {}, r => { page.tvCode = r.code || ""; }, e => { page.tvCode = ""; page.codeProblem = e; });
+    }
 
     // the chosen category: a title, a line, facts, and rows (switches: key; a button: press)
     readonly property var detail: {
@@ -51,6 +59,14 @@ FocusScope {
                 {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front"},
                 {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue,
                  desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
+        if (item.key === "wifi")
+            return {title: "Link with Wi-Fi", facts: [], rows: [{key: "cast", label: "Cast from phones", on: st.cast !== false,
+                    desc: "Phones on this Wi-Fi see the TV in the YouTube app's cast list, as “Couchbox YouTube (beta)”"}],
+                    body: "On a phone on the same Wi-Fi, open the YouTube app, tap the cast button and pick this TV. What it plays shows here."};
+        if (item.key === "tvcode")
+            return {title: "Link with TV code", code: page.tvCode, facts: [],
+                    body: page.codeProblem || (page.tvCode ? "In the YouTube app on your phone: Settings, Watch on TV, Enter TV code." : "Getting a code…"),
+                    rows: [{key: "newcode", label: "Get a new code", button: true}]};
         if (item.key === "guide") {
             const tabs = [["music", "Music"], ["gaming", "Gaming"], ["news", "News"], ["podcasts", "Podcasts"], ["movies", "Movies & TV"], ["live", "Live"], ["sports", "Sports"]];
             const gt = st.guide_tabs || {};
@@ -82,6 +98,7 @@ FocusScope {
         const r = rows[row];
         if (!r) return;
         if (r.key === "who") Y.whoIsWatching();
+        else if (r.key === "newcode") newCode();
         else if (!r.off) Y.setting(r.key, !r.on);
     }
     function enterRows() { if (rows.length) { area = "rows"; row = 0; } }
@@ -185,6 +202,14 @@ FocusScope {
                 color: Y.dim; font.family: Y.font; font.pixelSize: 28 * Y.u
                 wrapMode: Text.WordWrap
                 lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
+            }
+            Text {                            // the TV code, large
+                visible: !!page.detail.code
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: page.detail.code || ""
+                color: Y.text; font.family: Y.font; font.pixelSize: 72 * Y.u; font.weight: Font.Bold
+                font.letterSpacing: 4 * Y.u
             }
             Repeater {
                 model: page.detail.facts || []

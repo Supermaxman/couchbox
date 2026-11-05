@@ -68,6 +68,8 @@ class Backend(QObject):
         else:
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
+        if not demo and self.settings.get()["cast"]:
+            start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
             threading.Thread(target=ytstream.module, daemon=True).start()    # yt-dlp now: the first video starts sooner
             self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
@@ -140,6 +142,7 @@ class Backend(QObject):
             "segments": lambda: self.segments(a["id"]),
             "branding": lambda: self.branding(a["id"]),
             "votes": lambda: self.votes(a["id"]),
+            "castCode": lambda: cast_code(self.demo),
             "profiles": lambda: y.profiles(),
             "use": lambda: y.use(a.get("id", "")),
             "signInStart": lambda: self.sign_in("start"),
@@ -185,6 +188,29 @@ class Backend(QObject):
                 out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
             self.reply.emit(rid, json.dumps(out))
         self.pool.submit(work)
+
+
+def start_cast():
+    """couchbox-yt-cast.service: the TV in the YouTube phone app's cast list. It keeps running
+    after the app quits, so a phone can launch it."""
+    import subprocess
+    try:
+        subprocess.run(["systemctl", "--user", "start", "--no-block", "couchbox-yt-cast.service"],  # noqa: S607
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def cast_code(demo):
+    """A "Link with TV code" (12 digits, in threes) from couchbox-yt-cast."""
+    if demo:
+        return {"code": "123 456 789 012", "name": "Couchbox YouTube (beta)"}
+    from couchbox import appctl
+    try:
+        return appctl.call("yt-cast", {"op": "code"}, timeout=25)
+    except appctl.NotRunning:
+        start_cast()
+        return {"error": "Casting is starting: try again in a moment."}
 
 
 def qr_png(text, path):

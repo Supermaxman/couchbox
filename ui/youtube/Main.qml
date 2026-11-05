@@ -221,7 +221,10 @@ ApplicationWindow {
         const st = {page: picking ? "profiles" : cur ? (cur.videoId !== undefined ? "player" : cur.browseId !== undefined ? "list" : "channel") : section,
                     profile: Y.profile ? Y.profile.name : "guest"};
         if (cur && cur.label) st.showing = cur.label;
-        if (win.playing) { st.playing = cur.label; st.paused = video.paused; st.position = Math.round(video.position); }
+        if (win.playing) {
+            st.playing = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
+            st.videoId = cur.videoId || ""; st.duration = Math.round(video.duration || 0);    // for couchbox-yt-cast
+        }
         control.setState(JSON.stringify(st));
     }
     Connections {
@@ -415,6 +418,7 @@ ApplicationWindow {
         interval: 300; repeat: true; running: !win.shot
         onTriggered: control.setFocus(JSON.stringify(win.focusState()))
     }
+    Timer { interval: 1000; repeat: true; running: win.playing && !win.shot; onTriggered: win.updateState() }   // the position, for casting
     Timer {
         id: idle
         interval: 30 * 60 * 1000
