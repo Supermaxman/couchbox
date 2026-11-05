@@ -391,6 +391,15 @@ class MpvVideo(QQuickFramebufferObject):
     def setPaused(self, p):
         self.mpv.pause = p
 
+    @Slot(result=bool)
+    def toggleMute(self):
+        """Sound off or on again (a keyboard's M); returns whether it's off now."""
+        try:
+            self.mpv.mute = not self.mpv.mute
+            return bool(self.mpv.mute)
+        except Exception:  # noqa: BLE001
+            return False
+
     @Slot(float)
     def seek(self, delta):
         # back past the start: to 0 exactly (a relative seek before the start of a stream made of

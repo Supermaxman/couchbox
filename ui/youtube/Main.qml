@@ -393,6 +393,8 @@ ApplicationWindow {
     // ------------------------------------------------------------------ idle, off-screen tests
     // Quit after half an hour without use, unless a video is playing.
     onActiveFocusItemChanged: { idle.restart(); updateState(); }
+    // VacuumTube's "Pause on blur": another window in front pauses the video
+    onActiveChanged: if (!active && Y.settings.pause_on_blur && win.playing) video.setPaused(true)
 
     // what has the focus, for the control socket's "focus" op (ci/yt-box-check.sh): the named
     // items from the page down to the focused one, whether it's on screen, and the page's details

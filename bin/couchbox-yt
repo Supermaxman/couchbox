@@ -94,8 +94,9 @@ class Backend(QObject):
     def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
-        h264 = self.settings.get()["h264"]
-        return ytstream.resolve(vid, h264=h264, max_height=int(max_height or ytstream.MAX_HEIGHT))
+        st = self.settings.get()
+        cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
+        return ytstream.resolve(vid, h264=st["h264"], max_height=int(max_height or cap), superres=not st["remove_superres"])
 
     # the extras (ytextras): made up in the demo, else SponsorBlock, DeArrow, Return YouTube Dislike
     def segments(self, vid):
@@ -337,7 +338,9 @@ class KeyFilter(QObject):
     ONCE = ("Key_Return", "Key_Enter", "Key_Select", "Key_Escape", "Key_Back", "Key_Menu", "Key_MediaTogglePlayPause",
             "Key_MediaPlay", "Key_MediaPause")
 
-    def __init__(self, window):
+    pressed = Signal()                               # any key (someone's there: no "Continue watching?")
+
+    def __init__(self, window=None):
         from PySide6.QtCore import Qt
 
         super().__init__()
@@ -348,6 +351,8 @@ class KeyFilter(QObject):
     def eventFilter(self, obj, ev):
         from PySide6.QtCore import QEvent
 
+        if ev.type() == QEvent.KeyPress and not ev.isAutoRepeat():
+            self.pressed.emit()
         if ev.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or int(ev.key()) not in self.keys:
             return False
         if ev.isAutoRepeat():
@@ -417,6 +422,8 @@ def main():
     ctx.setContextProperty("backend", backend)
     ctx.setContextProperty("control", control)
     ctx.setContextProperty("shooter", shooter)
+    keyfilter = KeyFilter()
+    ctx.setContextProperty("keyfilter", keyfilter)
     ctx.setContextProperty("demo", demo)
     ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
     mpris = None
@@ -431,7 +438,7 @@ def main():
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
-    keyfilter = KeyFilter(shooter.window)
+    keyfilter.window = shooter.window
     shooter.window.installEventFilter(keyfilter)
     code = app.exec()
     if control.server:

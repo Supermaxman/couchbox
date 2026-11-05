@@ -173,8 +173,14 @@ def ready(f: dict[str, Any], now: float | None = None) -> bool:
     return (f.get("available_at") or 0) <= (time.time() if now is None else now) + 1
 
 
+def upscaled(f: dict[str, Any]) -> bool:
+    """YouTube's "Super resolution" (AI-upscaled) copy of a format."""
+    note = (f.get("format_note") or "").lower()
+    return "upscaled" in note or "super resolution" in note
+
+
 def pick(
-    formats: list[dict[str, Any]], h264: bool = True, max_height: int = MAX_HEIGHT, now: float | None = None
+    formats: list[dict[str, Any]], h264: bool = True, max_height: int = MAX_HEIGHT, now: float | None = None, superres: bool = True
 ) -> tuple[dict | None, dict | None]:
     """(video, audio) formats to play: the best video at max_height or less (H.264 only when
     there is H.264 and h264 is on), and when it has no sound of its own, the best stereo AAC.
@@ -182,7 +188,7 @@ def pick(
     then plain downloads (DASH, "https") before HLS: they start faster and seek better."""
     formats = [f for f in formats if f.get("url") and (f.get("protocol") or "https") in ("https", "http", "m3u8", "m3u8_native")]
     # the short side counts: a Short's 1080x1920 is "1080p"
-    videos = [f for f in formats if (f.get("vcodec") or "none") != "none" and _lines(f) <= max_height]
+    videos = [f for f in formats if (f.get("vcodec") or "none") != "none" and _lines(f) <= max_height and (superres or not upscaled(f))]
     if h264 and any(_is_h264(f) for f in videos):
         videos = [f for f in videos if _is_h264(f)]
     if not videos:
@@ -226,11 +232,11 @@ def edl(*urls: str) -> str:
     return "edl://" + ";".join(parts)
 
 
-def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
+def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True) -> dict[str, Any]:
     """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}."""
     formats = info.get("formats") or []
     live = info.get("live_status") in ("is_live", "post_live") or bool(info.get("is_live"))
-    video, audio = pick(formats, h264, max_height)
+    video, audio = pick(formats, h264, max_height, superres=superres)
     if video is None:
         raise Unavailable("YouTube didn't offer a format this TV can play.")
     out = {
@@ -327,12 +333,12 @@ def storyboard(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
-def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
+def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts)."""
     t = time.monotonic()
     info = extract(video_id)
-    out = playable(info, h264, max_height)
+    out = playable(info, h264, max_height, superres)
     out.update(
         {
             "id": info.get("id") or video_id,
@@ -347,7 +353,7 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
             "portrait": bool(out["height"] and out["width"] and out["height"] > out["width"]),
             "captions": captions(info),
             "storyboard": storyboard(info.get("formats") or []),
-            "heights": [h for h in heights(info.get("formats") or [], h264) if h <= MAX_HEIGHT],
+            "heights": [h for h in heights(info.get("formats") or [], h264) if h <= max(max_height, MAX_HEIGHT)],
             "maxHeight": max_height,
             "took": round(time.monotonic() - t, 2),
         }

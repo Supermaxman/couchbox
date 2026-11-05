@@ -135,6 +135,7 @@ FocusScope {
     function begin() {
         if (s.url.indexOf("demo://") === 0) video.load(s.url, startAt);
         else video.loadWith(s.url, startAt, s.opts || "");
+        begin2();
     }
     property int waitLeft: 0
     Timer {
@@ -160,8 +161,13 @@ FocusScope {
         if (!n) { finished(); return; }
         if (n.queued) Y.queue = Y.queue.slice(1);
         seed = n.item;
+        // YouTube's "Video paused. Continue watching?": autoplay, and no key for 2 hours (not with
+        // VacuumTube's "Block continue watching")
+        askContinue = !Y.settings.block_continue && Date.now() - Y.lastKey > 2 * 3600 * 1000;
         start(n.item.id, 0);
     }
+    property bool askContinue: false
+    function begin2() { if (askContinue) video.setPaused(true); }
     function showEnd() {
         const n = upNext();
         if (!n) { mode = "controls"; showControls(); return; }
@@ -393,7 +399,25 @@ FocusScope {
 
     Keys.onPressed: e => {
         const k = e.key;
+        if (askContinue) {                     // "Continue watching?": OK plays on; Back leaves
+            if (k === Qt.Key_Return || k === Qt.Key_Enter) { askContinue = false; video.setPaused(false); showControls(); }
+            else if (k === Qt.Key_Escape || k === Qt.Key_Back) { askContinue = false; finished(); }
+            e.accepted = true;
+            return;
+        }
         if (k === Qt.Key_Escape || k === Qt.Key_Back) { if (!e.isAutoRepeat) back(); e.accepted = true; return; }
+        // a keyboard's (VacuumTube's) keys: P / D faster and slower, A normal speed, C captions, M sound
+        const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+        if ((k === Qt.Key_P || k === Qt.Key_D || k === Qt.Key_A) && !(e.modifiers & Qt.ControlModifier)) {
+            const i = speeds.indexOf(speed);
+            speed = k === Qt.Key_A ? 1 : speeds[Math.max(0, Math.min(speeds.length - 1, (i < 0 ? 3 : i) + (k === Qt.Key_P ? 1 : -1)))];
+            video.setSpeed(speed);
+            Y.toast("Playback speed: " + (speed === 1 ? "Normal" : speed + "×"));
+            e.accepted = true;
+            return;
+        }
+        if (k === Qt.Key_C && !(e.modifiers & Qt.ControlModifier)) { toggleCaptions(); e.accepted = true; return; }
+        if (k === Qt.Key_M && !(e.modifiers & Qt.ControlModifier)) { Y.toast(video.toggleMute() ? "Sound off" : "Sound on"); e.accepted = true; return; }
         if (k === Qt.Key_MediaTogglePlayPause || k === Qt.Key_MediaPlay || k === Qt.Key_MediaPause || k === Qt.Key_Space) {
             video.togglePause(); showControls();
         } else if (k === Qt.Key_AudioRewind || k === Qt.Key_MediaPrevious) {
@@ -587,7 +611,8 @@ FocusScope {
                     visible: !player.seeking
                     anchors.right: parent.right
                     y: 5 * Y.u
-                    text: player.live ? "" : Y.clock(player.duration)
+                    // VacuumTube's "Show remaining time": the time left instead of the length
+                    text: player.live ? "" : Y.settings.remaining_time ? "-" + Y.clock(Math.max(0, player.duration - player.pos)) : Y.clock(player.duration)
                     color: Y.dim
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
@@ -867,6 +892,22 @@ FocusScope {
             color: Y.text
             font.family: Y.font; font.pixelSize: 32 * Y.u
             style: Text.Raised; styleColor: "#80000000"
+        }
+    }
+    Rectangle {                                // "Video paused. Continue watching?"
+        visible: player.askContinue
+        anchors.fill: parent
+        color: "#b3000000"
+        Column {
+            anchors.centerIn: parent
+            spacing: 36 * Y.u
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Video paused. Continue watching?"; color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold }
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: yesT.implicitWidth + 96 * Y.u; height: 80 * Y.u; radius: height / 2
+                color: Y.text
+                Text { id: yesT; anchors.centerIn: parent; text: "Yes"; color: Y.ink; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium }
+            }
         }
     }
     Rectangle {                                // SponsorBlock: what was skipped, OK (controls hidden) undoes it

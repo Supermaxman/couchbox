@@ -27,6 +27,9 @@ QtObject {
     readonly property var segmentColors: ({sponsor: "#00d400", selfpromo: "#ffff00", interaction: "#cc00ff", intro: "#00ffff",
                                            outro: "#0202ed", preview: "#008fd6", hook: "#395699", filler: "#7300ff", music_offtopic: "#ff9900"})
     property bool dimmed: false               // the guide has the focus: the page behind it greys
+    property real lastKey: Date.now()         // the last key pressed (couchbox-yt's key filter)
+    property Connections keyWatch: Connections { target: typeof keyfilter !== "undefined" ? keyfilter : null; ignoreUnknownSignals: true
+                                             function onPressed() { y.lastKey = Date.now(); } }
     property bool pushed: false               // the guide is open: the page is pushed right
 
     // ------------------------------------------------------------------ look

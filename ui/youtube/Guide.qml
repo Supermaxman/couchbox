@@ -13,9 +13,10 @@ FocusScope {
     readonly property string who: Y.profile ? Y.profile.name : "Guest"
     property bool pinned: false               // Settings: open beside the page, Settings marked
     readonly property bool open: activeFocus || pinned
-    readonly property var list: entries.filter(e => e.key !== "settings")
-    readonly property int groupEnd1: 2        // dividers after Shorts and after Library
-    readonly property int groupEnd2: 5
+    // the tabs Settings → Guide tabs leaves in (VacuumTube's "Guide tabs")
+    readonly property var list: entries.filter(e => e.key !== "settings" && (Y.settings.guide_tabs || {})[e.key] !== false)
+    readonly property int groupEnd1: list.findIndex(e => e.key === "shorts")      // dividers after Shorts and after Library
+    readonly property int groupEnd2: list.findIndex(e => e.key === "library")
     signal chosen(string key)                 // moved onto an entry (the page behind follows)
     signal enter()                            // OK / Right: into the page
     width: open ? Y.guideOpen : Y.left

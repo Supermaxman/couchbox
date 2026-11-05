@@ -49,6 +49,13 @@ DEFAULTS: dict[str, Any] = {
     "dislikes": False,
     "hide_shorts": False,
     "h264": True,
+    # VacuumTube's other options, its defaults
+    "block_continue": False,  # no "Video paused. Continue watching?" after a long autoplay
+    "remove_superres": False,  # leave out YouTube's AI-upscaled ("Super resolution") formats
+    "unlock_resolution": False,  # past 1080p (VP9/AV1, with H.264 only off)
+    "pause_on_blur": False,  # pause when another window comes in front
+    "remaining_time": False,  # the time left instead of the length
+    "guide_tabs": {"music": True, "gaming": True, "news": True, "podcasts": True, "movies": True, "live": True, "sports": True},
 }
 
 
@@ -67,6 +74,8 @@ class Settings:
         for k, v in saved.items():
             if k == "skip" and isinstance(v, dict):
                 out["skip"].update({c: bool(on) for c, on in v.items() if c in CATEGORIES})
+            elif k == "guide_tabs" and isinstance(v, dict):
+                out["guide_tabs"].update({t: bool(on) for t, on in v.items() if t in DEFAULTS["guide_tabs"]})
             elif k in DEFAULTS and isinstance(v, type(DEFAULTS[k])):
                 out[k] = v
         return out
@@ -79,6 +88,10 @@ class Settings:
                 if key[5:] not in CATEGORIES:
                     raise ValueError(f"no SponsorBlock category {key[5:]}")
                 cur["skip"][key[5:]] = bool(value)
+            elif key.startswith("tab."):
+                if key[4:] not in DEFAULTS["guide_tabs"]:
+                    raise ValueError(f"no guide tab {key[4:]}")
+                cur["guide_tabs"][key[4:]] = bool(value)
             elif key in DEFAULTS and not isinstance(DEFAULTS[key], dict):
                 cur[key] = type(DEFAULTS[key])(value)
             else:

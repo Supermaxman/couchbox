@@ -17,7 +17,8 @@ FocusScope {
     property int row: 0
     readonly property var groups: [
         {header: "Account", items: [{key: "accounts", label: "Accounts"}]},
-        {header: "Playback", items: [{key: "video", label: "Video"}, {key: "ads", label: "Ads"}]},
+        {header: "Playback", items: [{key: "video", label: "Video"}, {key: "player", label: "Player"}, {key: "ads", label: "Ads"}]},
+        {header: "Appearance", items: [{key: "guide", label: "Guide tabs"}]},
         {header: "Extras", items: [{key: "sponsorblock", label: "SponsorBlock"}, {key: "extras", label: "DeArrow and more"}]},
         {header: "About", items: [{key: "about", label: "About"}]},
     ]
@@ -39,7 +40,23 @@ FocusScope {
         if (item.key === "video")
             return {title: "Video", body: "Choose the quality while a video plays: the player's settings, then Quality.", facts: [],
                     rows: [{key: "h264", label: "H.264 only", on: !!st.h264,
-                            desc: "The Pi decodes H.264 in hardware (up to 1080p60). Off: VP9 and AV1 too, decoded in software (they may stutter)."}]};
+                            desc: "The Pi decodes H.264 in hardware (up to 1080p60). Off: VP9 and AV1 too, decoded in software (they may stutter)."},
+                           {key: "unlock_resolution", label: "Unlock resolution", on: !!st.unlock_resolution,
+                            desc: "Past 1080p, up to 4K (with H.264 only off: YouTube's H.264 stops at 1080p)"},
+                           {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres,
+                            desc: "Leave out the copies YouTube upscaled with AI"}]};
+        if (item.key === "player")
+            return {title: "Player", body: "Keys on a keyboard: P and D faster and slower, A normal speed, C captions, M sound.", facts: [], rows: [
+                {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length"},
+                {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front"},
+                {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue,
+                 desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
+        if (item.key === "guide") {
+            const tabs = [["music", "Music"], ["gaming", "Gaming"], ["news", "News"], ["podcasts", "Podcasts"], ["movies", "Movies & TV"], ["live", "Live"], ["sports", "Sports"]];
+            const gt = st.guide_tabs || {};
+            return {title: "Guide tabs", body: "The tabs the guide lists (Search, Home, Shorts, Subscriptions and Library always are).", facts: [],
+                    rows: tabs.map(t => ({key: "tab." + t[0], label: t[1], on: gt[t[0]] !== false}))};
+        }
         if (item.key === "ads")
             return {title: "Ads", facts: [["Ads", "Never shown: none are asked for, and ad shelves are left out"]], body: "", rows: []};
         if (item.key === "sponsorblock") {

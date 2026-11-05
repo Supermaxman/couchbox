@@ -335,7 +335,7 @@ def main():
         settle=2,
     )
     # Extras: into its rows, Hide Shorts flipped and flipped back (the TV's setting is left as it was)
-    remote("down", "down", "down", "down", "right", "down", "down")
+    remote(*["down"] * 6, "right", "down", "down")  # Accounts, Video, Player, Ads, Guide tabs, SponsorBlock -> Extras
     f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)
     was = d(f).get("on")
     remote("ok")
