@@ -37,7 +37,7 @@ FocusScope {
             }
         }
     }
-    Keys.onReturnPressed: Y.toast("Signing in to YouTube comes in the next update.")
-    Keys.onEnterPressed: Y.toast("Signing in to YouTube comes in the next update.")
+    Keys.onReturnPressed: Y.signIn()
+    Keys.onEnterPressed: Y.signIn()
     Keys.onLeftPressed: Y.toGuide()
 }

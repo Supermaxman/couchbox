@@ -1,14 +1,15 @@
 // The guide, left of every page: icons only, and with the focus the full guide with names
 // (who's watching at the top; Search, Home, Shorts | Music, Subscriptions, Library | Gaming, News,
-// Podcasts, Movies & TV, Live, Sports; Settings at the bottom). Moving through it shows each page
-// behind it, as YouTube's TV app does; OK or Right goes into the page.
+// Podcasts, Movies & TV, Live, Sports; Settings at the bottom, and at the end of the list when it's
+// open). Moving through it shows each page behind it, as YouTube's TV app does; OK or Right goes
+// into the page. OK on the picture at the top: who's watching.
 import QtQuick
 
 FocusScope {
     id: guide
     property var entries: []                  // [{key, label, browse}] (Settings is the last)
     property string section: "home"
-    property string who: "Guest"
+    readonly property string who: Y.profile ? Y.profile.name : "Guest"
     readonly property bool open: activeFocus
     readonly property var list: entries.filter(e => e.key !== "settings")
     readonly property int groupEnd1: 2        // dividers after Shorts and after Library
@@ -38,7 +39,7 @@ FocusScope {
     Keys.onReturnPressed: activate()
     Keys.onEnterPressed: activate()
     function activate() {
-        if (cur < 0) { Y.toast("Signing in to YouTube comes in the next update."); return; }
+        if (cur < 0) { Y.whoIsWatching(); return; }
         pick.stop();
         if (keyAt(cur) !== section) chosen(keyAt(cur));
         enter();
@@ -66,7 +67,8 @@ FocusScope {
             width: 54 * Y.u; height: width; radius: width / 2
             anchors.verticalCenter: parent.verticalCenter
             color: "#3d5afe"
-            Icon { anchors.centerIn: parent; name: "person"; size: 36 * Y.u; color: "white" }
+            Icon { anchors.centerIn: parent; visible: !Y.profile; name: "person"; size: 36 * Y.u; color: "white" }
+            RoundImage { anchors.fill: parent; visible: !!Y.profile; source: Y.profile ? Y.profile.photo || "" : ""; fallback: Y.profile ? Y.profile.name : "" }
         }
         Text {
             visible: guide.open
@@ -83,7 +85,7 @@ FocusScope {
         id: viewport
         y: guide.open ? 154 * Y.u : 195 * Y.u
         width: parent.width
-        height: (guide.open ? 930 : 900) * Y.u - y
+        height: (guide.open ? 1080 : 900) * Y.u - y
         clip: true
         Column {
             id: column
@@ -93,21 +95,25 @@ FocusScope {
                 let yy = 0;
                 for (let i = 0; i < guide.cur && i < guide.list.length; i++)
                     yy += 78 * Y.u + (guide.open && (i === guide.groupEnd1 || i === guide.groupEnd2) ? 39 * Y.u : 0);
-                return yy;
+                return yy + (guide.cur === guide.list.length ? 47 * Y.u : 0);
             }
-            y: guide.open ? -Math.max(0, curY + 78 * Y.u - viewport.height) : 0
+            y: guide.open ? -Math.max(0, curY + 96 * Y.u - viewport.height) : 0
             Behavior on y { NumberAnimation { duration: 140 } }
             Repeater {
-                model: guide.list
+                // the open guide scrolls on to Settings at the end
+                model: guide.list.concat([{key: "settings", label: "Settings"}])
                 Item {
                     id: entry
                     required property var modelData
                     required property int index
                     readonly property bool sel: guide.section === modelData.key
                     readonly property bool on: guide.open && guide.cur === index
+                    readonly property real gap: index === guide.list.length ? 47 * Y.u : 0
                     width: column.width
-                    height: 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
+                    visible: index < guide.list.length || guide.open
+                    height: gap + 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
                     Rectangle {
+                        y: entry.gap
                         x: 33 * Y.u
                         width: 444 * Y.u; height: 78 * Y.u
                         radius: 16 * Y.u
@@ -115,7 +121,7 @@ FocusScope {
                         visible: entry.on
                     }
                     Icon {
-                        x: 58 * Y.u; y: 19 * Y.u
+                        x: 58 * Y.u; y: entry.gap + 19 * Y.u
                         name: entry.modelData.key
                         filled: entry.sel
                         size: 40 * Y.u
@@ -124,7 +130,7 @@ FocusScope {
                     Text {
                         visible: guide.open
                         x: 123 * Y.u
-                        y: 39 * Y.u - height / 2
+                        y: entry.gap + 39 * Y.u - height / 2
                         text: entry.modelData.label
                         color: entry.on ? Y.ink : Y.text
                         font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium
@@ -140,9 +146,10 @@ FocusScope {
         }
     }
 
-    // ------------------------------------------------------------------ Settings, at the bottom
+    // ------------------------------------------------------------------ Settings, at the bottom (closed)
     Item {
-        readonly property bool on: guide.open && guide.cur === guide.list.length
+        visible: !guide.open
+        readonly property bool on: false
         y: 945 * Y.u
         width: parent.width; height: 78 * Y.u
         Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: Y.text; visible: parent.on }

@@ -8,6 +8,9 @@
 //   Up / Down     show the controls; Down again: the related videos; Up from the controls: the bar
 //   Back          from the related videos to the controls, then hide them, then leave the player
 // Streams: ytstream.py (yt-dlp), H.264 up to 1080p60; at the end the next video plays.
+// Signed in: like and dislike, the channel's panel (Subscribe / Subscribed, Go to channel), the
+// bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
+// profile left off, and reports what's watched (History, resume on every device).
 import QtQuick
 
 FocusScope {
@@ -28,18 +31,30 @@ FocusScope {
     readonly property int chapter: Y.chapterAt(chapters, video.position)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
     readonly property string label: v.title || (s ? s.title : "") || seed.title || ""
+    property string panel: ""                  // "" | channel | notify | save: a panel beside the video
+    property var saveOptions: []
+    property string cpn: ""                    // this playback's id in YouTube's reports
+    property bool reported: false
+    property real lastReport: 0
     signal finished()
     signal openChannel(string id)
 
     function start(id, at) {
+        if (s && reported) report(video.ended ? "end" : "pause");     // the one before
         videoId = id;
         startAt = at || 0;
-        s = null; meta = {}; message = ""; waitLeft = 0;
+        s = null; meta = {}; message = ""; waitLeft = 0; panel = ""; reported = false; lastReport = 0;
+        cpn = "";
+        const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
         mode = "controls"; button = 4;
         showControls();
         Y.call("stream", {id: id}, r => {
             if (player.videoId !== id) return;
             s = r;
+            // where this profile left off: the card's (a part-watched card's red bar) unless told
+            const p = player.seed.progress || 0;
+            if (!player.startAt && p > 0.02 && p < 0.95 && r.duration && !r.live) player.startAt = Math.max(0, p * r.duration - 3);
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
             if (waitLeft <= 0) begin();
             showControls();
@@ -47,6 +62,11 @@ FocusScope {
         Y.call("watch", {id: id}, r => {
             if (player.videoId !== id) return;
             meta = r;
+            // YouTube's own resume point for this profile, when the card didn't have one
+            if (r.start > 0 && !player.startAt) {
+                player.startAt = r.start;
+                if (player.s && video.position < r.start - 5) video.seekTo(r.start);
+            }
             const rows = [];
             const rel = r.related || [];
             for (let i = 0; i < rel.length; i += 3) rows.push({kind: "shelf", title: "", items: rel.slice(i, i + 3), more: ""});
@@ -65,6 +85,8 @@ FocusScope {
     }
     Component.onCompleted: start(videoId, startAt)
     Component.onDestruction: {
+        if (s && reported) report(video.ended ? "end" : "pause");
+        Y.videoSide = false;
         video.stop();
         if (typeof mpris !== "undefined" && mpris) mpris.update(false, false, "", "", 0, 0);
     }
@@ -100,6 +122,94 @@ FocusScope {
         function onErrorChanged() { if (video.error) player.message = video.error; }
     }
 
+    // ------------------------------------------------------------------ history (signed in)
+    function report(event) {
+        if (!Y.signedIn || !s || s.live) return;
+        Y.call("report", {id: videoId, cpn: cpn, event: event, position: video.position, duration: player.duration}, () => {}, () => {});
+    }
+    Connections {
+        target: video
+        function onPositionChanged() {
+            if (!player.s) return;
+            if (!player.reported && video.position > Math.max(1, player.startAt)) { player.reported = true; player.lastReport = video.position; player.report("start"); }
+            else if (player.reported && !video.paused && Math.abs(video.position - player.lastReport) >= 10) { player.lastReport = video.position; player.report("progress"); }
+        }
+        function onPausedChanged() { if (player.reported) player.report(video.paused ? "pause" : "progress"); }
+    }
+
+    // ------------------------------------------------------------------ signed in: like, subscribe, save
+    function signInFirst(what) { Y.toast("Sign in to " + what + ": the guide's picture, then Add account."); }
+    function rate(status) {
+        if (!Y.signedIn) return signInFirst("rate videos");
+        const now = v.like === status ? "none" : status;
+        Y.call("like", {id: videoId, status: now}, () => {
+            meta = Object.assign({}, meta, {video: Object.assign({}, v, {like: now})});
+            Y.toast(now === "like" ? "Added to Liked videos" : now === "dislike" ? "You dislike this video" : "Rating removed");
+        });
+    }
+    function subscribe(on) {
+        if (!Y.signedIn) return signInFirst("subscribe");
+        Y.call("subscribe", {id: v.channelId, on: on}, () => {
+            meta = Object.assign({}, meta, {video: Object.assign({}, v, {subscribed: on, notify: on ? (v.notify || "personalized") : ""})});
+            Y.toast(on ? "Subscribed to " + v.channel : "Unsubscribed from " + v.channel);
+            if (!on && panel === "notify") panel = "";
+        });
+    }
+    function openPanel(which) {
+        if (which === "save") {
+            if (!Y.signedIn) return signInFirst("save videos");
+            Y.call("saveOptions", {id: videoId}, r => { player.saveOptions = r.playlists || []; player.panel = "save"; });
+            return;
+        }
+        if (which === "notify" && !Y.signedIn) return signInFirst("choose notifications");
+        panel = which;
+    }
+    onPanelChanged: {
+        Y.videoSide = !!panel;
+        const checked = panelOptions.findIndex(o => o.checked);     // the current level, as YouTube's does
+        sidePanel.index = panel === "notify" && checked >= 0 ? checked : 0;
+        if (panel) { sidePanel.forceActiveFocus(); }
+        else { player.forceActiveFocus(); mode = "controls"; hide.restart(); }
+    }
+    readonly property var notifyLevels: [
+        {level: "all", label: "All", icon: "bell-all"}, {level: "personalized", label: "Personalized", icon: "bell"},
+        {level: "none", label: "None", icon: "bell-off"}
+    ]
+    readonly property var panelOptions: {
+        if (panel === "channel")
+            return [{label: v.subscribed ? "Subscribed" : "Subscribe", trailing: v.subscribed ? ({all: "bell-all", none: "bell-off"})[v.notify] || "bell" : ""},
+                    {label: "Go to channel"}];
+        if (panel === "notify") {
+            const have = (v.notifyOptions || []).map(o => o.level);
+            return notifyLevels.filter(l => have.length === 0 || have.indexOf(l.level) >= 0)
+                .map(l => ({label: l.label, icon: l.icon, checked: v.notify === l.level, level: l.level}))
+                .concat([{label: "Unsubscribe", icon: "unsubscribe", level: "unsubscribe"}]);
+        }
+        if (panel === "save")
+            return saveOptions.map(o => ({label: o.title, icon: o.id === "WL" ? "history" : "list", checked: o.saved, id: o.id}));
+        return [];
+    }
+    function panelPick(i) {
+        const o = panelOptions[i];
+        if (panel === "channel") {
+            if (i === 0) { if (v.subscribed) openPanel("notify"); else subscribe(true); }
+            else { panel = ""; video.setPaused(true); player.openChannel(v.channelId); }
+        } else if (panel === "notify") {
+            if (o.level === "unsubscribe") { subscribe(false); return; }
+            const opt = (v.notifyOptions || []).find(x => x.level === o.level);
+            if (!opt) return;
+            Y.call("notify", {params: opt.params, level: o.level}, () => {
+                meta = Object.assign({}, meta, {video: Object.assign({}, v, {notify: o.level})});
+            });
+        } else if (panel === "save") {
+            const add = !o.checked;
+            Y.call("save", {id: videoId, playlist: o.id, add: add}, () => {
+                saveOptions = saveOptions.map(x => x.id === o.id ? Object.assign({}, x, {saved: add}) : x);
+                Y.toast((add ? "Saved to " : "Removed from ") + o.label);
+            });
+        }
+    }
+
     // ------------------------------------------------------------------ the overlay
     readonly property bool shown: mode !== "hidden" || video.paused || !!message || !s
     function showControls() {
@@ -114,6 +224,7 @@ FocusScope {
         hide.restart();
     }
     function back() {
+        if (panel) { panel = ""; return; }
         if (mode === "related") { mode = "controls"; hide.restart(); return; }
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
         finished();
@@ -139,9 +250,10 @@ FocusScope {
         if (key === "play") video.togglePause();
         else if (key === "prev") { if (video.position > 5 || !s) video.seekTo(0); }
         else if (key === "next") playNext();
-        else if (key === "channel") { if (v.channelId || (s && s.channelId)) { video.setPaused(true); player.openChannel(v.channelId || s.channelId); } }
-        else if (key === "like" || key === "dislike" || key === "save" || key === "bell")
-            Y.toast("Sign in to " + ({like: "like videos", dislike: "dislike videos", save: "save videos", bell: "subscribe"})[key] + ": signing in comes in the next update.");
+        else if (key === "channel") { if (v.channelId || (s && s.channelId)) openPanel("channel"); }
+        else if (key === "like" || key === "dislike") rate(key);
+        else if (key === "save") openPanel("save");
+        else if (key === "bell") { if (!Y.signedIn) signInFirst("subscribe"); else if (v.subscribed) openPanel("notify"); else subscribe(true); }
         else if (key === "settings" && s)
             Y.toast((s.height ? s.height + "p" + (s.fps > 30 ? Math.round(s.fps) : "") + " " : "") + (s.vcodec === "avc1" ? "H.264" : s.vcodec.toUpperCase())
                     + (s.acodec ? " · " + (s.acodec === "mp4a" ? "AAC" : s.acodec) : "") + (s.live ? " · live" : "") + ". Quality and speed menus come in a later update.");
@@ -185,9 +297,11 @@ FocusScope {
         e.accepted = true;
     }
 
+    // the video's place: the whole screen, or left of a panel
+    readonly property rect place: Y.videoSide ? Qt.rect(54 * Y.u, 218 * Y.u, 1146 * Y.u, 646 * Y.u) : Qt.rect(0, 0, width, height)
     // the stand-in for the video while it loads (and off screen, the demo): its thumbnail
     Image {
-        anchors.fill: parent
+        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
         visible: !player.s || !hasVideo
         source: player.seed.thumb || ""
         fillMode: Image.PreserveAspectCrop
@@ -195,7 +309,7 @@ FocusScope {
         asynchronous: true
     }
     Rectangle {
-        anchors.fill: parent
+        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
         visible: !hasVideo && !(player.seed.thumb)
         gradient: Gradient {
             GradientStop { position: 0; color: Qt.hsla(Y.hue(player.label), 0.35, 0.22, 1) }
@@ -203,10 +317,28 @@ FocusScope {
         }
     }
 
+    Corners {                                  // the inset video's rounded corners
+        visible: Y.videoSide
+        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
+        r: 28 * Y.u
+    }
+    PlayerPanel {
+        id: sidePanel
+        visible: !!player.panel
+        options: player.panelOptions
+        avatar: player.panel === "channel" ? player.v.avatar || "" : ""
+        name: player.panel === "channel" ? player.v.channel || "" : ""
+        line: player.panel === "channel" ? [player.v.handle || "", player.v.subscribers || ""].filter(x => !!x).join(" · ") : ""
+        title: ({notify: "Notifications", save: "Save video to…"})[player.panel] || ""
+        subtitle: player.panel === "notify" ? "You'll get notified in the mobile app or on YouTube.com based on your account settings" : ""
+        onPicked: i => player.panelPick(i)
+        onClosed: player.panel = ""
+    }
+
     Item {
         id: overlay
         anchors.fill: parent
-        opacity: player.shown ? 1 : 0
+        opacity: player.shown && !player.panel ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
@@ -358,7 +490,17 @@ FocusScope {
                         color: row.on(1) ? Y.text : "#33ffffff"
                         Text { id: descT; anchors.centerIn: parent; text: "Description"; color: row.on(1) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
                     }
-                    CtlButton { icon: "bell"; on: row.on(2) }
+                    CtlButton {                // the bell when subscribed (its level), else Subscribe
+                        visible: !Y.signedIn || !!player.v.subscribed
+                        icon: ({all: "bell-all", none: "bell-off"})[player.v.notify] || "bell"
+                        on: row.on(2)
+                    }
+                    Rectangle {
+                        visible: Y.signedIn && !player.v.subscribed
+                        width: subT.implicitWidth + 64 * Y.u; height: 72 * Y.u; radius: height / 2
+                        color: row.on(2) ? Y.text : "#33ffffff"
+                        Text { id: subT; anchors.centerIn: parent; text: "Subscribe"; color: row.on(2) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium }
+                    }
                 }
                 Row {                          // previous, play/pause, next
                     anchors.centerIn: parent
@@ -382,7 +524,14 @@ FocusScope {
                             id: actions
                             Repeater {
                                 model: ["like", "dislike", "comments", "sparkle", "save", "thanks"]
-                                CtlButton { required property string modelData; required property int index; icon: modelData; on: row.on(6 + index); plain: true }
+                                CtlButton {
+                                    required property string modelData
+                                    required property int index
+                                    icon: modelData === "like" && player.v.like === "like" ? "like-filled"
+                                        : modelData === "dislike" && player.v.like === "dislike" ? "dislike-filled" : modelData
+                                    on: row.on(6 + index)
+                                    plain: true
+                                }
                             }
                         }
                     }
@@ -407,7 +556,7 @@ FocusScope {
                 indent: 96 * Y.u
                 cardW: 552 * Y.u
                 fixed: true
-                behind: "transparent"
+                behind: "#08070d"              // about the scrim's colour there
                 visible: player.mode !== "hidden"
                 onOpen: it => Y.open(it)
             }

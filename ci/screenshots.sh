@@ -113,6 +113,21 @@ shot yt-player couchbox-yt --open video:demo0000003
 shot yt-player-related couchbox-yt --open video:demo0000003 --keys down
 shot yt-player-bar couchbox-yt --open video:demo0000003 --keys up,right,right
 shot yt-settings couchbox-yt --open settings
+# ... signed in (made-up profiles): Who's watching (and its gear's menu), adding an account, Home as a
+# guest, Subscriptions (the channels, the feed), Library (its tiles, History), the player's panels
+# (the channel, notifications, Save), the open guide down to Settings
+shot yt-profiles couchbox-yt --profile pick
+shot yt-profiles-menu couchbox-yt --profile pick --keys down,ok
+shot yt-signin couchbox-yt --open signin
+shot yt-home-guest couchbox-yt --profile guest
+shot yt-subscriptions couchbox-yt --open subscriptions
+shot yt-subscriptions-feed couchbox-yt --open subscriptions --keys down,right
+shot yt-library couchbox-yt --open library
+shot yt-library-history couchbox-yt --open library --keys ok
+shot yt-player-channel couchbox-yt --open video:demo0000006 --keys left,left,left,left,ok
+shot yt-player-notify couchbox-yt --open video:demo0000006 --keys left,left,ok
+shot yt-player-save couchbox-yt --open video:demo0000006 --keys right,right,right,right,right,right,ok
+shot yt-guide-settings couchbox-yt --keys left,down,down,down,down,down,down,down,down,down,down,down
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down

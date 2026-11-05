@@ -10,10 +10,12 @@ Pages come from InnerTube as YouTube's TV client (couchbox.services.youtube); st
 /usr/share/couchbox/ui/youtube. VacuumTube (the YouTube tile) stays as it is until this app
 reaches it.
 
-  couchbox-yt [--open video:ID[@SECONDS] | search:TEXT | channel:ID | browse:ID | home]
+  couchbox-yt [--open video:ID[@SECONDS] | search:TEXT | channel:ID | browse:ID | home | profiles | signin]
                                      open on that (a second launch hands it to the running app)
-  couchbox-yt --demo --shot FILE [--open ...] [--keys down,ok,...]
-                                     render once off screen (made-up videos, no network)
+  couchbox-yt --demo --shot FILE [--open ...] [--keys down,ok,...] [--profile guest | pick | demo1: | ...]
+                                     render once off screen (made-up videos and profiles, no network;
+                                     signed in as the first profile unless told otherwise; pick: start
+                                     on Who's watching, as the app does with accounts on the TV)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1 (don't take the remote's media keys).
 """
 import json
@@ -45,20 +47,43 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import youtube, ytstream  # noqa: E402
+from couchbox.services import youtube, ytauth, ytstream  # noqa: E402
 
 
 class Backend(QObject):
-    """QML's way to youtube.py and ytstream.py: call(id, op, args) answers later with reply(id, json)."""
+    """QML's way to youtube.py, ytauth.py and ytstream.py: call(id, op, args) answers later with
+    reply(id, json); event(name, json) tells it what happened meanwhile (a code was used)."""
     reply = Signal(int, str)
+    event = Signal(str, str)
 
-    def __init__(self, demo):
+    def __init__(self, demo, profile=None):
         super().__init__()
         self.demo = demo
-        self.yt = youtube.Demo() if demo else youtube.YouTube()
+        self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube()
+        self.yt.on_event = lambda name, data: self.event.emit(name, json.dumps(data))
         self.pool = ThreadPoolExecutor(max_workers=6)
-        if not demo:                                 # load yt-dlp now: the first video starts sooner
-            threading.Thread(target=ytstream.module, daemon=True).start()
+        if not demo:
+            threading.Thread(target=ytstream.module, daemon=True).start()    # yt-dlp now: the first video starts sooner
+            self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
+            self.pool.submit(self.yt.refresh_channels)
+
+    def sign_in(self, op):
+        """The device code for youtube.com/activate, with a QR code of it for a phone."""
+        if self.demo:                                # a made-up code (and its picture)
+            import tempfile
+            qr = qr_png("https://www.google.com/device?user_code=KDX-PRW-TNQ", os.path.join(tempfile.gettempdir(), "couchbox-yt-demo-qr.png"))
+            return {"state": "waiting", "code": "KDX-PRW-TNQ", "url": "youtube.com/activate", "qr": qr, "expires": 1800}
+        a = self.yt.auth
+        out = a.start() if op == "start" else a.code()
+        if out.get("state") == "waiting":                # one file per code: a new code is a new picture
+            path = os.path.join(self.yt.dir, f"activate-{out['code']}.png")
+            if not os.path.exists(path):
+                for f in os.listdir(self.yt.dir):
+                    if f.startswith("activate-") and f.endswith(".png"):
+                        os.remove(os.path.join(self.yt.dir, f))
+                qr_png(out["full"], path)
+            out["qr"] = path if os.path.exists(path) else ""
+        return out
 
     def stream(self, vid):
         if self.demo:
@@ -72,13 +97,28 @@ class Backend(QObject):
     def run(self, op, a):
         y = self.yt
         ops = {
-            "status": lambda: {"guide": [{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
-                               "signedIn": False, "demo": self.demo},
+            "status": lambda: dict(y.profiles(), guide=[{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
+                                   demo=self.demo),
+            "profiles": lambda: y.profiles(),
+            "use": lambda: y.use(a.get("id", "")),
+            "signInStart": lambda: self.sign_in("start"),
+            "signInState": lambda: self.sign_in("state"),
+            "signInCancel": lambda: (None if self.demo else y.auth.cancel(), {"ok": True})[1],
+            "signOut": lambda: (None if self.demo else y.auth.remove(a["account"]), y.use("") if y.profile.get("account") == a["account"] else None,
+                                {"ok": True})[2],
+            "subscriptions": lambda: y.subscriptions(),
+            "library": lambda: y.library(),
+            "like": lambda: y.like(a["id"], a["status"]),
+            "subscribe": lambda: y.subscribe(a["id"], bool(a["on"])),
+            "notify": lambda: y.notify(a["params"], a.get("level", "")),
+            "saveOptions": lambda: y.save_options(a["id"]),
+            "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
+            "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
             "home": lambda: y.home(),
             "browse": lambda: y.browse(a["id"], a.get("params", "")),
             "more": lambda: y.more(a["token"]),
-            "channel": lambda: y.channel(a["id"]),
+            "channel": lambda: y.channel(a["id"], a.get("params", "")),
             "search": lambda: (y.remember_search(a["q"]), y.search(a["q"]))[1],
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
@@ -92,13 +132,25 @@ class Backend(QObject):
         def work():
             try:
                 out = self.run(op, json.loads(args or "{}"))
-            except ytstream.Unavailable as err:
-                out = {"error": str(err)}
+            except (ytstream.Unavailable, youtube.YouTubeError) as err:
+                out = {"error": str(err.args[0]) if err.args else str(err)}
+            except ytauth.SignedOut as err:
+                out = {"error": str(err), "signedOut": True}
             except Exception as err:
                 traceback.print_exc()
                 out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
             self.reply.emit(rid, json.dumps(out))
         self.pool.submit(work)
+
+
+def qr_png(text, path):
+    """A QR code (qrencode) as a PNG for the QML, or "" when there's no qrencode."""
+    import subprocess
+    try:
+        subprocess.run(["qrencode", "-t", "PNG", "-s", "12", "-m", "2", "-o", path, text], check=True, timeout=10)
+        return path
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 class Control(QObject):
@@ -222,7 +274,8 @@ def main():
     engine.addImportPath(TVKIT)
     if os.environ.get("COUCHBOX_NO_VIDEO"):
         engine.addImportPath(str(paths.share() / "ui/stubs"))
-    backend = Backend(demo)
+    profile = sys.argv[sys.argv.index("--profile") + 1] if "--profile" in sys.argv else None
+    backend = Backend(demo, "" if profile == "guest" else profile)
     shooter = Shooter()
     control = Control(backend)
     if "--shot" not in sys.argv:

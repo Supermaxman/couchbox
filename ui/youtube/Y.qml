@@ -14,6 +14,9 @@ QtObject {
 
     property real u: 1
     property var video: null                  // the one MpvVideo (Main): it lives as long as the app
+    property var profile: null                // who's watching: {id, account, name, handle, photo, premium}, null: a guest
+    readonly property bool signedIn: !!profile
+    property bool videoSide: false            // the player's side panel is open: the video sits to its left
     property bool shot: false                 // --shot: still (no blinking caret)
 
     // ------------------------------------------------------------------ look
@@ -95,4 +98,7 @@ QtObject {
     signal toast(string text)
     signal toGuide()                          // Left off a page's first column, Back from a page
     signal search(string query)               // the search pill, a chip, a cluster's search pill
+    signal whoIsWatching()                    // the guide's picture: the profiles
+    signal signIn()                           // Add account, a "Sign in" button
+    signal openList(string title, string browseId)   // Library's tiles: History, Watch later, a playlist
 }

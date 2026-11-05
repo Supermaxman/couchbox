@@ -2,7 +2,9 @@
 // like YouTube's TV app. The guide on the left picks the page (Home, the tabs, Search...);
 // channels and the player open on top of the pages, and Back goes back down. Left from a page's
 // first column, or Back, goes to the guide; Back from the guide goes Home, and from Home's guide
-// leaves the app. The back end is couchbox.services.youtube and ytstream, through Backend's threads.
+// leaves the app. With accounts on the TV it starts on "Who's watching" (ProfilesPage); Add
+// account shows a code for youtube.com/activate (SignInPage). The back end is
+// couchbox.services.youtube, ytauth and ytstream, through Backend's threads.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Window
@@ -28,6 +30,8 @@ ApplicationWindow {
     property bool ready: false
     readonly property bool playing: stack.depth > 0 && stack.currentItem && stack.currentItem.videoId !== undefined
     readonly property var tabs: ({music: 1, gaming: 1, news: 1, podcasts: 1, movies: 1, live: 1, sports: 1})
+    property bool picking: false               // "Who's watching" is up
+    property bool pickedAtStart: false         // ... as the app started (Back there leaves the app)
 
     Component.onCompleted: {
         Y.u = u;
@@ -36,12 +40,37 @@ ApplicationWindow {
         Y.call("status", {}, r => {
             guide.entries = r.guide;
             ready = true;
-            choose("home");
-            focusPage();
             const o = arg("--open");
-            if (o) openTarget(o);
-            updateState();
+            const want = args.indexOf("--profile") >= 0 ? arg("--profile") : null;
+            const profiles = r.profiles || [];
+            const cur = profiles.find(p => p.id === r.current);
+            if (want === "pick" || (want === null && !r.demo && profiles.length && !o)) { pickedAtStart = true; showProfiles(); }
+            else if (want !== null) win.use(want, o);
+            else if (r.demo) win.started(cur || null, o);            // the demo: as its first profile
+            else win.use(profiles.find(p => p.id === r.last) ? r.last : "", o);
         }, e => { problem.text = e; });
+    }
+    // watch as a profile ("" a guest), then Home (or what --open asked for)
+    function use(pid, then) {
+        Y.call("use", {id: pid || ""}, r => started(r.profile || null, then), e => { Y.toast(e); started(null, then); });
+    }
+    function started(profile, then) {
+        Y.profile = profile;
+        picking = false;
+        stack.clear(StackView.Immediate);
+        home.loaded = false;
+        library.loaded = false;
+        subscriptions.loaded = false;
+        choose("home");
+        focusPage();
+        if (then) openTarget(then);
+        updateState();
+    }
+    function showProfiles() {
+        picking = true;
+        profilesPage.load(Y.profile ? Y.profile.id : "");
+        profilesPage.forceActiveFocus();
+        updateState();
     }
 
     // ------------------------------------------------------------------ pages
@@ -49,6 +78,8 @@ ApplicationWindow {
         if (key === "home") return home;
         if (key === "search") return search;
         if (tabs[key]) return tab;
+        if (key === "subscriptions" && Y.signedIn) return subscriptions;
+        if (key === "library" && Y.signedIn) return library;
         return message;
     }
     function entry(key) { return (guide.entries || []).find(e => e.key === key) || {key: key, label: key, browse: ""}; }
@@ -59,6 +90,8 @@ ApplicationWindow {
         if (key === "home") { if (!home.loaded) home.load(); }
         else if (key === "search") search.begin(search.query);
         else if (tabs[key]) { tab.key = key; tab.browseId = e.browse; tab.label = e.label; tab.loaded = false; tab.load(); }
+        else if (page(key) === subscriptions) { if (!subscriptions.loaded) subscriptions.load(); }
+        else if (page(key) === library) { if (!library.loaded) library.load(); }
         else {
             message.key = key;
             message.facts = [];
@@ -73,7 +106,8 @@ ApplicationWindow {
         updateState();
     }
     function focusPage() {
-        if (stack.depth) stack.currentItem.forceActiveFocus();
+        if (picking) profilesPage.forceActiveFocus();
+        else if (stack.depth) stack.currentItem.forceActiveFocus();
         else if (section === "search") search.forceActiveFocus();
         else page(section).forceActiveFocus();
     }
@@ -95,6 +129,11 @@ ApplicationWindow {
         push(playerC, {videoId: id, startAt: at || 0, seed: seed || {}});
     }
     function back() {
+        if (picking) {
+            if (pickedAtStart) Qt.quit();
+            else { picking = false; focusPage(); }
+            return;
+        }
         if (stack.depth) { pop(); return; }
         if (guide.activeFocus) {
             // Back from the guide goes Home first (also when it's only been moved off Home)
@@ -117,7 +156,14 @@ ApplicationWindow {
             else if (it.type === "search") Y.search(it.id);
         }
         function onToast(t) { toast.show(t); }
-        function onToGuide() { if (!stack.depth) guide.forceActiveFocus(); }
+        function onToGuide() {
+            if (stack.depth || win.picking) return;
+            if (win.page(win.section) === subscriptions && subscriptions.feedFocused) subscriptions.toChannels();
+            else guide.forceActiveFocus();
+        }
+        function onWhoIsWatching() { win.pickedAtStart = false; win.showProfiles(); }
+        function onSignIn() { win.push(signInC, {}); }
+        function onOpenList(title, id) { win.push(listC, {title: title, browseId: id}); }
         function onSearch(q) {
             win.choose("search");
             if (q) search.search(q);
@@ -136,14 +182,32 @@ ApplicationWindow {
         } else if (k === "search") { stack.clear(StackView.Immediate); Y.search(rest); }
         else if (k === "typing") { stack.clear(StackView.Immediate); choose("search"); search.begin(rest); search.forceActiveFocus(); }
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
-        else if (k === "home" || tabs[k] || k === "settings") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
+        else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
+        else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
+        else if (k === "signin") push(signInC, {});
     }
     function updateState() {
         const cur = stack.depth ? stack.currentItem : null;
-        const st = {page: cur ? (cur.videoId !== undefined ? "player" : "channel") : section};
+        const st = {page: picking ? "profiles" : cur ? (cur.videoId !== undefined ? "player" : cur.browseId !== undefined ? "list" : "channel") : section,
+                    profile: Y.profile ? Y.profile.name : "guest"};
         if (cur && cur.label) st.showing = cur.label;
         if (win.playing) { st.playing = cur.label; st.paused = video.paused; st.position = Math.round(video.position); }
         control.setState(JSON.stringify(st));
+    }
+    Connections {
+        target: backend
+        function onEvent(name, js) {
+            const d = JSON.parse(js || "{}");
+            if (name === "signedIn") {
+                toast.show((d.name || "The account") + " is signed in to YouTube.");
+                if (win.picking) profilesPage.load(d.account + ":");
+                else if (!Y.signedIn) win.use(d.account + ":", "");          // a guest: watch as the new account
+            } else if (name === "signInExpired") {
+                // nothing to say unless the sign-in page is up (it shows it)
+            } else if (name === "signedOut") {
+                toast.show((d.name || "An account") + " was signed out of YouTube. Sign in again from Who's watching.");
+            }
+        }
     }
     Connections {
         target: control
@@ -176,7 +240,10 @@ ApplicationWindow {
         // the video, under everything: shown while the player is the page on top
         MpvVideo {
             id: video
-            anchors.fill: parent
+            x: Y.videoSide ? 54 * Y.u : 0
+            y: Y.videoSide ? 218 * Y.u : 0
+            width: Y.videoSide ? 1146 * Y.u : parent.width
+            height: Y.videoSide ? 646 * Y.u : parent.height
             visible: win.playing
         }
 
@@ -192,6 +259,8 @@ ApplicationWindow {
             BrowsePage { id: tab; anchors.fill: parent; key: "music"; visible: !!win.tabs[win.section] }
             SearchPage { id: search; anchors.fill: parent; visible: win.section === "search" }
             MessagePage { id: message; anchors.fill: parent; visible: win.page(win.section) === message }
+            SubscriptionsPage { id: subscriptions; anchors.fill: parent; visible: win.page(win.section) === subscriptions }
+            LibraryPage { id: library; anchors.fill: parent; visible: win.page(win.section) === library }
         }
         Guide {
             id: guide
@@ -206,8 +275,31 @@ ApplicationWindow {
             anchors.fill: parent
             visible: depth > 0
         }
+        ProfilesPage {
+            id: profilesPage
+            anchors.fill: parent
+            visible: win.picking && !stack.depth
+            onChosen: p => win.use(p ? p.id : "", "")
+            onAddAccount: win.push(signInC, {})
+            onSignOut: p => Y.call("signOut", {account: p.account}, () => {
+                toast.show(p.name + " is signed out on this TV.");
+                if (Y.profile && Y.profile.account === p.account) Y.profile = null;
+                profilesPage.load("");
+            })
+            onClosed: win.back()
+        }
     }
     Component { id: channelC; ChannelPage { onClosed: win.pop() } }
+    Component { id: listC; ListPage { onClosed: win.pop() } }
+    Component {
+        id: signInC
+        SignInPage {
+            onClosed: {
+                win.pop();
+                if (win.picking) { profilesPage.load(""); profilesPage.forceActiveFocus(); }
+            }
+        }
+    }
     Component {
         id: playerC
         PlayerPage {

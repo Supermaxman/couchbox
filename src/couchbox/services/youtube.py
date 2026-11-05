@@ -82,7 +82,7 @@ AD_BADGES = {"ad", "sponsored", "paid promotion"}
 
 
 class YouTubeError(RuntimeError):
-    pass
+    """YouTube refused or failed (args: the message, and the HTTP status when there is one)."""
 
 
 # ------------------------------------------------------------------ small parsing helpers
@@ -481,17 +481,76 @@ def parse_page(resp: dict[str, Any]) -> dict[str, Any]:
             nudge = {"title": text(n.get("title")), "subtitle": text(n.get("subtitle"))}
             continue
         shelves += parse_shelf(s)
-    out = {"shelves": shelves, "more": _continuation(sl), "nudge": nudge, "header": None}
-    head = dig(resp, "contents", "tvBrowseRenderer", "content", "tvSurfaceContentRenderer", "header")
-    if head:
-        out["header"] = parse_header(head)
+    more = _continuation(sl)
+    surface = dig(resp, "contents", "tvBrowseRenderer", "content", "tvSurfaceContentRenderer") or {}
+    if not sl:
+        content = parse_content(surface.get("content") or dig(resp, "continuationContents") or {})
+        shelves, more = content["shelves"], content["more"] or more
+    if not shelves and not nudge:
+        shelves = harvest(resp)  # a shape we don't know yet: whatever cards it has
+    out = {"shelves": shelves, "more": more, "nudge": nudge, "header": None}
+    if surface.get("header"):
+        out["header"] = parse_header(surface["header"])
+    return out
+
+
+def parse_content(c: dict[str, Any]) -> dict[str, Any]:
+    """A tab's or surface's content: a section list, or a grid (History, Watch later, a playlist)."""
+    if "tvSurfaceContentRenderer" in c:
+        c = c["tvSurfaceContentRenderer"].get("content") or {}
+    if "twoColumnRenderer" in c:  # a playlist (Watch later, Liked videos...): its name, then its videos
+        two = c["twoColumnRenderer"]
+        title = text(dig(two, "leftColumn", "entityMetadataRenderer", "title"))
+        out = parse_content(two.get("rightColumn") or {})
+        if out["shelves"] and not out["shelves"][0]["title"]:
+            out["shelves"][0]["title"] = title
+        return out
+    if "sectionListRenderer" in c or "sectionListContinuation" in c:
+        sl = c.get("sectionListRenderer") or c.get("sectionListContinuation")
+        return parse_page({"contents": {"sectionListRenderer": sl}})
+    for key in ("gridRenderer", "gridContinuation", "playlistVideoListRenderer", "verticalListRenderer", "horizontalListRenderer"):
+        if key in c:
+            g = c[key]
+            items = parse_items(g.get("items") or g.get("contents"))
+            more = _continuation(g) or next(
+                (
+                    dig(x, "continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token")
+                    for x in g.get("contents") or []
+                    if "continuationItemRenderer" in x
+                ),
+                "",
+            )
+            title = text(dig(g, "header", "gridHeaderRenderer", "title"))
+            shelf = {"title": title, "subtitle": "", "items": items, "more": more or "", "grid": True}
+            return {"shelves": [shelf] if items else [], "more": ""}
+    return {"shelves": [], "more": ""}
+
+
+def harvest(resp: Any, depth: int = 0) -> list[dict[str, Any]]:
+    """Every list of cards anywhere in a response, as untitled shelves: so a page YouTube has
+    reshaped still shows its videos rather than nothing."""
+    out: list[dict[str, Any]] = []
+    if depth > 40:
+        return out
+    if isinstance(resp, list):
+        if any(isinstance(x, dict) and ("tileRenderer" in x or "lockupViewModel" in x) for x in resp):
+            items = parse_items(resp)
+            return [{"title": "", "subtitle": "", "items": items, "more": "", "grid": True}] if items else []
+        for x in resp:
+            out += harvest(x, depth + 1)
+    elif isinstance(resp, dict):
+        for k, v in resp.items():
+            if k in AD_RENDERERS or k in ("frameworkUpdates", "responseContext", "onLongPressCommand", "menu"):
+                continue
+            out += harvest(v, depth + 1)
     return out
 
 
 def parse_more_items(resp: dict[str, Any]) -> dict[str, Any]:
     """The continuation of a shelf: {"items", "more"}."""
-    c = dig(resp, "continuationContents", "horizontalListContinuation") or dig(resp, "continuationContents", "gridContinuation") or {}
-    return {"items": parse_items(c.get("items")), "more": _continuation(c)}
+    cc = resp.get("continuationContents") or {}
+    c = cc.get("horizontalListContinuation") or cc.get("gridContinuation") or cc.get("playlistVideoListContinuation") or {}
+    return {"items": parse_items(c.get("items") or c.get("contents")), "more": _continuation(c)}
 
 
 def parse_header(h: dict[str, Any]) -> dict[str, Any] | None:
@@ -530,6 +589,9 @@ def parse_watch(resp: dict[str, Any]) -> dict[str, Any]:
                 "channel": text(owner.get("title")),
                 "channelId": endpoint(owner.get("navigationEndpoint")).get("id", ""),
                 "avatar": avatar(thumb(owner.get("thumbnail"), 88)),
+                "handle": (dig(owner, "navigationEndpoint", "browseEndpoint", "canonicalBaseUrl") or "").lstrip("/")
+                if "/@" in (dig(owner, "navigationEndpoint", "browseEndpoint", "canonicalBaseUrl") or "")
+                else "",
                 "subscribers": text(owner.get("subscriberCountText")),
                 "subscribed": bool(sub.get("subscribed")),
                 "views": text(dig(vm, "viewCount", "videoViewCountRenderer", "shortViewCount"))
@@ -554,7 +616,148 @@ def parse_watch(resp: dict[str, Any]) -> dict[str, Any]:
         if e.get("type") == "video" and s.get("mode", "NORMAL") == "NORMAL":
             nxt = e["id"]
             break
-    return {"video": video, "related": rel, "next": nxt}
+    video.update(engagement(resp))
+    if not video.get("channelId") and video.get("subscribeChannel"):
+        video["channelId"] = video["subscribeChannel"]
+    start = dig(resp, "currentVideoEndpoint", "watchEndpoint", "startTimeSeconds")
+    return {"video": video, "related": rel, "next": nxt, "start": int(start or 0)}
+
+
+def _find(o: Any, key: str, depth: int = 0):
+    """Every value of `key` anywhere in o (depth first)."""
+    if depth > 30:
+        return
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == key:
+                yield v
+            yield from _find(v, key, depth + 1)
+    elif isinstance(o, list):
+        for x in o:
+            yield from _find(x, key, depth + 1)
+
+
+NOTIFY = {"NOTIFICATIONS_ACTIVE": "all", "NOTIFICATIONS_NONE": "personalized", "NOTIFICATIONS_OFF": "none"}
+LIKES = {"LIKE": "like", "DISLIKE": "dislike"}
+
+
+def engagement(resp: dict[str, Any]) -> dict[str, Any]:
+    """The signed-in parts of a watch page: like status and count, subscribed, the notification
+    levels (each with the params that set it)."""
+    out: dict[str, Any] = {"like": "none", "likes": 0, "subscribed": False, "notify": "", "notifyOptions": []}
+    for lb in _find(resp.get("transportControls") or resp, "likeButtonRenderer"):
+        out["like"] = LIKES.get(lb.get("likeStatus", ""), "none")
+        out["likes"] = int(lb.get("likeCount") or 0)
+        break
+    for e in _find(resp.get("frameworkUpdates") or {}, "likeStatusEntity"):
+        out["like"] = LIKES.get(e.get("likeStatus", ""), out["like"])
+    subs = [b for b in _find(resp, "subscribeButtonRenderer") if isinstance(b, dict)]
+    if subs:
+        out["subscribed"] = any(bool(b.get("subscribed")) for b in subs)
+        out["subscribeChannel"] = next((b.get("channelId") for b in subs if b.get("channelId")), "")
+    for e in _find(resp.get("frameworkUpdates") or {}, "subscriptionStateEntity"):
+        out["subscribed"] = bool(e.get("subscribed")) or out["subscribed"]
+    for t in _find(resp, "subscriptionNotificationToggleButtonRenderer"):
+        states = t.get("states") or []
+        cur = t.get("currentStateId")
+        opts = []
+        for st in states:
+            icon = dig(st, "state", "buttonRenderer", "icon", "iconType") or ""
+            menu = dig(st, "inlineMenuButton", "buttonRenderer") or {}
+            params = dig(menu, "serviceEndpoint", "modifyChannelNotificationPreferenceEndpoint", "params") or ""
+            level = NOTIFY.get(icon, "")
+            if level and params:
+                opts.append({"level": level, "label": text(menu.get("text")) or level.title(), "params": params})
+                if st.get("stateId") == cur:
+                    out["notify"] = level
+        if opts:
+            out["notifyOptions"] = opts
+            break
+    return out
+
+
+def parse_save_options(resp: dict[str, Any]) -> list[dict[str, Any]]:
+    """playlist/get_add_to_playlist: [{id, title, saved}] (Watch later first)."""
+    out = []
+    for r in _find(resp, "playlistAddToOptionRenderer"):
+        pid = r.get("playlistId", "")
+        if pid:
+            out.append({"id": pid, "title": text(r.get("title")), "saved": r.get("containsSelectedVideos") in ("ALL", "SOME")})
+    out.sort(key=lambda p: p["id"] != "WL")
+    return out
+
+
+def parse_accounts(resp: dict[str, Any]) -> list[dict[str, Any]]:
+    """account/accounts_list: the channels one Google account can watch as: [{name, handle, photo,
+    email, pageId (a brand account's), main (the account's own)}]."""
+    out = []
+    for a in _find(resp, "accountItem"):
+        if not isinstance(a, dict) or a.get("isDisabled"):
+            continue
+        tokens = dig(a, "serviceEndpoint", "selectActiveIdentityEndpoint", "supportedTokens") or []
+        page = next((dig(t, "pageIdToken", "pageId") for t in tokens if dig(t, "pageIdToken", "pageId")), "")
+        byline = text(a.get("accountByline"))
+        handle = text(a.get("channelHandle"))
+        out.append(
+            {
+                "name": text(a.get("accountName")),
+                "handle": handle if handle.startswith("@") else "",
+                "photo": avatar(thumb(a.get("accountPhoto"), 88), 352),
+                "email": byline if "@" in byline and not byline.startswith("@") else "",
+                "pageId": page,
+                "main": not page,
+            }
+        )
+    if out and not any(c["main"] for c in out):
+        out[0]["main"] = True
+    return out
+
+
+def parse_subscriptions(resp: dict[str, Any]) -> dict[str, Any]:
+    """FEsubscriptions on the TV: the channels down the side (All first, then the most relevant,
+    then A-Z) and the page of the selected one: {"channels": [...], "page": {...}}."""
+    nav = next(_find(resp, "tvSecondaryNavRenderer"), None)
+    if not nav:
+        return {"channels": [], "page": parse_page(resp)}
+    channels, page = [], None
+    for sec in nav.get("sections") or []:
+        sr = sec.get("tvSecondaryNavSectionRenderer") or {}
+        title = text(sr.get("title"))
+        for t in sr.get("tabs") or []:
+            tr = t.get("tabRenderer") or {}
+            e = endpoint(tr.get("endpoint"))
+            ch = {
+                "title": text(tr.get("title")),
+                "thumb": avatar(thumb(tr.get("thumbnail"), 88)),
+                "id": e.get("id", ""),
+                "params": e.get("params", ""),
+                "section": "",
+                "new": "NEW" in json.dumps(tr.get("presentationStyle") or tr.get("badge") or ""),
+            }
+            if not ch["title"]:
+                continue
+            if title and not any(c["section"] == title for c in channels):
+                ch["section"] = title
+            channels.append(ch)
+            if tr.get("selected") and tr.get("content") and page is None:
+                page = parse_content(tr["content"])
+    page = page or {"shelves": [], "more": ""}
+    page.update({"nudge": None, "header": None})
+    return {"channels": channels, "page": page}
+
+
+def tracking(resp: dict[str, Any]) -> dict[str, str]:
+    """A player response's reporting addresses (history, resume, watch time)."""
+    t = resp.get("playbackTracking") or {}
+    return {
+        "playback": dig(t, "videostatsPlaybackUrl", "baseUrl") or "",
+        "watchtime": dig(t, "videostatsWatchtimeUrl", "baseUrl") or "",
+    }
+
+
+def is_premium(resp: Any) -> bool:
+    """YouTube marks a Premium member's pages with its Premium logo."""
+    return bool(resp) and "YOUTUBE_PREMIUM_LOGO" in json.dumps(resp)
 
 
 def parse_suggestions(body: str) -> list[str]:
@@ -593,10 +796,13 @@ def tv_client() -> dict[str, str]:
 
 
 class YouTube:
-    """InnerTube as the TV app, signed out (a guest). The guest's visitor id is kept, so YouTube
-    sees the same TV each time (as a real one is)."""
+    """InnerTube as the TV app, as a guest or as a profile (a signed-in account and one of its
+    channels: ytauth). The guest's visitor id is kept, so YouTube sees the same TV each time (as a
+    real one is)."""
 
     def __init__(self, data_dir: str | None = None, hl: str = "en", gl: str = "US"):
+        from couchbox.services import ytauth
+
         self.dir = data_dir or os.path.expanduser("~/.local/share/couchbox-yt")
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
         self.client = dict(tv_client(), hl=hl, gl=gl)
@@ -614,6 +820,11 @@ class YouTube:
         self.cache: dict[str, tuple[float, Any]] = {}
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(max_workers=6)
+        self.on_event = lambda name, data: None
+        self.auth = ytauth.Auth(self.dir, session=requests.Session(), on_event=lambda n, d: self.on_event(n, d))
+        self.auth.channels_for = self.accounts_list
+        self.profile: dict[str, Any] = {}  # {} : the guest
+        self.sessions: dict[str, dict[str, Any]] = {}  # playback reports in progress, by cpn
 
     # ---------------------------------------------------------------- storage
     def _read(self, name):
@@ -630,30 +841,95 @@ class YouTube:
             json.dump(data, f)
         os.replace(path + ".tmp", path)
 
+    # ---------------------------------------------------------------- who's watching
+    def profiles(self) -> dict[str, Any]:
+        return {"profiles": self.auth.profiles(), "last": self.auth.last_profile(), "current": self.profile.get("id", "")}
+
+    def use(self, pid: str) -> dict[str, Any]:
+        """Watch as this profile ("" or "guest": signed out)."""
+        prof = next((p for p in self.auth.profiles() if p["id"] == pid), None) if pid and pid != "guest" else None
+        if pid and pid != "guest" and not prof:
+            raise YouTubeError("That profile isn't on this TV any more.")
+        with self.lock:
+            self.profile = prof or {}
+            self.cache.clear()
+        self.auth.set_last_profile(pid or "guest")
+        return {"profile": self.profile or None}
+
+    def refresh_channels(self) -> None:
+        """Brand accounts come and go, names and pictures change: read every account's channels again."""
+        from couchbox.services import ytauth
+
+        for a in self.auth.accounts():
+            try:
+                chans = self.accounts_list(self.auth.token(a["id"]))
+                self.auth.save_channels(a["id"], chans)
+            except ytauth.SignedOut:
+                self.on_event("signedOut", {"account": a["id"], "name": a.get("name", "")})
+            except Exception:
+                pass
+
+    def accounts_list(self, token: str) -> list[dict[str, Any]]:
+        body = {"accountReadMask": {"returnOwner": True, "returnBrandAccounts": True, "returnPersonaAccounts": False}}
+        return parse_accounts(self._post("account/accounts_list", body, token=token))
+
     # ---------------------------------------------------------------- requests
-    def call(self, ep: str, body: dict[str, Any], cache: bool = True) -> dict[str, Any]:
-        key = ep + json.dumps(body, sort_keys=True)
-        hit = self.cache.get(key)
-        if cache and hit and time.time() - hit[0] < CACHE_SECONDS:
-            return hit[1]
+    def _post(self, ep: str, body: dict[str, Any], token: str = "", page: str = "") -> dict[str, Any]:
         client = dict(self.client)
         if self.visitor:
             client["visitorData"] = self.visitor
+        context: dict[str, Any] = {"client": client}
+        if page:
+            context["user"] = {"onBehalfOfUser": page}  # a brand account of the signed-in Google account
         headers = {"X-Goog-Visitor-Id": self.visitor} if self.visitor else {}
-        r = self.s.post(f"{API}/{ep}?prettyPrint=false", json={"context": {"client": client}, **body}, headers=headers, timeout=TIMEOUT)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        r = self.s.post(f"{API}/{ep}?prettyPrint=false", json={"context": context, **body}, headers=headers, timeout=TIMEOUT)
         if r.status_code >= 400:
-            raise YouTubeError(f"YouTube said {r.status_code} ({ep})")
+            raise YouTubeError(f"YouTube said {r.status_code} ({ep})", r.status_code)
         data = r.json()
         vd = dig(data, "responseContext", "visitorData")
-        if vd and vd != self.visitor:
+        if vd and vd != self.visitor and not token:
             self.visitor = vd
             self._write("visitor.json", {"visitorData": vd})
+        return data
+
+    def call(self, ep: str, body: dict[str, Any], cache: bool = True) -> dict[str, Any]:
+        prof = self.profile
+        key = prof.get("id", "") + ep + json.dumps(body, sort_keys=True)
+        hit = self.cache.get(key)
+        if cache and hit and time.time() - hit[0] < CACHE_SECONDS:
+            return hit[1]
+        if prof:
+            token = self.auth.token(prof["account"])
+            try:
+                data = self._post(ep, body, token, prof.get("pageId", ""))
+            except YouTubeError as err:
+                if err.args[1:] != (401,):
+                    raise
+                self.auth.expire(prof["account"])  # refused: renew it once
+                data = self._post(ep, body, self.auth.token(prof["account"]), prof.get("pageId", ""))
+            if ep == "browse" and not prof.get("premium") and is_premium(data):
+                prof["premium"] = True
+                self.auth.set_premium(prof["account"], True)
+        else:
+            data = self._post(ep, body)
         with self.lock:
             if len(self.cache) > 200:
                 self.cache.clear()
             self.cache[key] = (time.time(), data)
         return data
 
+    def changed(self) -> None:
+        """Something was liked, saved or subscribed to: pages show it next time."""
+        with self.lock:
+            self.cache.clear()
+
+    def need_profile(self, what: str) -> None:
+        if not self.profile:
+            raise YouTubeError(f"Sign in to {what}.")
+
+    # ---------------------------------------------------------------- pages
     def browse(self, browse_id: str, params: str = "") -> dict[str, Any]:
         body = {"browseId": browse_id}
         if params:
@@ -669,7 +945,7 @@ class YouTube:
 
     def home(self) -> dict[str, Any]:
         page = self.browse("FEtopics")
-        if page["shelves"]:
+        if page["shelves"] or self.profile:
             return page
         # signed out: the note, then the top shelves of the guide's tabs
         tabs = list(self.pool.map(lambda b: self._safe_browse(b), GUEST_HOME))
@@ -690,10 +966,22 @@ class YouTube:
         except Exception:
             return {"shelves": []}
 
-    def channel(self, channel_id: str) -> dict[str, Any]:
-        page = self.browse(channel_id)
+    def channel(self, channel_id: str, params: str = "") -> dict[str, Any]:
+        page = self.browse(channel_id, params)
         if not page["header"]:
             page["header"] = {"title": "", "avatar": "", "banner": "", "lines": [], "description": ""}
+        return page
+
+    def subscriptions(self) -> dict[str, Any]:
+        self.need_profile("see your subscriptions")
+        return parse_subscriptions(self.call("browse", {"browseId": "FEsubscriptions"}))
+
+    def library(self) -> dict[str, Any]:
+        self.need_profile("see your library")
+        page = self.browse("FElibrary")
+        # the tiles are the app's own (History, Watch later...): leave out a shelf of the same
+        page["shelves"] = [s for s in page["shelves"] if not all(i["type"] == "browse" for i in s["items"])]
+        page["tiles"] = [{"title": t, "id": b, "colors": c} for t, b, c in LIBRARY_TILES]
         return page
 
     def search(self, query: str) -> dict[str, Any]:
@@ -720,7 +1008,85 @@ class YouTube:
         return parse_suggestions(r.text)[:10]
 
     def watch(self, video_id: str) -> dict[str, Any]:
-        return parse_watch(self.call("next", {"videoId": video_id}))
+        out = parse_watch(self.call("next", {"videoId": video_id}, cache=False))
+        out["signedIn"] = bool(self.profile)
+        return out
+
+    # ---------------------------------------------------------------- actions (signed in)
+    def like(self, video_id: str, status: str) -> dict[str, Any]:
+        """status: like | dislike | none."""
+        self.need_profile({"like": "like videos", "dislike": "dislike videos"}.get(status, "rate videos"))
+        ep = {"like": "like/like", "dislike": "like/dislike"}.get(status, "like/removelike")
+        self.call(ep, {"target": {"videoId": video_id}}, cache=False)
+        self.changed()
+        return {"like": status}
+
+    def subscribe(self, channel_id: str, on: bool) -> dict[str, Any]:
+        self.need_profile("subscribe")
+        self.call("subscription/subscribe" if on else "subscription/unsubscribe", {"channelIds": [channel_id]}, cache=False)
+        self.changed()
+        return {"subscribed": on}
+
+    def notify(self, params: str, level: str) -> dict[str, Any]:
+        self.need_profile("choose notifications")
+        self.call("notification/modify_channel_preference", {"params": params}, cache=False)
+        return {"notify": level}
+
+    def save_options(self, video_id: str) -> dict[str, Any]:
+        self.need_profile("save videos")
+        out = parse_save_options(self.call("playlist/get_add_to_playlist", {"videoIds": [video_id]}, cache=False))
+        if not any(p["id"] == "WL" for p in out):
+            out.insert(0, {"id": "WL", "title": "Watch later", "saved": False})
+        return {"playlists": out}
+
+    def save(self, video_id: str, playlist_id: str, add: bool) -> dict[str, Any]:
+        self.need_profile("save videos")
+        action = (
+            {"action": "ACTION_ADD_VIDEO", "addedVideoId": video_id}
+            if add
+            else {"action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": video_id}
+        )
+        self.call("browse/edit_playlist", {"playlistId": playlist_id, "actions": [action]}, cache=False)
+        self.changed()
+        return {"saved": add}
+
+    # ---------------------------------------------------------------- history and resume
+    def report(self, video_id: str, cpn: str, event: str, position: float, duration: float) -> dict[str, Any]:
+        """Tell YouTube what's watched, as its TV player does, so History, "resume where you left
+        off" and recommendations follow on every device. event: start (the player's reporting
+        addresses are fetched), progress (every few seconds), pause, end. Guests report nothing."""
+        if not self.profile:
+            return {"ok": False}
+        sess = self.sessions.get(cpn)
+        if event == "start" or sess is None:
+            resp = self.call("player", {"videoId": video_id, "racyCheckOk": True, "contentCheckOk": True}, cache=False)
+            sess = {"urls": tracking(resp), "last": position, "t0": time.time(), "started": False}
+            self.sessions = {k: v for k, v in self.sessions.items() if time.time() - v["t0"] < 6 * 3600}
+            self.sessions[cpn] = sess
+        token = self.auth.token(self.profile["account"])
+        base = {"ver": "2", "cpn": cpn, "cmt": f"{position:.3f}", "len": f"{duration:.3f}"}
+        if not sess["started"] and sess["urls"]["playback"]:
+            self._ping(sess["urls"]["playback"], base, token)  # into History
+            sess["started"] = True
+        if event != "start" and sess["urls"]["watchtime"]:
+            q = dict(
+                base,
+                st=f"{min(sess['last'], position):.3f}",
+                et=f"{position:.3f}",
+                rt=f"{time.time() - sess['t0']:.3f}",
+                state="paused" if event in ("pause", "end") else "playing",
+            )
+            if event == "end":
+                q["final"] = "1"
+            self._ping(sess["urls"]["watchtime"], q, token)  # the resume point and watch time
+        sess["last"] = position
+        return {"ok": True}
+
+    def _ping(self, url: str, query: dict[str, str], token: str) -> None:
+        try:
+            self.s.get(url, params=query, headers={"Authorization": f"Bearer {token}"}, timeout=TIMEOUT)
+        except requests.RequestException:
+            pass  # the next report tries again
 
     # ---------------------------------------------------------------- the guest's searches
     def searches(self) -> list[str]:
@@ -732,6 +1098,17 @@ class YouTube:
             return
         recent = [s for s in self.searches() if s.lower() != q.lower()]
         self._write("searches.json", {"recent": [q, *recent][:20]})
+
+
+# Library's tiles (as YouTube's TV app has them): title, what they open, their two colours
+LIBRARY_TILES = [
+    ("History", "FEhistory", ["#3b0ca3", "#7a3fe0"]),
+    ("Watch later", "VLWL", ["#005f7f", "#0098c7"]),
+    ("Playlists", "FEplaylist_aggregation", ["#00785a", "#005040"]),
+    ("Music", "VLLM", ["#8a2a00", "#e8520a"]),
+    ("Movies & TV", "FEstorefront", ["#7a5600", "#d6a10a"]),
+    ("Podcasts", "FEtopics_podcasts", ["#6a0f6a", "#b0209a"]),
+]
 
 
 # ------------------------------------------------------------------ demo (made-up data, no network)
@@ -760,14 +1137,48 @@ DEMO_TITLES = [
 DEMO_AGES = ["14 hours ago", "2 days ago", "3 weeks ago", "1 month ago", "5 days ago", "7 months ago"]
 
 
-class Demo(YouTube):
-    """Made-up channels and videos for the screenshots (no network). Thumbnails are left out:
-    the cards draw a gradient with the title instead."""
+DEMO_PROFILES = [
+    {"id": "demo1:", "account": "demo1", "pageId": "", "name": "Robin Vale", "handle": "@robinvale", "photo": "", "premium": True},
+    {
+        "id": "demo1:brand1",
+        "account": "demo1",
+        "pageId": "brand1",
+        "name": "Juniper Hollow",
+        "handle": "@juniperhollow",
+        "photo": "",
+        "premium": True,
+    },
+    {"id": "demo2:", "account": "demo2", "pageId": "", "name": "Kit Marlow", "handle": "@kitmarlow", "photo": "", "premium": True},
+]
 
-    def __init__(self):
+
+class Demo(YouTube):
+    """Made-up profiles, channels and videos for the screenshots (no network). Thumbnails are left
+    out: the cards draw a gradient with the title instead. Signed in as the first profile unless
+    told otherwise (use())."""
+
+    def __init__(self, profile: str = "demo1:"):
         self.dir = ""
         self.client = dict(TV_CLIENT, hl="en", gl="US")
         self.recent = ["paper bridge", "coastal trail", "sourdough"]
+        self.profile = next((dict(p) for p in DEMO_PROFILES if p["id"] == profile), {})
+        self.state = {"likes": {}, "subs": {DEMO_CHANNELS[0][0]: "personalized"}, "saved": {"WL": set()}}
+        self.on_event = lambda name, data: None
+        self.code_state = "idle"
+
+    def profiles(self):
+        return {
+            "profiles": [dict(p) for p in DEMO_PROFILES],
+            "last": self.profile.get("id", "guest"),
+            "current": self.profile.get("id", ""),
+        }
+
+    def use(self, pid):
+        self.profile = next((dict(p) for p in DEMO_PROFILES if p["id"] == pid), {})
+        return {"profile": self.profile or None}
+
+    def refresh_channels(self):
+        pass
 
     def _video(self, n, kind="video"):
         cid, name, _handle, _subs = DEMO_CHANNELS[n % len(DEMO_CHANNELS)]
@@ -779,7 +1190,7 @@ class Demo(YouTube):
             lines=[name, f"{(n * 37) % 900 + 12}K views • {DEMO_AGES[n % len(DEMO_AGES)]}"],
             badges=["4K"] if n % 3 == 0 else (["New"] if n % 4 == 1 else []),
             duration="" if kind == "live" else (f"1:{mins:02d}:{(n * 13) % 60:02d}" if n % 5 == 0 else f"{mins}:{(n * 13) % 60:02d}"),
-            progress=0.35 if n % 4 == 2 else 0.0,
+            progress=(0.35 if n % 4 == 2 else 0.0) if self.profile else 0.0,
             live=kind == "live",
             channelId=cid,
         )
@@ -787,10 +1198,17 @@ class Demo(YouTube):
             it["lines"][1] = f"{(n * 11) % 90 + 3}K watching"
         return it
 
-    def _shelf(self, title, start, n=8, kind="video"):
-        return {"title": title, "subtitle": "", "items": [self._video(start + i, kind) for i in range(n)], "more": ""}
+    def _shelf(self, title, start, n=8, kind="video", subtitle=""):
+        return {"title": title, "subtitle": subtitle, "items": [self._video(start + i, kind) for i in range(n)], "more": ""}
 
     def home(self):
+        if not self.profile:
+            return {
+                "shelves": [self._shelf("Trending", 4), self._shelf("Live now", 16, kind="live")],
+                "more": "",
+                "nudge": {"title": "Make YouTube your own", "subtitle": "Sign in to see the latest videos tailored to your interests."},
+                "header": None,
+            }
         return {
             "shelves": [
                 self._shelf("Recommended", 0),
@@ -804,6 +1222,11 @@ class Demo(YouTube):
         }
 
     def browse(self, browse_id, params=""):
+        if browse_id in ("FEhistory", "VLWL", "FEplaylist_aggregation", "VLLM"):
+            title = {"FEhistory": "History", "VLWL": "Watch later", "FEplaylist_aggregation": "Playlists", "VLLM": "Liked music"}[browse_id]
+            shelf = self._shelf(title, 3, n=11)
+            shelf["grid"] = True
+            return {"shelves": [shelf], "more": "", "nudge": None, "header": None}
         label = next((g[1] for g in GUIDE if g[2] == browse_id), "Videos")
         n = sum(map(ord, browse_id)) % 20
         return {
@@ -820,7 +1243,7 @@ class Demo(YouTube):
     def more(self, token):
         return {"items": [], "more": ""}
 
-    def channel(self, channel_id):
+    def channel(self, channel_id, params=""):
         i = next((k for k, c in enumerate(DEMO_CHANNELS) if c[0] == channel_id), 0)
         cid, name, handle, subs = DEMO_CHANNELS[i]
         return {
@@ -834,6 +1257,29 @@ class Demo(YouTube):
                 "lines": [handle, subs, f"{120 + i * 40} videos"],
                 "description": "Experiments, explanations and the occasional disaster, every other Thursday.",
             },
+        }
+
+    def subscriptions(self):
+        self.need_profile("see your subscriptions")
+        chans = [{"title": "All", "thumb": "", "id": "", "params": "", "section": "", "new": False}]
+        for k, (cid, name, _h, _s) in enumerate(DEMO_CHANNELS):
+            chans.append({"title": name, "thumb": "", "id": cid, "params": "", "section": "A-Z" if k == 3 else "", "new": k % 2 == 0})
+        grid = self._shelf("", 12, n=9)
+        grid["grid"] = True
+        return {"channels": chans, "page": {"shelves": [self._shelf("Most relevant", 2), grid], "more": "", "nudge": None, "header": None}}
+
+    def library(self):
+        self.need_profile("see your library")
+        return {
+            "shelves": [
+                self._shelf("History", 1),
+                self._shelf("Watch later", 6, subtitle="Videos you've added"),
+                self._shelf("Liked videos", 9),
+            ],
+            "more": "",
+            "nudge": None,
+            "header": None,
+            "tiles": [{"title": t, "id": b, "colors": c} for t, b, c in LIBRARY_TILES],
         }
 
     def search(self, query):
@@ -858,23 +1304,66 @@ class Demo(YouTube):
     def watch(self, video_id):
         n = int(video_id[4:]) if video_id.startswith("demo") and video_id[4:].isdigit() else 0
         v = self._video(n)
-        cid, name, _handle, subs = DEMO_CHANNELS[n % len(DEMO_CHANNELS)]
+        cid, name, handle, subs = DEMO_CHANNELS[n % len(DEMO_CHANNELS)]
+        level = self.state["subs"].get(cid, "")
         return {
             "video": {
                 "id": v["id"],
                 "title": v["title"],
                 "channel": name,
                 "channelId": cid,
+                "handle": handle,
                 "avatar": "",
                 "subscribers": subs,
-                "subscribed": False,
+                "subscribed": bool(level) and bool(self.profile),
                 "views": v["lines"][1].split(" • ")[0],
-                "date": DEMO_AGES[n % len(DEMO_AGES)].replace(" ago", " ago"),
+                "date": DEMO_AGES[n % len(DEMO_AGES)],
                 "live": False,
+                "like": self.state["likes"].get(video_id, "none") if self.profile else "none",
+                "likes": 1200 + n,
+                "notify": level if self.profile else "",
+                "notifyOptions": [
+                    {"level": "all", "label": "All", "params": "all"},
+                    {"level": "personalized", "label": "Personalized", "params": "personalized"},
+                    {"level": "none", "label": "None", "params": "none"},
+                ],
             },
             "related": [self._video(n + 1 + i) for i in range(9)],
             "next": f"demo{n + 1:07d}",
+            "start": 0,
+            "signedIn": bool(self.profile),
         }
+
+    def like(self, video_id, status):
+        self.need_profile("rate videos")
+        self.state["likes"][video_id] = status
+        return {"like": status}
+
+    def subscribe(self, channel_id, on):
+        self.need_profile("subscribe")
+        if on:
+            self.state["subs"][channel_id] = "personalized"
+        else:
+            self.state["subs"].pop(channel_id, None)
+        return {"subscribed": on}
+
+    def notify(self, params, level):
+        self.need_profile("choose notifications")
+        return {"notify": level}
+
+    def save_options(self, video_id):
+        self.need_profile("save videos")
+        names = [("WL", "Watch later"), ("PLdemo1", "Road trip"), ("PLdemo2", "Bread experiments"), ("PLdemo3", "Watch with the kids")]
+        return {"playlists": [{"id": k, "title": t, "saved": video_id in self.state["saved"].get(k, set())} for k, t in names]}
+
+    def save(self, video_id, playlist_id, add):
+        self.need_profile("save videos")
+        got = self.state["saved"].setdefault(playlist_id, set())
+        (got.add if add else got.discard)(video_id)
+        return {"saved": add}
+
+    def report(self, video_id, cpn, event, position, duration):
+        return {"ok": bool(self.profile)}
 
     def searches(self):
         return list(self.recent)
