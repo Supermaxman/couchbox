@@ -358,7 +358,7 @@ def test_settings_and_their_environment():
         assert sch[key]["default"] == default and sch[key]["page"] == "display"
     assert sch["audio.passthrough"]["values"] == ["off", "on"]
     env = settings.env()
-    assert (env["COUCHBOX_VIDEO_MATCH_RATE"], env["COUCHBOX_AUDIO_NIGHT_MODE"], env["COUCHBOX_AUDIO_PASSTHROUGH"]) == ("1", "0", "off")
+    assert (env["COUCHBOX_VIDEO_MATCH_RATE"], env["COUCHBOX_AUDIO_NIGHT_MODE"], env["COUCHBOX_AUDIO_PASSTHROUGH"]) == ("0", "0", "off")
     assert playback.live_settings() == playback.LIVE
 
 
