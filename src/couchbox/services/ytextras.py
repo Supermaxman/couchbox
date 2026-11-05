@@ -169,6 +169,8 @@ class Extras:
             return {}
         if not isinstance(data, dict) or "dislikes" not in data:
             return {}
+        if not data.get("likes") and not data.get("dislikes") and not data.get("viewCount"):
+            return {}  # a video it knows nothing about (it answers 0 and 0)
         return {"likes": int(data.get("likes") or 0), "dislikes": int(data.get("dislikes") or 0)}
 
 

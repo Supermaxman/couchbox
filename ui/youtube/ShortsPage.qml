@@ -109,6 +109,12 @@ FocusScope {
             }
         }
     }
+    Corners {                                  // the ambient colour into the frame's rounded corners
+        x: page.place.x - 8 * Y.u; y: page.place.y - 8 * Y.u
+        width: page.place.width + 16 * Y.u; height: page.place.height + 16 * Y.u
+        r: 36 * Y.u
+        color: Qt.darker(page.tint, 1.15)
+    }
     Rectangle {                                // the frame (white with the focus)
         id: frame
         x: page.place.x - 8 * Y.u; y: page.place.y - 8 * Y.u
