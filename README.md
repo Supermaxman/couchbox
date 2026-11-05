@@ -14,12 +14,12 @@
 ## What it does
 
 - **Flash and go.** You write the image to a USB stick, plug the box into the TV, and follow the on-screen setup with your TV's remote, a Fire TV remote or your phone. The setup installs Couchbox onto the SSD. You don't need a keyboard, a monitor, SSH or a config file.
-- **TV interface:** KDE Plasma Bigscreen on Ubuntu, with a home row you can reorder and hide apps in. It shows a clock and the weather.
+- **TV interface:** KDE Plasma Bigscreen on Ubuntu, with a home row you can reorder and hide apps in. It shows a clock and the weather, and under the apps a Continue watching row: what's part-watched in Jellyfin, Dropout, 2nd Try and Nebula, and followed Twitch channels that are live, newest first; OK resumes it in its app.
 - **Apps:**
   - YouTube (VacuumTube, ad-free, with SponsorBlock);
   - Jellyfin (hardware HEVC decoding on the Pi 5);
   - native TV apps for Seerr, Frigate (your cameras: live view, alerts, recordings, and a camera popping up over whatever is on when it sees someone), Spotify (search, your library, playlists, played on the TV; bring your own Spotify developer app and Premium), Maps (drive times, directions, when to leave; OpenStreetMap, or Google with your key), Twitch (chat overlay, emotes), Nebula, Dropout and 2nd Try;
-  - Search: Google and the pages it finds, made for the remote (link-hopping, a reader view, and assistant summaries when the assistant is set up);
+  - Search: Google and the pages it finds, made for the remote (link-hopping, a reader view, and assistant summaries when the assistant is set up), with "On this TV" above the results: the same search in Jellyfin, Movies & TV, Dropout, 2nd Try, Nebula, Twitch and YouTube, each opening in its app;
   - any website as a remote-friendly web app;
   - AirPlay and FCast receivers.
 - **Remotes:**

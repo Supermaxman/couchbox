@@ -20,6 +20,7 @@
 │  ├─ couchbox-airplay .... UxPlay                                                    │
 │  ├─ couchbox-mediakeys .. Play/Pause, Rewind, FF → whatever is playing (MPRIS)      │
 │  ├─ couchbox-frigate-popup  a camera's live picture over anything (layer-shell QML) │
+│  ├─ couchbox-ontv ....... Continue watching for the home screen; opens items in apps│
 │  └─ voice overlay ....... the pill at the bottom of the screen (layer-shell QML)    │
 │                │  Unix socket /run/couchbox/couchboxd.sock (group couchbox)         │
 │                ▼                                                                    │
@@ -51,6 +52,7 @@
 | `couchbox-memory` | Python | root | Idle app shutdown, swap, caches | `mtv-memory`, `mtv-swap`, `mtv-clean-caches` |
 | `couchbox-mediakeys` | Python | tv | The remote's media keys for whatever is playing: the app in front's player, else the one playing, else the one paused last, over MPRIS (couchbox-input hands it the keys) | new |
 | `couchbox-frigate-popup` | Python + QML (PySide6, libmpv) | tv | Frigate pop-ups: polls Frigate's review items with the Frigate app's sign-in; a matching new one shows its camera live in a corner, over whatever is on, in a layer-shell overlay that never takes the keyboard. While it shows, couchbox-input hands it OK (open the camera) and Back (dismiss) over its appctl socket, only while its flag file exists | new |
+| `couchbox-ontv` | Python (+ QML for its screenshots) | tv | "On this TV" (`couchbox.ontv`): every 5 minutes, and when the home screen comes to the front, asks the apps on the home row what's part-watched (Jellyfin's Resume list with the Jellyfin app's own sign-in, read over DevTools while it runs and kept; Dropout, 2nd Try and Nebula's Continue Watching; Twitch's followed channels live now) and writes one row, newest first, to `~/.cache/couchbox-ontv/continue.json` for the home screen. Opens items in their app: the streaming apps and Movies & TV with `--open` (or their appctl socket when running), Jellyfin and YouTube through couchbox-voice's `/play/jellyfin` and `/search/youtube`. The Search app uses the same module for "On this TV" | new |
 | Home screen | QML (GPL files) | tv | Bigscreen home overrides, built from settings | `theme/home` |
 | `couchbox-settings`, `couchbox-setup` | QML + PySide6 | tv | Settings app and first-boot wizard | new |
 | Native apps | QML + PySide6 + libmpv (Search: Qt WebEngine) | tv | Seerr, Frigate, Weather, Search, Spotify, Maps, Movies & TV, Twitch, Nebula, Dropout, 2nd Try | `mtv-seerr`, `mtv-dropout` + `dropout/` |

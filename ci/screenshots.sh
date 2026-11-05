@@ -48,11 +48,12 @@ shot weather-day-hour couchbox-weather --keys right,right,right,ok
 shot weather-alerts couchbox-weather --open alerts
 shot weather-radar couchbox-weather --open radar
 shot weather-radar-paused couchbox-weather --open radar --keys up,ok,left,left
-# Search with made-up pages: the start page, results (with the AI answer), the toolbar, the
-# reader and a summary
+# Search with made-up pages: the start page, results (with the AI answer and On this TV), On this
+# TV in focus, the toolbar, the reader and a summary
 shot search-start couchbox-search
 shot search-results couchbox-search --open "search:eiffel tower height"
-shot search-toolbar couchbox-search --open "search:eiffel tower height" --keys up
+shot search-on-this-tv couchbox-search --open "search:eiffel tower height" --keys up,right
+shot search-toolbar couchbox-search --open "search:eiffel tower height" --keys up,up
 shot search-reader couchbox-search --open reader
 shot search-summary couchbox-search --open summary
 # the Spotify app with made-up music: home, search, library, an album, a playlist Spotify won't
@@ -80,6 +81,11 @@ shot maps-google-places couchbox-maps
 shot maps-google-transit couchbox-maps --open 'to:{"place":{"name":"Airport","lat":37.6213,"lon":-122.379},"mode":"transit"}'
 shot maps-leave-by couchbox-maps --open 'leave:{"place":{"name":"Airport","address":"San Francisco International Airport","lat":37.6213,"lon":-122.379}}'
 unset COUCHBOX_MAPS_DEMO_GOOGLE
+# the home screen's Continue watching row under the apps (made-up items): the apps in focus, a
+# card in focus, and without anything to continue
+shot home-continue couchbox-ontv
+shot home-continue-card couchbox-ontv --keys down,right
+shot home-continue-empty couchbox-ontv --empty
 # Movies & TV with made-up titles: home, a movie, a show (and its seasons row), a season,
 # a person (known for, a filmography), search, the top-rated grid
 shot movies-home couchbox-movies
@@ -107,6 +113,8 @@ shot edge-movies-home-rows couchbox-movies --keys down,down,$r6
 shot edge-movies-top-last couchbox-movies --open top:movie --keys $d13,$r6
 shot edge-movies-person-work couchbox-movies --open person:303 --keys down,$r6
 shot edge-search-recent couchbox-search --keys down,down
+shot edge-search-on-this-tv-last couchbox-search --open "search:eiffel tower height" --keys up,$r6,$r6
+shot edge-home-continue-last couchbox-ontv --keys down,$r6,$r6
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
 # the remote's Back key on every app's pages: it goes back a level or closes the app
 python3 ci/back_check.py "$OUT/back" || fail=1
