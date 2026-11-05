@@ -158,8 +158,8 @@ def run(fol, snap, seconds, passive=False):
 
 def test_a_film_switches_once_its_frame_rate_holds(follow):
     f = follow()
-    run(f, playing(), 2)
-    assert follow.calls == []  # not sure yet
+    run(f, playing(), 1)
+    assert follow.calls == []  # the declared rate has to read the same twice
     run(f, playing(), 30)
     assert follow.calls == [pytest.approx(23.976)]  # once
     assert playback.owner() == {"pid": 100, "who": "a", "fps": pytest.approx(23.976)}
@@ -383,3 +383,52 @@ def test_owner_file_is_in_the_runtime_dir(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "couchbox-rate.json").read_text())["pid"] == 5
     playback.release()
     assert playback.owner() is None
+
+
+def jittery(i, declared):
+    """HLS with software H.264 on the Pi: the measured rate wanders by a few %."""
+    return playing("https://cdn.example/ep.m3u8?token=x", fps=23.976 * (1.04 if i % 2 else 0.97), container=declared)
+
+
+def test_a_declared_rate_wins_over_a_jittery_measurement(follow, capsys):
+    f = follow()
+    for i in range(4):
+        follow.clock.t += 1
+        f.step(jittery(i, 23.976023976))
+    assert follow.calls == [pytest.approx(23.976, rel=1e-4)]
+    log = capsys.readouterr().err
+    assert "HLS https" in log and "declared 23.97" in log and "match 23.976 fps (declared rate)" in log
+    assert "cdn.example" not in log and "token" not in log  # no addresses in the journal
+
+
+def test_without_a_declared_rate_a_jittery_measurement_never_switches(follow, capsys):
+    f = follow()
+    for i in range(40):
+        follow.clock.t += 1
+        f.step(jittery(i, 0.0))  # nothing declared
+    assert follow.calls == []
+    assert "Settings mode (no frame rate to go by in 30 s)" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("declared", [90000.0, 1000.0, 15.0, -1.0])
+def test_a_declared_rate_outside_tv_rates_is_ignored(follow, declared):
+    f = follow()
+    run(f, playing(fps=25.0, container=declared), 5)
+    assert follow.calls == [pytest.approx(25.0)]  # the steady measurement decides
+
+
+def test_every_decision_is_logged_once_with_its_reason(follow, capsys):
+    f = follow()
+    run(f, playing("/run/user/1000/nebula.m3u8", duration=95.0), 10)
+    run(f, playing("https://x/live.m3u8", fps=60.0, duration=None), 10)
+    log = capsys.readouterr().err.splitlines()
+    assert len(log) == 2
+    assert "HLS file" in log[0] and "duration 95 s" in log[0] and "a clip" in log[0]
+    assert "live: no duration" in log[1]
+
+
+def test_path_kind():
+    assert playback.path_kind("https://a/b/master.m3u8?x=1") == "HLS https"
+    assert playback.path_kind("/tmp/list.m3u8") == "HLS file"
+    assert playback.path_kind("http://127.0.0.1:5000/vod.mp4") == "http"
+    assert playback.path_kind(None) == "file"
