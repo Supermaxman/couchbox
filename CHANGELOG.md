@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/Supermaxman/couchbox/compare/v0.18.0...v0.18.1) (2026-11-05)
+
+
+### Fixed
+
+* **youtube:** round 1 of the judge's findings against Leanback ([#98](https://github.com/Supermaxman/couchbox/issues/98)) ([8c93ff3](https://github.com/Supermaxman/couchbox/commit/8c93ff3d0d0b4bc316d811db18f1ec025d36bf6e))
+
 ## [0.18.0](https://github.com/Supermaxman/couchbox/compare/v0.17.0...v0.18.0) (2026-11-05)
 
 
