@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/Supermaxman/couchbox/compare/v0.14.0...v0.15.0) (2026-11-05)
+
+
+### New
+
+* **phone:** send to TV, a link from the phone opens in its app ([#80](https://github.com/Supermaxman/couchbox/issues/80)) ([6a82e16](https://github.com/Supermaxman/couchbox/commit/6a82e16dc4d804e22ab87e160f83c6b24d8e095a))
+* **settings:** System shows what the box is doing right now ([#79](https://github.com/Supermaxman/couchbox/issues/79)) ([6bd3a39](https://github.com/Supermaxman/couchbox/commit/6bd3a3990676212aeeeff40b4a9c913de85eb62e))
+
 ## [0.14.0](https://github.com/Supermaxman/couchbox/compare/v0.13.0...v0.14.0) (2026-11-05)
 
 

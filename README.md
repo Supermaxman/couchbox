@@ -25,7 +25,7 @@
 - **Remotes:**
   - The Fire TV remote pairs over Bluetooth. Its mic and its TV power and volume keys work.
   - The TV's own remote works over CEC.
-  - A phone page lets you type and dictate.
+  - A phone page lets you type and dictate, and send a link to the TV: YouTube, Twitch, Nebula, Dropout and Jellyfin links play in their apps (from an iPhone's Share button too, with a Shortcut the page explains).
 - **Settings on the TV for everything:**
   - Wi-Fi, time zone and location, and the home screen layout;
   - media servers (Jellyfin, Seerr) and cameras (Frigate);

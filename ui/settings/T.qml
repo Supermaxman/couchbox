@@ -111,7 +111,7 @@ QtObject {
         "tv": "The TV's volume", "box": "This box's volume", "automatic": "Automatic", "manual": "Manual",
         "stable": "Stable", "beta": "Beta", "security": "Security updates", "all": "All updates",
         "imperial": "°F, miles", "metric": "°C, km", "graphite": "Graphite", "neon": "Neon", "amber": "Amber",
-        "sakura": "Sakura", "matrix": "Matrix"})
+        "sakura": "Sakura", "matrix": "Matrix", "fast": "Fast", "quality": "Quality"})
     function nice(v) {
         if (v === true) return "On";
         if (v === false) return "Off";

@@ -88,9 +88,21 @@ restart_audio() {  # clears systemd's start limit first (a failed start leaves p
 }
 sink_id() { as_tv pw-dump 2>/dev/null | jq -r --arg n "$1" '[.[] | select(.info.props["node.name"]? == $n) | .id] | first // empty' || true; }
 
+# Settings → Display and sound → Surround sound passthrough: the sink also takes Dolby / DTS
+# bitstreams (IEC 61937), for the codecs the TV lists in its ELD. PipeWire then opens the port
+# with the IEC958 "non-audio" flag (AES0=0x06, which vc4-hdmi.conf's hdmi: PCM passes on), and
+# mpv's audio-spdif sends them. Off: PCM only, as before.
+iec958=
+if [[ ${COUCHBOX_AUDIO_PASSTHROUGH:-off} == on && -n $idx ]]; then
+  iec958=$(/usr/lib/couchbox/bin/couchbox-playback codecs --pipewire --card "$idx" 2>/dev/null || true)
+fi
+
 # Only the port with a screen attached: opening a vc4-hdmi port with nothing on it fails
 # (error 524), and must never stop PipeWire from starting (nofail).
 write_conf() {  # write_conf <card index>
+  local codecs=
+  [[ -z $iec958 ]] || codecs="
+      iec958.codecs      = [ PCM $iec958 ]"
   cat <<EOF2
 # couchbox: stereo sink for the Raspberry Pi HDMI port with the TV on it, via alsa-lib's
 # hdmi: PCM (it does the IEC958 conversion the vc4-hdmi hardware needs). Written by couchbox-audio.
@@ -104,7 +116,7 @@ context.objects = [
       api.alsa.path      = "hdmi:CARD=vc4hdmi$1,DEV=0"
       audio.channels     = 2
       audio.position     = [ FL FR ]
-      node.pause-on-idle = false
+      node.pause-on-idle = false$codecs
     }
     flags = [ nofail ]
   }

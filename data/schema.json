@@ -75,6 +75,9 @@
     "display.outputs": {"type": "list", "items": "string", "default": ["HDMI-A-1", "HDMI-A-2"], "page": "display", "label": "HDMI ports"},
     "audio.output": {"type": "string", "default": "auto", "page": "display", "label": "Sound output"},
     "video.drawing": {"type": "enum", "values": ["fast", "quality"], "default": "fast", "page": "display", "label": "Video drawing", "help": "Fast: lighter on the Pi's graphics chip (smoother 60 fps, cooler, quieter fan). Quality: mpv's sharper scaling filters. Changes playing video at once."},
+    "video.match_rate": {"type": "bool", "default": false, "page": "display", "label": "Match the TV to the video's frame rate", "help": "Films (24 fps) and TV shows (25 or 30 fps) switch the TV to a matching refresh rate while they play, for smooth motion, then back. The screen goes black for a second or two when it switches. Not for live streams or short clips."},
+    "audio.night_mode": {"type": "bool", "default": false, "page": "display", "label": "Night mode", "help": "Evens out the sound for quiet late-night watching: loud scenes quieter, speech louder. Changes playing video at once."},
+    "audio.passthrough": {"type": "enum", "values": ["off", "on"], "default": "off", "page": "display", "label": "Surround sound passthrough (experimental)", "help": "Sends Dolby Digital, Dolby Digital Plus and DTS to the TV or soundbar undecoded, for the formats the TV says it supports. May not work on every TV: if a video has no sound, turn this off. Off while Night mode is on. Restarts the sound; Jellyfin uses it from its next start."},
 
     "time.timezone": {"type": "string", "default": "Etc/UTC", "pattern": "^[A-Za-z0-9_+/-]{1,60}$", "page": "time", "label": "Time zone"},
     "location.name": {"type": "string", "default": "", "max_len": 80, "page": "time", "label": "Location"},

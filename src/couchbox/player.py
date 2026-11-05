@@ -11,8 +11,13 @@ QML:
     video.position / duration / paused / buffering / ended / subtitles / subtitle
     video.setSubtitle(id)  (0: off)    video.stop()
 Set COUCHBOX_MUTE=1 to play without sound (tests while the TV is in use).
+
+Settings → Display and sound, followed live (couchbox.playback): Video drawing (below), Match
+the TV's refresh rate (a Follower per player, polled once a second), Night mode (an audio
+filter) and Surround sound passthrough (audio-spdif).
 """
 
+import atexit
 import ctypes
 import os
 import resource
@@ -24,6 +29,8 @@ import mpv
 from PySide6.QtCore import Property, Qt, Signal, Slot
 from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat
 from PySide6.QtQuick import QQuickFramebufferObject
+
+from couchbox import playback
 
 try:
     from PySide6.QtQuick import QQuickOpenGLUtils
@@ -95,33 +102,37 @@ FAST = {
     "hdr-compute-peak": "no",
 }
 _players = weakref.WeakSet()
-_drawing = {"mode": None}
+_live = {}  # the playback settings (playback.LIVE), followed while the app runs
 
 
-def _setting_drawing():
-    try:
-        from couchbox import settings
-
-        return settings.load().get("video.drawing", "fast")
-    except Exception:  # noqa: BLE001
-        return "fast"
+def _settings_changed(changed):
+    """Follow the settings while the app runs, so a change shows on the playing video."""
+    _live.update(changed)
+    for p in list(_players):
+        p.apply_settings(changed)
 
 
-def _watch_drawing():
-    """Follow the setting while the app runs, so a change shows on the playing video."""
-    from couchbox import ipc
-
+def _follow_rate(ref):
+    """Once a second, show the player's state to its refresh-rate Follower (it may switch the
+    TV: kscreen-doctor, here rather than on Qt's thread). Ends with the player."""
     while True:
+        time.sleep(1)
+        p = ref()
+        if p is None or p._closed:
+            return
         try:
-            for ev in ipc.subscribe(["settings"]):
-                mode = (ev.get("data") or {}).get("video.drawing")
-                if mode:
-                    _drawing["mode"] = mode
-                    for p in list(_players):
-                        p.set_drawing(mode)
-        except Exception:  # noqa: BLE001  (daemon restarting): try again
+            p._rate.step(playback.snapshot(p._get), passive=p._live_cam)
+        except Exception:  # noqa: BLE001
             pass
-        time.sleep(10)
+        del p
+
+
+@atexit.register
+def _put_rate_back():
+    """The app is quitting: Settings' mode again, if a player here switched (a guard process
+    does it should the app be killed instead)."""
+    for p in list(_players):
+        p._rate.close()
 
 
 class _Renderer(QQuickFramebufferObject.Renderer):
@@ -209,6 +220,9 @@ class MpvVideo(QQuickFramebufferObject):
         self._tracks = []
         self._sid = 0
         self._error = ""
+        self._closed = False
+        self._live_cam = False  # loadLive(): a camera (never takes the TV's mode from another player)
+        self._rate = playback.Follower(who=f"player-{id(self)}", on_claim=playback.start_guard)
         self._quality = {}  # mpv's defaults, as text for "set" (cscale's default "" reads back as 0)
         for k in FAST:
             try:
@@ -216,11 +230,12 @@ class MpvVideo(QQuickFramebufferObject):
                 self._quality[k] = "yes" if v is True else "no" if v is False else str(v or "")
             except Exception:  # noqa: BLE001  (an mpv without the option)
                 pass
-        if _drawing["mode"] is None:
-            _drawing["mode"] = _setting_drawing()
-            threading.Thread(target=_watch_drawing, daemon=True).start()
+        if not _live:
+            _live.update(playback.live_settings())
+            threading.Thread(target=playback.watch_settings, args=(_settings_changed,), daemon=True).start()
         _players.add(self)
-        self.set_drawing(_drawing["mode"])
+        self.apply_settings(_live)
+        threading.Thread(target=_follow_rate, args=(weakref.ref(self),), daemon=True).start()
         self.frameReady.connect(self.update, Qt.QueuedConnection)
         self._prop.connect(self._on_prop, Qt.QueuedConnection)
         for name in ("time-pos", "duration", "pause", "paused-for-cache", "eof-reached", "track-list", "sid"):
@@ -268,6 +283,29 @@ class MpvVideo(QQuickFramebufferObject):
             self._error = value
             self.errorChanged.emit()
 
+    def _get(self, name):
+        return self.mpv[name]
+
+    def apply_settings(self, changed):
+        """Playback settings (all of them at start, then each change) on this player."""
+        if "video.drawing" in changed:
+            self.set_drawing(_live["video.drawing"])
+        test = os.environ.get("COUCHBOX_MUTE") == "1"  # someone's watching the TV: leave its mode and sound be
+        if "video.match_rate" in changed:
+            self._rate.set_enabled(bool(_live["video.match_rate"]) and not test)
+        if "audio.night_mode" in changed:
+            self._set("af", playback.night_filter(bool(_live["audio.night_mode"])))
+        if ("audio.passthrough" in changed or "audio.night_mode" in changed) and not test:
+            # mpv starts the audio decoder again, so a playing video changes at once
+            codecs = playback.tv_codecs() if _live["audio.passthrough"] == "on" else []
+            self._set("audio-spdif", playback.spdif(_live["audio.passthrough"], bool(_live["audio.night_mode"]), codecs))
+
+    def _set(self, k, v):
+        try:
+            self.mpv.command("set", k, v)
+        except Exception:  # noqa: BLE001
+            pass
+
     def set_drawing(self, mode):
         for k, v in (FAST if mode == "fast" else self._quality).items():
             if k in self._quality:
@@ -280,6 +318,7 @@ class MpvVideo(QQuickFramebufferObject):
     # ------------------------------------------------------------------ QML API
     @Slot(str, float)
     def load(self, url, start):
+        self._live_cam = False
         self._ended = False
         self._error = ""
         self.endedChanged.emit()
@@ -291,6 +330,7 @@ class MpvVideo(QQuickFramebufferObject):
     def loadLive(self, url):
         """A live camera (an endless fMP4 stream): small buffers, start as soon as there's a frame.
         The options are per file, so later load()s play as before."""
+        self._live_cam = True
         self._ended = False
         self._error = ""
         self.endedChanged.emit()
@@ -342,6 +382,8 @@ class MpvVideo(QQuickFramebufferObject):
 
     @Slot()
     def shutdown(self):
+        self._closed = True
+        self._rate.close()
         self.mpv.terminate()
 
     position = Property(float, lambda s: s._pos, notify=positionChanged)

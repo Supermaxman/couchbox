@@ -121,6 +121,8 @@ STEPS: list[tuple[tuple[str, ...], Callable[[dict[str, Any]], None], str]] = [
     ),
     (("appearance.theme",), lambda s: tool("theme"), "Theme applied."),
     (("appearance.scale", "display."), lambda s: tool("display"), "Display updated."),
+    # the HDMI sink takes Dolby / DTS bitstreams only while passthrough is on (couchbox-audio)
+    (("audio.passthrough",), lambda s: tool("audio"), "Sound updated: reopen any app that lost its sound."),
     (("system.swap_gb",), lambda s: tool("swap"), ""),
     (("system.fan",), lambda s: tool("fan"), ""),
 ]
