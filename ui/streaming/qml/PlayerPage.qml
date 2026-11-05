@@ -76,12 +76,18 @@ FocusScope {
         }, err => { console.log("playback " + id + ": " + err); message = "This video couldn't be loaded. Back to go back."; });
     }
     Component.onCompleted: start(videoId)
+    // Leaving: the video stops whatever else fails (a paused, loaded video keeps the TV's
+    // refresh rate matched to it). The position is read before: stop() clears it.
     Component.onDestruction: {
-        if (hasChat) D.call("chatPart", {});
-        D.videoInset = 0;
-        report(video.ended ? "ended" : "timeupdate");
-        video.stop();
-        if (typeof mpris !== "undefined" && mpris) mpris.update(false, false, "", "", 0, 0);
+        const ended = video.ended;
+        try {
+            report(ended ? "ended" : "timeupdate");
+            if (hasChat) D.call("chatPart", {});
+            D.videoInset = 0;
+        } finally {
+            video.stop();
+            if (typeof mpris !== "undefined" && mpris) mpris.update(false, false, "", "", 0, 0);
+        }
     }
 
     // the remote's media keys (Plasma sends them over MPRIS) and what Plasma shows as playing

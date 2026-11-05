@@ -351,6 +351,23 @@ STABLE_SPREAD = 0.005  # ... to within 0.5 %
 GIVE_UP = 30.0  # no frame rate to go by then (variable frame rate, audio only): leave the TV be
 MIN_DURATION = 300.0  # shorter (trailers, clips, recordings of an event): not worth two blank screens
 RESTORE_AFTER = 10.0  # stopped this long: Settings' mode again (the next episode starts sooner)
+AWAY_AFTER = 10.0  # paused and out of sight (its page closed, another app in front) this long: the same
+
+
+def app_in_front(pid: int) -> bool | None:
+    """Whether the window in front belongs to process pid's app (same process, or same systemd
+    unit), from couchbox-mediakeys (which KWin tells); None when it can't be asked."""
+    try:
+        from couchbox import appctl, mediakeys
+
+        w = (appctl.call(mediakeys.SITE, {"op": "state"}, timeout=2) or {}).get("window") or {}
+        if not w:
+            return None
+        if w.get("pid") == pid:
+            return True
+        return bool(w.get("unit")) and w.get("unit") == mediakeys.unit_of(mediakeys.read_cgroup(pid))
+    except Exception:  # noqa: BLE001  (couchbox-mediakeys not running)
+        return None
 
 
 class Follower:
@@ -363,13 +380,17 @@ class Follower:
     mode and stays there until playback has stopped for RESTORE_AFTER, so going to the next
     episode doesn't switch twice. Live streams and clips put Settings' mode back only if this
     player switched, or, when they aren't passive (a camera pop-up is), if another player left the
-    TV switched (its film paused, then Twitch opened). The switching itself (switch: set_rate) is
-    done here, on the caller's thread."""
+    TV switched (its film paused, then Twitch opened). A paused video out of sight (shown: its
+    player item hidden, its page closed; or another app in front: front()) for AWAY_AFTER gives
+    the TV back too; playing it again switches again. The switching itself (switch: set_rate)
+    is done here, on the caller's thread."""
 
-    def __init__(self, pid: int | None = None, who: str = "", switch=None, clock=time.monotonic, on_claim=None):
+    def __init__(self, pid: int | None = None, who: str = "", switch=None, clock=time.monotonic, on_claim=None, front=None):
         self.pid = pid or os.getpid()
         self.who = who
         self.switch = switch or (lambda fps: set_rate(fps))
+        self.front = front or (lambda: app_in_front(self.pid))
+        self.away_since: float | None = None
         self.clock = clock
         self.on_claim = on_claim
         self.enabled = True
@@ -422,11 +443,11 @@ class Follower:
                 self._home(passive=True)
             self.path = None  # the video playing now is looked at afresh
 
-    def step(self, p: dict[str, Any], passive: bool = False) -> None:
+    def step(self, p: dict[str, Any], passive: bool = False, shown: bool = True) -> None:
         with self.lock:
-            self._step(p, passive)
+            self._step(p, passive, shown)
 
-    def _step(self, p: dict[str, Any], passive: bool) -> None:
+    def _step(self, p: dict[str, Any], passive: bool, shown: bool) -> None:
         now = self.clock()
         if not self.enabled:
             return
@@ -434,6 +455,8 @@ class Follower:
             if self.stopped_at is None:
                 self.stopped_at = now
             if now - self.stopped_at >= RESTORE_AFTER:
+                if self.switched is not None:
+                    _log(f"{self.who or 'player'}: stopped for {RESTORE_AFTER:.0f} s: Settings' mode")
                 self._home(passive=True)
             self.path = None  # whatever plays next is looked at afresh (even the same file)
             return
@@ -443,9 +466,15 @@ class Follower:
         paused = bool(p.get("paused"))
         resumed, self.paused = self.paused and not paused, paused
         if self.decided:
-            # resumed after another video took the TV over (a paused film, then Twitch): take it back
+            # resumed after another video took the TV over (a paused film, then Twitch), or after
+            # it was put back while out of sight: take it back
             if resumed and self.switched is not None and not self._mine():
+                self.away_since = None
                 self._switch(self.switched)
+            elif paused and self.switched is not None and self._mine():
+                self._check_away(now, shown)
+            else:
+                self.away_since = None
             return
         fps, why = self._decide(p, now)
         if fps is False:
@@ -464,6 +493,21 @@ class Follower:
             self._switch(fps)
         else:
             self._home(passive)
+
+    def _check_away(self, now: float, shown: bool) -> None:
+        """Paused, and its page closed or its app behind another for AWAY_AFTER: Settings' mode
+        (switched stays, so playing again switches back through the "resumed" path)."""
+        why = "its player isn't shown" if not shown else "another app is in front" if self.front() is False else ""
+        if not why:
+            self.away_since = None
+            return
+        if self.away_since is None:
+            self.away_since = now
+        if now - self.away_since >= AWAY_AFTER:
+            _log(f"{self.who or 'player'}: paused and {why}: Settings' mode until it plays again")
+            self.switch(None)
+            release()
+            self.away_since = None
 
     def _decide(self, p: dict[str, Any], now: float) -> tuple[float | None | bool, str]:
         """(The frame rate to match, None for Settings' mode, or False: not sure yet; why)."""

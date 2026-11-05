@@ -128,8 +128,8 @@ def follow(tmp_path, monkeypatch):
 
     clock = Clock()
 
-    def make(pid=100, who="a"):
-        return playback.Follower(pid=pid, who=who, switch=switch, clock=clock)
+    def make(pid=100, who="a", front=lambda: True):
+        return playback.Follower(pid=pid, who=who, switch=switch, clock=clock, front=front)
 
     make.calls, make.clock = calls, clock
     return make
@@ -150,10 +150,10 @@ def playing(path="film.mkv", fps=23.976, duration=6000.0, container=None, paused
 STOPPED = {"path": None, "idle": True, "eof": False, "paused": False, "duration": None, "container_fps": None, "est_fps": None}
 
 
-def run(fol, snap, seconds, passive=False):
+def run(fol, snap, seconds, passive=False, shown=True):
     for _ in range(seconds):
         fol.clock.t += 1
-        fol.step(snap, passive=passive)
+        fol.step(snap, passive=passive, shown=shown)
 
 
 def test_a_film_switches_once_its_frame_rate_holds(follow):
@@ -432,3 +432,77 @@ def test_path_kind():
     assert playback.path_kind("/tmp/list.m3u8") == "HLS file"
     assert playback.path_kind("http://127.0.0.1:5000/vod.mp4") == "http"
     assert playback.path_kind(None) == "file"
+
+
+# ------------------------------------------------------------------ paused out of sight
+
+
+def test_a_paused_video_whose_page_closed_gives_the_tv_back_and_takes_it_again(follow, capsys):
+    f = follow()
+    run(f, playing(), 5)
+    run(f, playing(paused=True), int(playback.AWAY_AFTER) - 1, shown=False)  # Back: player page gone, video paused
+    assert follow.calls == [pytest.approx(23.976)]
+    run(f, playing(paused=True), 2, shown=False)
+    assert follow.calls[-1] is None and playback.owner() is None
+    assert "paused and its player isn't shown" in capsys.readouterr().err
+    run(f, playing(paused=True), 20, shown=False)
+    assert len(follow.calls) == 2  # once
+    run(f, playing(), 1)  # played again
+    assert follow.calls[-1] == pytest.approx(23.976) and playback.owner()["who"] == "a"
+
+
+def test_a_paused_video_behind_another_app_gives_the_tv_back(follow):
+    front = [True]
+    f = follow(front=lambda: front[0])
+    run(f, playing(), 5)
+    run(f, playing(paused=True), 30)  # paused in front: keeps the mode
+    assert follow.calls == [pytest.approx(23.976)]
+    front[0] = False  # the home screen came up
+    run(f, playing(paused=True), int(playback.AWAY_AFTER) + 1)
+    assert follow.calls[-1] is None
+    front[0] = True
+    run(f, playing(), 1)
+    assert follow.calls[-1] == pytest.approx(23.976)
+
+
+def test_away_needs_to_last(follow):
+    front = [False]
+    f = follow(front=lambda: front[0])
+    run(f, playing(), 5)
+    run(f, playing(paused=True), 5)
+    front[0] = True  # back in front within AWAY_AFTER
+    run(f, playing(paused=True), 3)
+    front[0] = False
+    run(f, playing(paused=True), 5)
+    assert follow.calls == [pytest.approx(23.976)]
+
+
+def test_unknown_front_or_playing_out_of_sight_keeps_the_mode(follow):
+    f = follow(front=lambda: None)  # couchbox-mediakeys can't be asked: never guess
+    run(f, playing(), 5)
+    run(f, playing(paused=True), 30)
+    g = follow(200, "b", front=lambda: False)
+    run(g, playing("other"), 5)
+    run(g, playing("other"), 30, shown=False)  # still playing (its sound is on): not "away"
+    assert None not in follow.calls
+
+
+def test_app_in_front(monkeypatch):
+    from couchbox import appctl, mediakeys
+
+    window = {}
+    monkeypatch.setattr(appctl, "call", lambda site, req, timeout=30: {"window": window, "players": []})
+    monkeypatch.setattr(mediakeys, "read_cgroup", lambda pid: f"0::/user.slice/app.slice/app-couchbox\\x2dstreaming-{pid}.scope")
+    assert playback.app_in_front(42) is None  # no window known
+    window.update(pid=42, unit="")
+    assert playback.app_in_front(42) is True
+    window.update(pid=7, unit=mediakeys.unit_of("0::/user.slice/app.slice/app-couchbox\\x2dstreaming-42.scope"))
+    assert playback.app_in_front(42) is True  # another process of the same app
+    window.update({"pid": 7, "unit": "plasma-plasmashell.service", "shell": True})  # the home screen
+    assert playback.app_in_front(42) is False
+
+    def down(*a, **k):
+        raise appctl.NotRunning("mediakeys")
+
+    monkeypatch.setattr(appctl, "call", down)
+    assert playback.app_in_front(42) is None
