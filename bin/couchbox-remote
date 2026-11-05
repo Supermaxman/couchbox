@@ -1,0 +1,88 @@
+#!/usr/bin/python3
+"""couchbox-remote: press the remote's buttons from a shell, for tests and support.
+
+Each press goes to couchbox-input (its control socket, /run/couchbox/input.sock) and through
+the Fire TV remote's key map like a real one: Back still dismisses the voice assistant or the
+Frigate pop-up first, Play/Pause goes to what's playing, Home pauses everything. Injected
+presses are logged (journalctl -u couchbox-input: "injected ...") and don't count as someone
+using the TV. With couchbox-screenshot, a change can be checked on the TV without anyone there.
+
+  couchbox-remote down down ok        press Down, Down, OK (GAP seconds apart)
+  couchbox-remote ok@1.2              hold OK for 1.2 s (a long press)
+  couchbox-remote back wait:2 home    Back, wait 2 s, Home
+  couchbox-remote --gap 0.6 right ok  slower
+  couchbox-remote KEY_F5              any key the remote's map knows, or any kernel key name
+Buttons: up down left right ok back home menu playpause rewind forward mic volup voldown mute
+power settings.
+"""
+import json
+import os
+import socket
+import sys
+import time
+
+CONTROL = "/run/couchbox/input.sock"
+GAP = 0.3
+# the Fire TV remote's keys, as couchbox-input sees them (data/input/default.toml)
+BUTTONS = {
+    "up": "KEY_UP", "down": "KEY_DOWN", "left": "KEY_LEFT", "right": "KEY_RIGHT",
+    "ok": "KEY_SELECT", "back": "KEY_BACK", "home": "KEY_HOMEPAGE", "menu": "KEY_MENU",
+    "playpause": "KEY_PLAYPAUSE", "rewind": "KEY_REWIND", "forward": "KEY_FASTFORWARD",
+    "mic": "KEY_SEARCH", "volup": "KEY_VOLUMEUP", "voldown": "KEY_VOLUMEDOWN", "mute": "KEY_MUTE",
+    "power": "KEY_POWER", "settings": "KEY_SETUP",
+}
+
+
+def parse(args):
+    """["down", "ok@1.2", "wait:2"] -> [("key", "KEY_DOWN", 0), ("key", "KEY_SELECT", 1.2), ("wait", 2)]"""
+    steps = []
+    for a in args:
+        if a.startswith("wait:"):
+            steps.append(("wait", float(a[5:])))
+            continue
+        name, _, hold = a.partition("@")
+        key = BUTTONS.get(name.lower()) or (name.upper() if name.upper().startswith("KEY_") else None)
+        if key is None:
+            sys.exit(f"couchbox-remote: unknown button {name!r} (try: {' '.join(BUTTONS)})")
+        steps.append(("key", key, float(hold or 0)))
+    return steps
+
+
+def send(key, value):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(5)
+    try:
+        s.connect(CONTROL)
+    except OSError as err:
+        sys.exit(f"couchbox-remote: couchbox-input isn't listening ({err}); is it running and up to date?")
+    with s:
+        s.sendall((json.dumps({"key": key, "value": value}) + "\n").encode())
+        reply = json.loads(s.makefile("r").readline() or "{}")
+    if reply.get("error"):
+        sys.exit(f"couchbox-remote: {reply['error']}")
+
+
+def main():
+    args = sys.argv[1:]
+    gap = GAP
+    if args[:1] == ["--gap"] and len(args) > 1:
+        gap, args = float(args[1]), args[2:]
+    if not args or args[0] in ("-h", "--help"):
+        sys.exit(__doc__)
+    steps = parse(args)
+    if os.geteuid() != 0:
+        os.execvp("sudo", ["sudo", sys.argv[0]] + sys.argv[1:])
+    for i, step in enumerate(steps):
+        if step[0] == "wait":
+            time.sleep(step[1])
+            continue
+        _, key, hold = step
+        send(key, 1)
+        time.sleep(hold or 0.05)
+        send(key, 0)
+        if i < len(steps) - 1:
+            time.sleep(gap)
+
+
+if __name__ == "__main__":
+    main()

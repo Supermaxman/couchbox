@@ -28,6 +28,11 @@ buttons, which only arrive as a vendor HID report (0xEF, an array of held button
 Sections can list such reports in hid_reports; their buttons are named "hid:<report>:<code>"
 (e.g. hid:ef:a1), logged, and can be mapped like keys.
 
+Tests and support can press keys as if on the remote: couchbox-remote sends them to the control
+socket (/run/couchbox/input.sock, root only), and each goes through the remote's key map like a
+real press (so Back still dismisses the voice assistant or the Frigate pop-up). Those presses
+are logged as "injected" and don't count as someone using the TV (/run/couchbox/last-key).
+
   couchbox-input              run the mapper (systemd: couchbox-input.service)
   couchbox-input --list       show input devices and which section matches each
   couchbox-input --monitor    print key presses from every keyboard-like device (no grab)
@@ -36,6 +41,7 @@ import json
 import os
 import select
 import shlex
+import socket
 import signal
 import subprocess
 import sys
@@ -128,6 +134,22 @@ def load_sections(path):
                 keymap[keycode(src)] = target
         sections.append((name, match, (keymap, scanmap, hidmap, hid_reports)))
     return sections
+
+
+CONTROL = "/run/couchbox/input.sock"
+
+
+def control_target(sections, name):
+    """What an injected key does: as the first remote section that maps it (the Fire TV remote's
+    comes first), else the key itself. (target, label), or (None, why) for an unknown key."""
+    try:
+        code = keycode(name)
+    except SystemExit:
+        return None, f"unknown key {name!r}"
+    for sec, _, maps in sections:
+        if code in maps[0]:
+            return maps[0][code], f"injected {name} [{sec}]"
+    return code, f"injected {name}"
 
 
 def matches(dev, match):
@@ -340,9 +362,9 @@ def run(sections):
             pointer.syn()
         mouse["used"] = now
 
-    def act(target, value, label):
+    def act(target, value, label, injected=False):
         """Do what a key (or HID button) is mapped to; value 1 = press, 2 = repeat, 0 = release."""
-        if value == 1:
+        if value == 1 and not injected:
             try:
                 open(LAST_KEY, "a").close()
                 os.utime(LAST_KEY)
@@ -439,6 +461,42 @@ def run(sections):
         elif value == 1:
             print(f"key {label} -> dropped", flush=True)
 
+    # couchbox-remote: {"key": "KEY_BACK", "value": 1} per line, one connection per request
+    # (the remote must keep working without it: any trouble here just leaves it out)
+    control = None
+    try:
+        os.makedirs(os.path.dirname(CONTROL), exist_ok=True)
+        try:
+            os.unlink(CONTROL)
+        except FileNotFoundError:
+            pass
+        control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        control.bind(CONTROL)
+        os.chmod(CONTROL, 0o600)
+        control.listen(4)
+    except OSError as err:
+        print(f"no control socket for couchbox-remote: {err}", flush=True)
+        control = None
+
+    def injected(conn):
+        with conn:
+            conn.settimeout(1)
+            try:
+                req = json.loads(conn.makefile("r").readline() or "{}")
+                target, label = control_target(sections, str(req.get("key", "")))
+                value = int(req.get("value", 1))
+                if target is None and label.startswith("unknown"):
+                    reply = {"error": label}
+                else:
+                    act(target, value, label, injected=True)
+                    reply = {"ok": True}
+            except (OSError, ValueError) as err:
+                reply = {"error": str(err)}
+            try:
+                conn.sendall((json.dumps(reply) + "\n").encode())
+            except OSError:
+                pass
+
     while True:
         now = time.monotonic()
         if now >= next_scan:
@@ -473,10 +531,16 @@ def run(sections):
         if mouse["on"] and not mouse["held"] and now - mouse["used"] > MOUSE_IDLE_OFF:
             mouse_mode(False)
         wait = 1 / 60 if mouse["held"] else RESCAN_SECONDS
-        ready, _, _ = select.select(list(grabbed) + list(hidraws), [], [], wait)
+        ready, _, _ = select.select(list(grabbed) + list(hidraws) + ([control] if control else []), [], [], wait)
         if mouse["held"]:
             mouse_move()
         for fd in ready:
+            if control is not None and fd is control:
+                try:
+                    injected(control.accept()[0])
+                except OSError:
+                    pass
+                continue
             if fd in hidraws:
                 path, (hidmap, hid_reports), held = hidraws[fd]
                 try:
