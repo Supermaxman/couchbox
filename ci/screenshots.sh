@@ -30,6 +30,15 @@ shot frigate-recording couchbox-frigate --open review --keys right,ok
 shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin
+# its Pop-ups page (the top, a camera switched off, scrolled to the last rows), and the pop-up itself over a
+# stand-in for the TV (a matching alert; a test, small, bottom left; snapshots, large)
+d30=down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down
+shot frigate-popups couchbox-frigate --open popups
+shot frigate-popups-camera couchbox-frigate --open popups --keys down,down,down,down,ok
+shot frigate-popups-last couchbox-frigate --open popups --keys $d30
+shot frigate-popup couchbox-frigate-popup
+shot frigate-popup-test couchbox-frigate-popup --test --size small --position bottom-left
+shot frigate-popup-snapshots couchbox-frigate-popup --picture snapshots --size large --position top-left
 # the Weather app with a made-up fortnight: Today, the 14 days, a day in detail (from an hour
 # picked on Today, and from the list), the alert, the radar (playing; paused a frame back, zoomed in)
 shot weather-today couchbox-weather

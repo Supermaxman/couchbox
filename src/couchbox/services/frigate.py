@@ -66,6 +66,25 @@ def kind(name):
     return k if k in KINDS else "object"
 
 
+# what the pop-up's settings offer when Frigate's config doesn't say what its cameras track
+COMMON_LABELS = ("person", "car", "dog", "cat", "package")
+
+
+def tracked(config, cameras):
+    """The labels these cameras track (objects.track) and listen for (audio.listen, when their
+    audio detection is on), in Frigate's order: [{name, label, kind}], for the pop-up's settings."""
+    names, heard = [], set()
+    for cam in cameras:
+        c = (config.get("cameras") or {}).get(cam) or {}
+        audio = c.get("audio") or {}
+        listen = (audio.get("listen") or []) if audio.get("enabled") else []
+        heard.update(listen)
+        for n in ((c.get("objects") or {}).get("track") or []) + listen:
+            if isinstance(n, str) and n not in names:
+                names.append(n)
+    return [{"name": n, "label": label(n), "kind": "audio" if n in heard else kind(n)} for n in names or COMMON_LABELS]
+
+
 class Frigate:
     def __init__(self, url="", demo=False):
         self.demo = demo
@@ -203,7 +222,7 @@ class Frigate:
             members = [x for x in (g.get("cameras") or []) if x in known]
             if members:
                 groups.append({"name": label(name) if name.islower() else name, "icon": g.get("icon", ""), "cameras": members})
-        return {"cameras": cams, "groups": groups}
+        return {"cameras": cams, "groups": groups, "labels": tracked(c, [x["name"] for x in cams])}
 
     def _review_item(self, r):
         start, end = r.get("start_time") or 0, r.get("end_time")
@@ -227,6 +246,8 @@ class Frigate:
             "kinds": kinds or [{"kind": "motion", "label": "Motion"}],
             "names": [n for n in data.get("sub_labels") or [] if isinstance(n, str)],
             "zones": [label(z) for z in data.get("zones") or []],
+            # Frigate's own labels (person, car, speech), for the pop-up's filter
+            "labelKeys": list(dict.fromkeys(seen + list(data.get("audio") or []))),
             "reviewed": bool(r.get("has_been_reviewed")),
             "thumb": thumb and self.relay_url("f" + thumb),
         }
@@ -475,6 +496,16 @@ DEMO_CONFIG = {
                 "height": 1440 if n in ("front_door", "driveway", "backyard_side_gate") else 360,
             },
             "live": {"streams": {"Main": f"{n}_main"}},
+            "objects": {
+                "track": ["person", "car", "dog", "package"]
+                if n == "front_door"
+                else ["person", "car", "bicycle", "motorcycle", "license_plate"]
+                if n == "driveway"
+                else ["person", "dog", "cat", "bird"]
+                if n == "backyard_side_gate"
+                else ["person", "dog", "cat"]
+            },
+            "audio": {"enabled": n in ("backyard_side_gate", "kitchen"), "listen": ["speech", "bark"]},
         }
         for n in (
             "front_door",

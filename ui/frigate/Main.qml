@@ -1,6 +1,6 @@
 // couchbox-frigate: Frigate as a TV app (started by /usr/lib/couchbox/bin/couchbox-frigate),
-// laid out like Frigate's web UI: the sidebar (Live with the camera groups, Review), the live
-// dashboard, a camera full screen, the review grid and recordings. Remote: arrows move, OK
+// laid out like Frigate's web UI: the sidebar (Live with the camera groups, Review, Timeline,
+// Pop-ups), the live dashboard, a camera full screen, the review grid and recordings. Remote: arrows move, OK
 // opens, Back goes back (and, on the dashboard, leaves the app). Frigate is reached through
 // frigate.py's relay on 127.0.0.1, which holds the sign-in.
 import QtQuick
@@ -26,7 +26,7 @@ ApplicationWindow {
     onUChanged: F.u = u
 
     property string mode: "starting"         // starting | signin | app
-    property int section: 0                  // 0 live, 1 review, 2 timeline
+    property int section: 0                  // 0 live, 1 review, 2 timeline, 3 pop-ups
     property int group: 0
     property var alerts: []
     property string overlay: ""              // "" | camera | player
@@ -43,7 +43,7 @@ ApplicationWindow {
     }
     function load() {
         mode = "app";
-        F.call("config", {}, c => { F.cameras = c.cameras; F.groups = c.groups; win.refresh(); openFromArgs(); });
+        F.call("config", {}, c => { F.cameras = c.cameras; F.groups = c.groups; F.labels = c.labels || []; win.refresh(); openFromArgs(); });
         focusPage();
     }
     function refresh() {
@@ -65,11 +65,12 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ navigation
-    function focusPage() { [live, review, timeline][section].forceActiveFocus(); }
+    function focusPage() { [live, review, timeline, popups][section].forceActiveFocus(); }
     function choose(e) {
         if (e.kind === "group") { group = e.index; section = 0; focusPage(); }
         else if (e.kind === "review") { section = 1; focusPage(); }
         else if (e.kind === "timeline") { section = 2; focusPage(); }
+        else if (e.kind === "popups") { section = 3; focusPage(); }
         else if (e.kind === "signout") F.call("signout", {}, s => { F.status = s; mode = "signin"; signin.user = ""; signin.forceActiveFocus(); });
     }
     function openCamera(cams, i) {
@@ -119,6 +120,7 @@ ApplicationWindow {
         } else if (o === "review" || o === "alerts" || o === "detections") {
             stopVideo(); overlay = ""; section = 1; review.tab = o === "detections" ? 1 : 0; focusPage();
         } else if (o === "live") { stopVideo(); overlay = ""; section = 0; focusPage(); }
+        else if (o === "popups") { stopVideo(); overlay = ""; section = 3; focusPage(); }
         else if (o === "timeline" || o.startsWith("timeline:")) {
             const name = o.slice(9).toLowerCase();
             const c = F.cameras.find(x => x.name === name || x.label.toLowerCase() === name);
@@ -128,7 +130,7 @@ ApplicationWindow {
         }
     }
     function updateState() {
-        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : ["live", "review", "timeline"][section],
+        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : ["live", "review", "timeline", "popups"][section],
                     group: (F.groups[group] || {}).name || ""};
         if (overlay === "camera") st.camera = camera.cam.label;
         if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + F.seen(player.r);
@@ -216,6 +218,14 @@ ApplicationWindow {
             onToRail: rail.forceActiveFocus()
             onLeave: { win.section = 0; win.focusPage(); }
         }
+        PopupsPage {
+            id: popups
+            anchors { left: rail.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+            visible: win.section === 3
+            onToRail: rail.forceActiveFocus()
+            Keys.onEscapePressed: rail.forceActiveFocus()
+            Keys.onBackPressed: rail.forceActiveFocus()
+        }
     }
     CameraView {
         id: camera
@@ -284,7 +294,7 @@ ApplicationWindow {
     onActiveFocusItemChanged: idle.restart()
     Timer { id: idle; interval: 60 * 60 * 1000; running: win.overlay === ""; onTriggered: Qt.quit() }
 
-    // --shot FILE [--open camera:NAME | review | detections] [--signin] [--keys k1,k2,...]
+    // --shot FILE [--open camera:NAME | review | detections | popups] [--signin] [--keys k1,k2,...]
     Timer {
         running: !!win.shot
         interval: 2500

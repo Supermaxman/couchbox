@@ -3,14 +3,15 @@
 camera groups in a sidebar, the live dashboard (recent alerts across the top, then every
 camera's picture, refreshing), a camera full screen (live, Left/Right for the next camera,
 Down for its recent activity and timeline), Review (alerts and detections, played from the
-recordings) and Timeline (the last day of a camera or a group, played from any point).
+recordings), Timeline (the last day of a camera or a group, played from any point) and Pop-ups
+(which cameras, and what they see, pop up over whatever is on the TV: couchbox-frigate-popup).
 
 Sign-in: Frigate's user name and password, typed with the remote's keyboard pop-up or a phone.
 The server is Settings → Apps → Frigate server (media.frigate.url). The Python side
 (couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
 the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
 
-  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA]]
+  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups]
   couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...]
                                      render once off screen (made-up cameras, no server)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1.
@@ -46,12 +47,49 @@ class Backend(QObject):
 
     def __init__(self, demo):
         super().__init__()
+        self.demo = demo
         self.f = frigate.Frigate(settings.get("media.frigate.url"), demo=demo)
         self.pool = ThreadPoolExecutor(max_workers=6)
+        self.demo_popup = {}                          # --demo: the Pop-ups page's changes, kept here
+
+    # ------------------------------------------------------------------ the Pop-ups page
+    def popup(self):
+        """The pop-up's settings (media.frigate.popup.*, short keys) and whether its service runs."""
+        from couchbox import appctl, frigate_popup
+
+        s = dict(frigate_popup.prefs(settings.load()), **self.demo_popup)
+        return {"settings": s, "running": self.demo or appctl.running(frigate_popup.SITE)}
+
+    def popup_set(self, changes):
+        """Save the Pop-ups page's changes through couchboxd (the pop-up follows them)."""
+        from couchbox import frigate_popup, ipc
+
+        if self.demo:
+            self.demo_popup.update(changes)
+        else:
+            try:
+                ipc.call("settings.set", timeout=10, changes={frigate_popup.PREFIX + k: v for k, v in changes.items()})
+            except ipc.IpcError as err:
+                raise RuntimeError(str(err)) from None
+        return self.popup()
+
+    def popup_test(self, camera):
+        """Ask the pop-up to show a camera now, labelled as a test."""
+        from couchbox import appctl, frigate_popup
+
+        if self.demo:
+            return {"ok": True, "camera": frigate.label(camera or "front_door")}
+        try:
+            return appctl.call(frigate_popup.SITE, {"op": "test", "camera": camera}, timeout=20)
+        except appctl.NotRunning:
+            raise RuntimeError("The pop-up isn't running on this TV (couchbox-frigate-popup).") from None
 
     def run(self, op, a):
         f = self.f
         ops = {
+            "popup": lambda: self.popup(),
+            "popupSet": lambda: self.popup_set(a["changes"]),
+            "popupTest": lambda: self.popup_test(a.get("camera", "")),
             "status": lambda: f.status(),
             "login": lambda: f.login(a["user"], a["password"]),
             "signout": lambda: (f.sign_out(), f.status())[1],

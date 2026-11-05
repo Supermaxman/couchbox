@@ -1,0 +1,558 @@
+#!/usr/bin/python3
+"""couchbox-frigate-popup: a camera's live picture in a corner of the TV, over whatever is on
+(YouTube, Jellyfin, Twitch, the home screen, anything), when Frigate sees something the
+household asked about. Runs in the TV session as the TV user (couchbox-frigate-popup.service).
+
+Every 2 seconds it asks Frigate for its review items of the last two minutes (with the Frigate
+app's saved sign-in, ~/.local/share/couchbox-frigate/session.json). An item still going on, or
+that started in the last 30 s, pops up once if it matches the settings: its camera, what was
+seen (Frigate's labels: person, car, package ...), alerts only or detections too. After a
+camera's pop-up is dismissed or times out, that camera waits (the cooldown) before it can pop
+again. Nothing pops while the Frigate app is in front. The rules are couchbox.frigate_popup;
+the settings are media.frigate.popup.* (the Frigate app's Pop-ups page), followed live.
+
+The pop-up (/usr/share/couchbox/ui/frigate/Popup.qml) is a layer-shell overlay like the voice
+indicator: it never takes the keyboard from the app below, and it's unmapped while idle. Its
+video is the camera's live stream in mpv, muted, stopped as soon as it hides (or, set to
+snapshots, a picture a second). It shows for the set time, longer while the event goes on (up
+to 3 times as long); a newer matching event replaces it. While it shows, the remote's OK opens
+that camera full screen in the Frigate app and Back dismisses it: couchbox-input asks this
+service first (the control socket, couchbox.appctl "frigate-popup"), only while the flag file
+$XDG_RUNTIME_DIR/couchbox/frigate-popup.shown is there.
+
+  couchbox-frigate-popup                  run the service
+  couchbox-frigate-popup --test [CAMERA]  ask it to show a camera now (the first chosen one if
+                                          none is named), labelled as a test
+  couchbox-frigate-popup --status         what it's showing, cooldowns, sign-in, the settings
+  couchbox-frigate-popup --demo --shot FILE [--test] [--size S] [--position P] [--picture P]
+                                          render one pop-up off screen (made-up cameras)
+Not signed in, or Frigate out of reach: it says so once in its log and keeps trying quietly.
+"""
+import json
+import locale
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+from couchbox import frigate_popup as fp
+from couchbox import paths, settings
+
+QML = os.environ.get("COUCHBOX_FRIGATE_POPUP_QML", str(paths.share() / "ui/frigate/Popup.qml"))
+BIN = os.path.dirname(os.path.realpath(__file__))
+POLL = 2           # seconds between looks at Frigate
+RETRY = 10         # ... while it can't be reached or isn't signed in
+CONFIG_EVERY = 600  # the cameras' names and streams, read again this often
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def arg(name, default=""):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else default
+
+
+# ------------------------------------------------------------------ --test, --status
+def cli():
+    from couchbox import appctl
+
+    if "--status" in sys.argv:
+        req = {"op": "status"}
+    else:
+        cam = arg("--test")
+        req = {"op": "test", "camera": "" if cam.startswith("--") else cam}
+    try:
+        r = appctl.call(fp.SITE, req, timeout=30)
+    except appctl.NotRunning:
+        sys.exit("couchbox-frigate-popup isn't running (systemctl --user status couchbox-frigate-popup).")
+    except RuntimeError as err:
+        sys.exit(str(err))
+    if req["op"] == "test":
+        print(f"Showing {r.get('camera')} (a test pop-up).")
+    else:
+        print(json.dumps(r, indent=2))
+
+
+if "--status" in sys.argv or ("--test" in sys.argv and "--shot" not in sys.argv):
+    cli()
+    sys.exit(0)
+
+# libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
+os.environ["COUCHBOX_MUTE"] = "1"                   # cameras: never any sound (mpv's ao=null)
+
+from PySide6.QtCore import QObject, QSocketNotifier, QTimer, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox.services import frigate  # noqa: E402
+
+KWIN_RAISE = """
+for (const w of workspace.windowList())
+  if (w.normalWindow && (w.resourceClass === "couchbox-frigate" || w.desktopFileName === "couchbox-frigate")) {
+    w.minimized = false; w.fullScreen = true; workspace.activeWindow = w; break;
+  }
+"""
+
+
+class Popup(QObject):
+    """What shows and for how long (the QML only draws it). Threads: the poll loop, the settings
+    watcher, the control socket's requests; Qt's thread draws. self.lock guards `current`."""
+    present = Signal(str)           # show this (JSON: the item, how long, the look)
+    extend = Signal(str, float, float)   # its id, seconds left, of how many
+    dismiss = Signal()
+    look = Signal(str)              # the corner, size or picture changed
+    reply = Signal(int, str)        # (F.qml listens for the Frigate app's replies: never sent here)
+
+    def __init__(self, demo=False):
+        super().__init__()
+        self.demo = demo
+        self.lock = threading.RLock()
+        self.wake = threading.Event()
+        self.picker = fp.Picker()
+        self.current = None         # what's showing: {id, camera, label, seen, test, shownAt, deadline, ...}
+        self.problem = ""           # why Frigate can't be asked (logged once)
+        self.f = None
+        self.f_mtime = None
+        self.cams = {}              # name -> config()'s camera (label, stream, aspect), in Frigate's order
+        self.cams_at = 0.0
+        self.flag = None if demo else fp.flag_path()   # --demo: leave a real pop-up's flag alone
+        self.load_settings()
+
+    # ------------------------------------------------------------------ settings
+    def load_settings(self):
+        values = settings.load()
+        old = getattr(self, "p", None)
+        self.p = fp.prefs(values)
+        self.url = values.get("media.frigate.url", "")
+        if old is None:
+            return
+        if not self.p["enabled"] and old["enabled"]:
+            self.hide("turned off")
+        if any(old.get(k) != self.p.get(k) for k in ("position", "size", "picture")):
+            self.look.emit(json.dumps(self.look_now()))
+        self.wake.set()
+
+    def look_now(self):
+        return {k: self.p[k] for k in ("position", "size", "picture")}
+
+    def watch_settings(self):
+        """Follow Settings while running (couchboxd's events), so a change applies at once."""
+        from couchbox import ipc
+
+        while True:
+            try:
+                for ev in ipc.subscribe(["settings"]):
+                    if any(k.startswith("media.frigate.") for k in (ev.get("data") or {})):
+                        self.load_settings()
+            except Exception:  # noqa: BLE001  (daemon restarting): try again
+                pass
+            time.sleep(10)
+            self.load_settings()     # whatever changed while it was away
+
+    # ------------------------------------------------------------------ Frigate
+    def client(self):
+        """The Frigate client, with the Frigate app's sign-in: read again whenever the app saves
+        it (signed in, out, or again), and a new client when the server changed in Settings."""
+        with self.lock:                  # (the poll loop, the control socket and Qt's thread all ask)
+            return self._client()
+
+    def _client(self):
+        url = (self.url or "").rstrip("/")
+        if self.f is None or self.f.url != url:
+            if self.f is not None and self.f.relay:
+                self.f.relay.close()
+            self.f = frigate.Frigate(url, demo=self.demo)
+            self.cams, self.cams_at = {}, 0.0
+            self.f_mtime = self.session_mtime()
+        elif not self.demo and self.session_mtime() != self.f_mtime:
+            self.f_mtime = self.session_mtime()
+            try:
+                auth = json.load(open(self.f.session_file))
+            except (OSError, ValueError):
+                auth = {}
+            self.f.auth = auth if auth.get("url", url) == url else {}
+        return self.f
+
+    def session_mtime(self):
+        try:
+            return os.stat(os.path.expanduser("~/.local/share/couchbox-frigate/session.json")).st_mtime
+        except OSError:
+            return None
+
+    def cameras(self, f, force=False):
+        if force or not self.cams or time.time() - self.cams_at > CONFIG_EVERY:
+            self.cams = {c["name"]: c for c in f.config()["cameras"]}
+            self.cams_at = time.time()
+        return self.cams
+
+    def note(self, why):
+        """Say once why Frigate can't be asked, and once that it can again."""
+        if why == self.problem:
+            return
+        log(f"{why} (trying again quietly)" if why else "Frigate is answering again")
+        self.problem = why
+
+    def front(self):
+        """The window in front: couchbox-mediakeys knows (it follows KWin); else ask KWin."""
+        from couchbox import appctl
+
+        try:
+            return (appctl.call("mediakeys", {"op": "state"}, timeout=1) or {}).get("window") or {}
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            out = subprocess.run([os.path.join(BIN, "couchbox-active-window")], capture_output=True, text=True, timeout=5).stdout
+            return json.loads(out or "{}")
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return {}
+
+    # ------------------------------------------------------------------ the poll loop
+    def poll(self):
+        while True:
+            try:
+                wait = self.check()
+            except Exception as err:  # noqa: BLE001 - never stop watching over one bad answer
+                log(f"poll: {err.__class__.__name__}: {err}")
+                wait = RETRY
+            self.wake.wait(wait)
+            self.wake.clear()
+
+    def check(self):
+        """One look at Frigate: pop up what's new, keep what shows up to date. Returns how long
+        to wait before the next look."""
+        self.overdue()
+        p = self.p
+        if not p["enabled"] or not (self.url or self.demo):
+            self.problem = ""
+            return 60                # a settings change wakes it
+        f = self.client()
+        if not f.signed_in:
+            self.note("not signed in to Frigate (sign in from the Frigate app)")
+            return RETRY
+        try:
+            self.cameras(f)
+            items = f.reviews("alert" if p["severity"] == "alert" else "all", p["cameras"] or None, limit=20,
+                              hours=fp.WINDOW / 3600)["items"]
+        except frigate.SignInNeeded as err:
+            self.note(f"Frigate: {err}")
+            return RETRY
+        except Exception as err:  # noqa: BLE001 - unreachable, timed out, an odd answer
+            self.note(f"can't reach Frigate: {err.__class__.__name__}")
+            return RETRY
+        self.note("")
+        now = time.time()
+        self.follow(items, now)
+        with self.lock:
+            item = self.picker.pick(items, p, now)
+            if item:
+                self.picker.mark(item["id"], now)
+            showing = self.current
+        if item:
+            if not self.demo and fp.is_frigate(self.front()):
+                log(f"{item['cameraLabel']}: {fp.seen(item)} (not shown: the Frigate app is in front)")
+            else:
+                self.show(self.item_popup(item))
+        elif showing and not showing["test"] and not self.demo and fp.is_frigate(self.front()):
+            self.hide("the Frigate app came to the front")
+        return POLL
+
+    def follow(self, items, now):
+        """The event on screen: still going, or ended? (It stays until a little after it ends.)"""
+        with self.lock:
+            x = self.current
+            if not x or x["test"]:
+                return
+            it = next((i for i in items if i["id"] == x["id"]), None)
+            if it is None:
+                return
+            x["live"], x["end"] = it["live"], it["end"]
+            x["seen"] = fp.seen(it)
+            until = fp.deadline(x["shownAt"], x["seconds"], now, it["live"], it["end"])
+            if abs(until - x["deadline"]) < 0.5:
+                return
+            x["deadline"] = until
+        self.extend.emit(x["id"], max(0.0, until - now), until - x["shownAt"])
+
+    def overdue(self):
+        """A pop-up past its time is closed here too, should the QML's timer not have said."""
+        with self.lock:
+            x = self.current
+        if x and time.time() > x["deadline"] + 3:
+            self.hide("timeout", x["id"])
+
+    # ------------------------------------------------------------------ showing and hiding
+    def item_popup(self, item):
+        kinds = [k for k in item.get("kinds") or [] if k.get("kind") != "motion"]
+        return {"id": item["id"], "camera": item["camera"], "label": item.get("cameraLabel") or item["camera"],
+                "seen": fp.seen(item), "kind": (kinds[0]["kind"] if kinds else "motion"), "severity": item.get("severity"),
+                "live": bool(item.get("live")), "end": item.get("end") or 0, "test": False}
+
+    def show(self, x):
+        """Show (or replace what shows with) x."""
+        f = self.client()
+        cam = self.cams.get(x["camera"]) or {"label": x["label"], "stream": x["camera"], "aspect": 16 / 9}
+        now = time.time()
+        with self.lock:
+            p = self.p
+            x.update(label=cam["label"] or x["label"], aspect=cam.get("aspect") or 16 / 9, shownAt=now, seconds=p["seconds"],
+                     deadline=fp.deadline(now, p["seconds"], now, x.get("live"), x.get("end")),
+                     video=f.live(cam["stream"])["url"] if p["picture"] == "live" else "")
+            self.current = x
+            self.write_flag(x)
+        log(f"showing {x['label']}: {x['seen']}{' (test)' if x['test'] else ''}")
+        self.present.emit(json.dumps(dict(x, left=x["deadline"] - now, total=x["deadline"] - now, look=self.look_now())))
+
+    def hide(self, why, rid=None):
+        """Close the pop-up (only if it's still `rid`, when given). Dismissed, opened or timed
+        out, its camera waits out the cooldown (not after a test)."""
+        with self.lock:
+            x = self.current
+            if not x or (rid and x["id"] != rid):
+                return False
+            self.current = None
+            if not x["test"] and why in ("back", "ok", "timeout"):
+                self.picker.closed(x["camera"], time.time(), self.p["cooldown"])
+            self.drop_flag()
+        log(f"hid {x['label']} ({why})")
+        self.dismiss.emit()
+        return True
+
+    @Slot(str)
+    def expired(self, rid):
+        """The QML's timer ran out: close, unless the event went on (then: how much longer)."""
+        with self.lock:
+            x = self.current
+            if not x or x["id"] != rid:
+                return
+            left = x["deadline"] - time.time()
+        if left > 0.5:
+            self.extend.emit(rid, left, x["deadline"] - x["shownAt"])
+        else:
+            self.hide("timeout", rid)
+
+    @Slot(str, int, result=str)
+    def snapshot(self, camera, height):
+        """The relay's address of a camera's latest picture (the QML adds a cache-buster)."""
+        with self.lock:
+            return self.client().snapshot(camera, height) if camera else ""
+
+    def write_flag(self, x):
+        if not self.flag:
+            return
+        try:
+            self.flag.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.flag.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"id": x["id"], "camera": x["camera"], "t": time.time()}) + "\n")
+            tmp.replace(self.flag)
+        except OSError as err:
+            log(f"can't write {self.flag}: {err}")
+
+    def drop_flag(self):
+        if not self.flag:
+            return
+        try:
+            self.flag.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    # ------------------------------------------------------------------ the control socket
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": fp.SITE}
+        if op == "status":
+            return self.status()
+        if op == "test":
+            return self.test(str(req.get("camera") or ""))
+        if op == "key":
+            return self.key(req.get("key"))
+        if op == "hide":
+            return {"ok": self.hide("asked")}
+        return {"error": f"unknown op {op!r}"}
+
+    def key(self, k):
+        """couchbox-input's OK or Back, while the flag file is there: {"handled": bool}."""
+        with self.lock:
+            x = self.current
+            if not x:
+                self.drop_flag()     # a leftover: the key goes on
+                return {"handled": False}
+        if k == "back":
+            self.hide("back")
+            return {"handled": True, "did": f"dismissed {x['label']}"}
+        if k == "ok":
+            self.hide("ok")
+            threading.Thread(target=self.open_camera, args=(x["camera"],), daemon=True).start()
+            return {"handled": True, "did": f"opened {x['label']}"}
+        return {"handled": False}
+
+    def open_camera(self, name):
+        """The camera full screen in the Frigate app: the running one (brought to the front), or
+        a new one, started as the home screen would (couchbox-memory looks after it)."""
+        from couchbox import appctl
+
+        target = f"camera:{name}"
+        if appctl.running("frigate"):
+            try:
+                appctl.call("frigate", {"op": "open", "target": target}, timeout=10)
+            except Exception as err:  # noqa: BLE001
+                log(f"the Frigate app: {err}")
+            kwin_script(KWIN_RAISE)
+            return
+        cmd = [os.path.join(BIN, "couchbox-frigate"), "--open", target]
+        unit = f"--unit=app-couchbox\\x2dfrigate@popup{int(time.time())}.service"
+        try:
+            subprocess.run(["systemd-run", "--user", "--quiet", "--collect", unit, *cmd], capture_output=True, timeout=10, check=True)
+        except (OSError, subprocess.SubprocessError):
+            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, start_new_session=True)
+
+    def test(self, want):
+        """Show a camera now: the one named, else the first chosen one, else the first."""
+        f = self.client()
+        if not f.signed_in:
+            return {"error": "Set the Frigate server in Settings → Apps first." if not (self.url or self.demo)
+                    else "Sign in to Frigate first (in the Frigate app)."}
+        try:
+            cams = self.cameras(f)
+        except frigate.SignInNeeded as err:
+            return {"error": str(err)}
+        except Exception as err:  # noqa: BLE001
+            return {"error": f"Can't reach Frigate ({err.__class__.__name__})."}
+        low = want.lower()
+        cam = next((c for c in cams.values() if low and low in (c["name"].lower(), c["label"].lower())), None)
+        if want and not cam:
+            return {"error": f"There's no camera called {want}. Cameras: {', '.join(c['label'] for c in cams.values())}."}
+        cam = cam or next((cams[n] for n in self.p["cameras"] if n in cams), None) or next(iter(cams.values()), None)
+        if not cam:
+            return {"error": "Frigate has no cameras to show."}
+        self.show({"id": f"test-{time.time():.3f}", "camera": cam["name"], "label": cam["label"], "seen": "Test pop-up",
+                   "kind": "object", "severity": "alert", "live": False, "end": 0, "test": True})
+        return {"ok": True, "camera": cam["label"]}
+
+    def status(self):
+        now = time.time()
+        with self.lock:
+            x = self.current
+            cooling = self.picker.cooling(now)
+        f = self.f
+        showing = None
+        if x:
+            showing = {k: x[k] for k in ("id", "camera", "label", "seen", "test")}
+            showing["left"] = round(x["deadline"] - now, 1)
+        return {
+            "enabled": self.p["enabled"],
+            "server": bool(self.url),
+            "signedIn": bool(f and f.signed_in),
+            "problem": self.problem,
+            "showing": showing,
+            "cooldowns": cooling,
+            "settings": self.p,
+        }
+
+
+def kwin_script(js):
+    """Run a KWin script in this session (bring the Frigate app to the front)."""
+    import tempfile
+
+    import dbus
+
+    fd, path = tempfile.mkstemp(prefix="couchbox-frigate-popup-", suffix=".js")
+    os.write(fd, js.encode())
+    os.close(fd)
+    name = os.path.basename(path)
+    try:
+        bus = dbus.SessionBus()
+        scripting = bus.get_object("org.kde.KWin", "/Scripting")
+        # KWin overloads loadScript (s) and (ss); introspection alone picks the wrong one
+        sid = scripting.loadScript(path, name, signature="ss", dbus_interface="org.kde.kwin.Scripting")
+        bus.get_object("org.kde.KWin", f"/Scripting/Script{int(sid)}").run(dbus_interface="org.kde.kwin.Script")
+        time.sleep(0.5)
+        scripting.unloadScript(name, dbus_interface="org.kde.kwin.Scripting")
+    except Exception as err:  # noqa: BLE001
+        log(f"can't bring the Frigate app to the front: {err}")
+    finally:
+        os.unlink(path)
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        from couchbox import qtcheck
+
+        qtcheck.clipped(self.window)
+        self.window.grabWindow().save(path)
+
+
+def quit_on_signals(app):
+    """SIGTERM (systemctl stop) and SIGINT quit Qt's loop, so the flag file goes with us."""
+    rfd, wfd = os.pipe()
+    os.set_blocking(wfd, False)
+    signal.set_wakeup_fd(wfd)
+    for s in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(s, lambda *_: app.quit())
+    notifier = QSocketNotifier(rfd, QSocketNotifier.Read)
+    notifier.activated.connect(lambda *_: os.read(rfd, 64))
+    return notifier
+
+
+def main():
+    demo = "--demo" in sys.argv
+    shot = arg("--shot")
+    if shot and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
+    app.setApplicationName("couchbox-frigate-popup")
+    app.setDesktopFileName("couchbox-frigate-popup")
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        from couchbox import player
+        qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")
+    else:                                            # no GPU off screen: a stand-in for the video
+        os.environ["COUCHBOX_NO_VIDEO"] = "1"
+    popup = Popup(demo)
+    if shot:                                         # --size, --position, --picture: try a look
+        for k in ("size", "position", "picture"):
+            popup.p[k] = arg("--" + k, popup.p[k])
+    popup.drop_flag()                                # a crash's leftover: OK and Back are the apps' again
+    engine = QQmlApplicationEngine()
+    if os.environ.get("COUCHBOX_NO_VIDEO"):
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    shooter = Shooter()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("popup", popup)
+    ctx.setContextProperty("backend", popup)         # F.qml's name for the back end
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("shot", shot)
+    ctx.setContextProperty("demo", demo)
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Popup.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    if shot:                                         # what the service would show (Popup.qml saves it)
+        QTimer.singleShot(300, lambda: popup.test("") if "--test" in sys.argv else popup.check())
+    else:
+        from couchbox import appctl
+        if not demo:                                 # (--demo: leave the real one's socket alone)
+            appctl.Server(fp.SITE, popup.handle).start()
+        threading.Thread(target=popup.poll, name="poll", daemon=True).start()
+        threading.Thread(target=popup.watch_settings, name="settings", daemon=True).start()
+        notifier = quit_on_signals(app)  # noqa: F841 - kept while the loop runs
+        log(f"ready: pop-ups {'on' if popup.p['enabled'] else 'off'}"
+            f"{'' if popup.url else ' (no Frigate server set)'}")
+    code = app.exec()
+    popup.drop_flag()
+    os._exit(code)                                   # don't wait for a live stream in flight
+
+
+if __name__ == "__main__":
+    main()
