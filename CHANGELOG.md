@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/Supermaxman/couchbox/compare/v0.12.1...v0.13.0) (2026-11-05)
+
+
+### New
+
+* **frigate:** camera pop-up over whatever is playing ([#75](https://github.com/Supermaxman/couchbox/issues/75)) ([68b12df](https://github.com/Supermaxman/couchbox/commit/68b12df5d4c31c88f7ec9462967eaef983e4903e))
+
 ## [0.12.1](https://github.com/Supermaxman/couchbox/compare/v0.12.0...v0.12.1) (2026-11-04)
 
 
