@@ -6,6 +6,7 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "shorts"
     property string startId: ""                // opened from a card: that Short first
     property var items: []                     // [{id, thumb, color}]
     property string more: ""
@@ -97,10 +98,15 @@ FocusScope {
                 Qt.rect(page.place.x + page.place.width + 8 * Y.u, 0, page.width - page.place.x - page.place.width - 8 * Y.u, page.height),
                 Qt.rect(page.place.x - 8 * Y.u, 0, page.place.width + 16 * Y.u, page.place.y - 8 * Y.u),
                 Qt.rect(page.place.x - 8 * Y.u, page.place.y + page.place.height + 8 * Y.u, page.place.width + 16 * Y.u, page.height)]
-        Rectangle {
+        Rectangle {                            // its colour, strongest by the video, darker to the screen's sides
             required property rect modelData
+            required property int index
             x: modelData.x; y: modelData.y; width: modelData.width; height: Math.max(0, modelData.height)
-            color: Qt.darker(page.tint, 1.3)
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0; color: index === 1 ? Qt.darker(page.tint, 1.15) : index === 0 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
+                GradientStop { position: 1; color: index === 0 ? Qt.darker(page.tint, 1.15) : index === 1 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
+            }
         }
     }
     Rectangle {                                // the frame (white with the focus)
@@ -141,7 +147,7 @@ FocusScope {
     }
 
     Column {                                   // the right: title, next, channel, Subscribe, buttons
-        x: 1278 * Y.u
+        x: 1286 * Y.u
         width: 580 * Y.u
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 96 * Y.u

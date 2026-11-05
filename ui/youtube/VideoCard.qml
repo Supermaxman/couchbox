@@ -79,16 +79,21 @@ Item {
         Rectangle {                          // the length, bottom right (LIVE in red)
             visible: !!card.item.duration || card.item.live
             anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 14 : 8) * Y.u }
-            width: badge.implicitWidth + 16 * Y.u
+            width: badgeRow.implicitWidth + 16 * Y.u
             height: badge.implicitHeight + 4 * Y.u
             radius: 6 * Y.u
             color: card.item.live ? "#cc0000" : "#cc000000"
-            Text {
-                id: badge
+            Row {                            // a music video: a note before its length
+                id: badgeRow
                 anchors.centerIn: parent
-                text: card.item.live ? "LIVE" : card.item.duration || ""
-                color: "white"
-                font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
+                spacing: 4 * Y.u
+                Icon { visible: !!card.item.music && !card.item.live; name: "note"; size: 26 * Y.u; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    id: badge
+                    text: card.item.live ? "LIVE" : card.item.duration || ""
+                    color: "white"
+                    font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
+                }
             }
         }
         Item {                               // watched so far: red over a faint track

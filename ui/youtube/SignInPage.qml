@@ -6,6 +6,7 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "signin"
     property var c: ({})                      // {state: waiting | expired | ok | denied, code, url, qr, expires}
     property int button: 0                    // 0 Get a new code, 1 Back
     readonly property string label: "Add account"

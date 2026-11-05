@@ -23,6 +23,7 @@ FocusScope {
     readonly property var focused: (row.items || [])[list.currentIndex] || ({})
     signal open(var item)
     signal search(string query)
+    onActiveFocusChanged: if (activeFocus && !list.activeFocus) list.forceActiveFocus()
     width: parent ? parent.width : 0
     height: headH + list.height
     Behavior on height { enabled: shelf.grow; NumberAnimation { duration: 160 } }
@@ -45,7 +46,7 @@ FocusScope {
                 model: shelf.focused.badges || []
                 Rectangle {
                     required property string modelData
-                    readonly property bool pay: /buy|rent|pay|\$/i.test(modelData)
+                    readonly property bool pay: (shelf.focused.pay || []).indexOf(modelData) >= 0 || /buy|rent|pay to|try now|\$/i.test(modelData)
                     width: hb.implicitWidth + 12 * Y.u; height: 34 * Y.u; radius: 4 * Y.u
                     color: pay ? "#1d3a22" : Y.raised
                     Text { id: hb; anchors.centerIn: parent; text: parent.modelData; color: parent.pay ? "#3ea84f" : Y.soft; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium }
@@ -56,8 +57,8 @@ FocusScope {
         Text {
             width: Math.min(parent.width, 830 * Y.u)
             text: (shelf.focused.lines || []).slice(1).join(" • ")
-            color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u
-            lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
+            color: Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u
+            lineHeightMode: Text.FixedHeight; lineHeight: 40 * Y.u
             wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
         }
     }

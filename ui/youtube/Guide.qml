@@ -7,10 +7,12 @@ import QtQuick
 
 FocusScope {
     id: guide
+    objectName: "guide"
     property var entries: []                  // [{key, label, browse}] (Settings is the last)
     property string section: "home"
     readonly property string who: Y.profile ? Y.profile.name : "Guest"
-    readonly property bool open: activeFocus
+    property bool pinned: false               // Settings: open beside the page, Settings marked
+    readonly property bool open: activeFocus || pinned
     readonly property var list: entries.filter(e => e.key !== "settings")
     readonly property int groupEnd1: 2        // dividers after Shorts and after Library
     readonly property int groupEnd2: 5
@@ -41,7 +43,8 @@ FocusScope {
     function activate() {
         if (cur < 0) { Y.whoIsWatching(); return; }
         pick.stop();
-        if (keyAt(cur) !== section) chosen(keyAt(cur));
+        // Search always opens on its keys (not the last results), the rest as they are
+        if (keyAt(cur) !== section || keyAt(cur) === "search") chosen(keyAt(cur));
         enter();
     }
 
@@ -59,7 +62,7 @@ FocusScope {
             anchors.fill: parent
             radius: 16 * Y.u
             color: Y.text
-            visible: guide.open && guide.cur === -1
+            visible: guide.activeFocus && guide.cur === -1
         }
         Rectangle {
             id: face
@@ -110,9 +113,11 @@ FocusScope {
                     required property var modelData
                     required property int index
                     readonly property bool sel: guide.section === modelData.key
-                    readonly property bool on: guide.open && guide.cur === index
+                    readonly property bool on: guide.activeFocus && guide.cur === index
                     width: column.width
                     height: 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
+                    // only whole entries show: one the viewport would cut in half (above Settings) isn't drawn
+                    opacity: !guide.open || (column.y + y >= -1 && column.y + y + 78 * Y.u <= viewport.height + 1) ? 1 : 0
                     Rectangle {
                         x: 33 * Y.u
                         width: 444 * Y.u; height: 78 * Y.u
@@ -148,10 +153,11 @@ FocusScope {
 
     // ------------------------------------------------------------------ Settings, at the bottom
     Item {
-        readonly property bool on: guide.open && guide.cur === guide.list.length
+        readonly property bool on: guide.activeFocus && guide.cur === guide.list.length
+        readonly property bool marked: guide.pinned && !guide.activeFocus
         y: 944 * Y.u
         width: parent.width; height: 78 * Y.u
-        Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: Y.text; visible: parent.on }
+        Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: parent.on ? Y.text : Y.raised2; visible: parent.on || parent.marked }
         Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; filled: guide.section === "settings"; size: 40 * Y.u; color: parent.on ? Y.ink : Y.text }
         Text {
             visible: guide.open

@@ -4,6 +4,7 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "list"
     property string title: ""
     property string browseId: ""
     property string problem: ""

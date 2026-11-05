@@ -18,6 +18,16 @@ import QtQuick
 
 FocusScope {
     id: player
+    objectName: "player"
+    // the controls' keys land here (the player handles them): the focus comes back to it, not
+    // to whichever panel or row had it last
+    Item { id: ctl; objectName: "controls"; focus: true }
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), row: related.index, rows: related.count}; }
+    // the position, read four times a second as well as on mpv's notices: the clock and the bar
+    // follow from the first frame
+    property real pos: video.position
+    Timer { interval: 250; repeat: true; running: player.visible && !!player.s; onTriggered: player.pos = video.position }
+    Connections { target: video; function onPositionChanged() { player.pos = video.position; } }
     property string videoId: ""
     property real startAt: 0
     property var seed: ({})                    // the card it was opened from (title while loading)
@@ -39,7 +49,7 @@ FocusScope {
     // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
     // chapters' pictures over it and the hint show, as on YouTube's TV app
     readonly property bool seeking: mode === "bar" || mode === "chapters"
-    readonly property int chapter: Y.chapterAt(chapters, video.position)
+    readonly property int chapter: Y.chapterAt(chapters, pos)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
     readonly property string label: v.title || (s ? s.title : "") || seed.title || ""
     property string panel: ""                  // "" | channel | notify | save: a panel beside the video
@@ -54,7 +64,7 @@ FocusScope {
         if (s && reported) report(video.ended ? "end" : "pause");     // the one before
         videoId = id;
         startAt = at || 0;
-        s = null; meta = {}; message = ""; waitLeft = 0; panel = ""; reported = false; lastReport = 0;
+        s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
@@ -124,7 +134,7 @@ FocusScope {
         endScreen.seconds = meta.countdown || 5;
         ending = true;
         endScreen.begin();
-        endScreen.forceActiveFocus();
+        Qt.callLater(() => endScreen.forceActiveFocus());
     }
 
     // ------------------------------------------------------------------ the remote's media keys (MPRIS)
@@ -201,10 +211,13 @@ FocusScope {
         Y.videoSide = !!panel;
         const checked = panelOptions.findIndex(o => o.checked);     // the current choice, as YouTube's does
         sidePanel.index = checked >= 0 && panel !== "save" ? checked : 0;
-        if (panel === "description") { description.index = 0; description.forceActiveFocus(); }
-        else if (panel === "comments") comments.forceActiveFocus();
-        else if (panel) sidePanel.forceActiveFocus();
-        else { player.forceActiveFocus(); mode = "controls"; hide.restart(); }
+        // the panel takes the focus now (keys pressed right after go to it), and again once it's
+        // surely shown (an item can't take it while hidden); closed, the controls have it again, on
+        // the button that opened it
+        const target = panel === "description" ? description : panel === "comments" ? comments : panel ? sidePanel : null;
+        if (panel === "description") description.index = 0;
+        if (target) { target.forceActiveFocus(); Qt.callLater(() => { if (player.panel && !target.activeFocus) target.forceActiveFocus(); }); }
+        else { ctl.forceActiveFocus(); mode = "controls"; hide.restart(); }
     }
     readonly property var notifyLevels: [
         {level: "all", label: "All", icon: "bell-all"}, {level: "personalized", label: "Personalized", icon: "bell"},
@@ -309,8 +322,8 @@ FocusScope {
         finished();
     }
     onModeChanged: {
-        if (mode === "related") related.forceActiveFocus();
-        else player.forceActiveFocus();
+        if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
+        else { ctl.forceActiveFocus(); related.index = 0; }      // the row folds back to its first line
     }
     Connections {
         target: related
@@ -411,6 +424,7 @@ FocusScope {
     }
     DescriptionPanel {
         id: description
+        objectName: "description"
         visible: player.panel === "description"
         v: player.v
         d: player.meta.details || {}
@@ -422,11 +436,13 @@ FocusScope {
     }
     CommentsPanel {
         id: comments
+        objectName: "comments"
         visible: player.panel === "comments"
         onClosed: player.panel = ""
     }
     PlayerPanel {
         id: sidePanel
+        objectName: "panel"
         visible: !!player.panel && player.panel !== "description" && player.panel !== "comments"
         options: player.panelOptions
         avatar: player.panel === "channel" ? player.v.avatar || "" : ""
@@ -446,23 +462,16 @@ FocusScope {
         visible: opacity > 0
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
-        Rectangle {                            // scrims: the top for the title, the bottom for the controls
-            anchors { left: parent.left; right: parent.right; top: parent.top }
-            height: 320 * Y.u
-            opacity: player.mode === "related" || player.seeking ? 0 : 1
-            gradient: Gradient {
-                GradientStop { position: 0; color: "#cc000000" }
-                GradientStop { position: 1; color: "transparent" }
-            }
-        }
+        // the scrim, as YouTube's TV app has it with the controls (or the related row) up: the
+        // video dimmed by about 45%, and from y 600 down a dark blue-violet
+        Rectangle { anchors.fill: parent; color: "#73000000" }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            // the related videos over the video: about half dark, so the video still shows
-            height: player.mode === "related" ? parent.height : 560 * Y.u
+            height: 480 * Y.u
             gradient: Gradient {
-                GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: player.mode === "related" ? 0.4 : 0.45; color: player.mode === "related" ? "#66000000" : "#b3000008" }
-                GradientStop { position: 1; color: player.mode === "related" ? "#8c000000" : "#f0050512" }
+                GradientStop { position: 0; color: "#00100c2c" }
+                GradientStop { position: 0.55; color: "#b3100c2c" }
+                GradientStop { position: 1; color: "#f2100c2c" }
             }
         }
 
@@ -527,7 +536,7 @@ FocusScope {
                 }
                 Text {
                     visible: !player.seeking
-                    text: player.live ? "" : Y.clock(video.position) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
+                    text: player.live ? "" : Y.clock(player.pos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: Y.text
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
@@ -544,7 +553,7 @@ FocusScope {
                     y: 55 * Y.u
                     width: parent.width
                     height: 8 * Y.u
-                    readonly property real frac: player.duration > 0 ? Math.min(1, video.position / player.duration) : 0
+                    readonly property real frac: player.duration > 0 ? Math.min(1, player.pos / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
                         if (!(d > 0) || c.length < 2) return [{a: 0, b: 1}];
@@ -649,7 +658,7 @@ FocusScope {
                             y: 262 * Y.u - height / 2
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : video.position)
+                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : player.pos)
                             color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u
                             style: Text.Raised; styleColor: "#60000000"
                         }
@@ -673,7 +682,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     Rectangle {
                         width: 72 * Y.u; height: width; radius: width / 2
-                        color: row.on(0) ? Y.text : "#33ffffff"
+                        color: row.on(0) ? Y.text : "#1fffffff"
                         RoundImage {
                             anchors { fill: parent; margins: row.on(0) ? 5 * Y.u : 0 }
                             source: player.v.avatar || ""
@@ -682,7 +691,7 @@ FocusScope {
                     }
                     Rectangle {
                         width: descT.implicitWidth + 66 * Y.u; height: 72 * Y.u; radius: height / 2
-                        color: row.on(1) ? Y.text : "#33ffffff"
+                        color: row.on(1) ? Y.text : "#1fffffff"
                         Text { id: descT; anchors.centerIn: parent; text: "Description"; color: row.on(1) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                     }
                     CtlButton {                // the bell when subscribed (its level), else Subscribe
@@ -693,7 +702,7 @@ FocusScope {
                     Rectangle {
                         visible: Y.signedIn && !player.v.subscribed
                         width: subT.implicitWidth + 64 * Y.u; height: 72 * Y.u; radius: height / 2
-                        color: row.on(2) ? Y.text : "#33ffffff"
+                        color: row.on(2) ? Y.text : "#1fffffff"
                         Text { id: subT; anchors.centerIn: parent; text: "Subscribe"; color: row.on(2) ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                     }
                 }
@@ -704,7 +713,7 @@ FocusScope {
                     CtlButton {
                         icon: video.paused || !player.s ? "play" : "pause"
                         big: true
-                        on: row.on(4) || !row.live
+                        on: row.on(4)
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     CtlButton { icon: "next"; on: row.on(5); anchors.verticalCenter: parent.verticalCenter }
@@ -714,7 +723,7 @@ FocusScope {
                     spacing: 14 * Y.u
                     Rectangle {
                         width: actions.implicitWidth; height: 72 * Y.u; radius: height / 2
-                        color: "#33ffffff"
+                        color: "#1fffffff"
                         Row {
                             id: actions
                             Repeater {
@@ -732,7 +741,7 @@ FocusScope {
                     }
                     Rectangle {
                         width: tools.implicitWidth; height: 72 * Y.u; radius: height / 2
-                        color: "#33ffffff"
+                        color: "#1fffffff"
                         Row {
                             id: tools
                             CtlButton { icon: player.captionsOn ? "cc-filled" : "cc"; on: row.on(12); plain: true }
@@ -745,6 +754,7 @@ FocusScope {
             // ---------------------------------------------------------------- related videos
             Feed {
                 id: related
+                objectName: "related"
                 y: 948 * Y.u
                 width: parent.width
                 height: 532 * Y.u             // opened, it ends at y 1000: the next row doesn't peek in
@@ -772,10 +782,11 @@ FocusScope {
     }
     EndScreen {
         id: endScreen
+        objectName: "endscreen"
         anchors.fill: parent
         visible: player.ending
         onPlayNow: { player.ending = false; player.playNext(); }
-        onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; player.forceActiveFocus(); player.showControls(); }
+        onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; ctl.forceActiveFocus(); player.showControls(); }
     }
     Rectangle {                                // buffering
         id: busy

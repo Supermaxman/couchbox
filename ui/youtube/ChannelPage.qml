@@ -5,6 +5,7 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "channel"
     property string channelId: ""
     property var head: ({})
     property bool loaded: false

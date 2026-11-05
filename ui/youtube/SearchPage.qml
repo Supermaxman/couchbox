@@ -7,6 +7,12 @@ import QtQuick
 
 FocusScope {
     id: page
+    objectName: "search"
+    function focusDetail() {
+        const it = area === "list" ? "suggestion:" + (suggestions[li] || "")
+                 : area === "keys" ? "key:" + (r === 4 ? buttons[c] : letters[r][c]) : area;
+        return {results: results, area: results ? "results" : area, item: results ? "" : it, query: query};
+    }
     property string query: ""
     property bool results: false              // the results are showing (else the keys)
     property string searched: ""
@@ -27,17 +33,16 @@ FocusScope {
     property int li: 0
     property bool allSelected: false          // Ctrl+A from the phone: the next Backspace clears
     property bool fresh: true                 // nothing pressed since the keys came up: the suggestions take the focus
-    property bool okDown: false               // OK was pressed here (it acts when let go: the press that opened Search doesn't)
     property bool keyboard: false             // the last thing typed came from a keyboard: its Enter searches
 
     function begin(q) {                       // the keys, with this text (the first suggestion in focus)
         results = false;
         query = q || "";
         area = suggestions.length ? "list" : "keys"; r = 0; c = 0; li = 0;
-        fresh = true; okDown = false; keyboard = false;
+        fresh = true; keyboard = false;
         problem = "";
         refreshSuggestions();
-        keys.forceActiveFocus();
+        if (page.activeFocus) keys.forceActiveFocus();   // (moving through the guide only shows it)
         if (!landing.loaded) landing.load();
     }
     function search(q) {
@@ -119,6 +124,7 @@ FocusScope {
     }
     FocusScope {
         id: pillFocus
+        objectName: "pill"
         Keys.onReturnPressed: page.begin(page.query)
         Keys.onEnterPressed: page.begin(page.query)
         Keys.onDownPressed: feed.forceActiveFocus()
@@ -134,24 +140,27 @@ FocusScope {
     // ------------------------------------------------------------------ suggestions and keys
     FocusScope {
         id: keys
+        objectName: "keys"
         visible: !page.results
         anchors.fill: parent
         focus: true
-        // OK acts when it's let go, and only after a press here: the press that opened Search (and
-        // its repeats) types nothing. The other keys act as they're pressed.
+        // Keys act as they're pressed. The press that opened Search can't reach them: couchbox-yt's
+        // key filter drops a release (and repeats) once the focus has moved. Enter (the phone's, or
+        // a keyboard's after typing on it) searches what's typed; OK on a suggestion, that one.
         Keys.onPressed: e => {
             const k = e.key;
             if (page.area === "landing") {         // the shelf under the keys: Up comes back
                 if (k === Qt.Key_Up) { page.area = "keys"; page.r = 4; page.c = 0; keys.forceActiveFocus(); e.accepted = true; }
                 return;
             }
+            page.fresh = false;
             if (k === Qt.Key_Return) {
-                if (!e.isAutoRepeat) page.okDown = true;
-                if (page.keyboard && !e.isAutoRepeat) { page.okDown = false; page.search(page.query); }   // a keyboard's Enter
+                if (page.keyboard) page.search(page.query);
+                else if (page.area === "list") page.search(page.suggestions[page.li]);
+                else page.press(page.r === 4 ? page.buttons[page.c] : page.letters[page.r][page.c]);
                 e.accepted = true;
                 return;
             }
-            page.fresh = false;
             if (k === Qt.Key_Left) {
                 page.keyboard = false;
                 if (page.area === "list") Y.toGuide();
@@ -184,19 +193,11 @@ FocusScope {
             } else if (e.text && e.text.length === 1 && e.text >= " " && !(e.modifiers & Qt.ControlModifier)) {
                 page.type(e.text);
                 page.keyboard = true;
+                if (page.area === "list") { page.area = "keys"; page.r = 0; page.c = 0; }   // typing: not on a suggestion
             } else {
                 return;
             }
             e.accepted = true;
-        }
-        Keys.onReleased: e => {
-            if (e.key !== Qt.Key_Return || e.isAutoRepeat) return;
-            e.accepted = true;
-            if (!page.okDown) return;                             // its press was somewhere else
-            page.okDown = false;
-            page.fresh = false;
-            if (page.area === "list") page.search(page.suggestions[page.li]);
-            else if (page.area === "keys") page.press(page.r === 4 ? page.buttons[page.c] : page.letters[page.r][page.c]);
         }
 
         Column {                               // suggestions / recent searches
@@ -211,9 +212,9 @@ FocusScope {
                     required property int index
                     readonly property bool on: page.area === "list" && page.li === index && keys.activeFocus
                     width: parent.width; height: 54 * Y.u
-                    radius: 12 * Y.u
+                    radius: 14 * Y.u
                     color: on ? Y.text : "transparent"
-                    Icon { x: 12 * Y.u; anchors.verticalCenter: parent.verticalCenter; name: page.recent ? "history" : "search"; size: 36 * Y.u; color: sug.on ? Y.ink : Y.text }
+                    Icon { x: 14 * Y.u; anchors.verticalCenter: parent.verticalCenter; name: page.recent ? "history" : "search"; size: 32 * Y.u; color: sug.on ? Y.ink : Y.text }
                     Text {
                         x: 66 * Y.u
                         width: parent.width - x - 12 * Y.u
@@ -288,7 +289,7 @@ FocusScope {
                         required property string modelData
                         required property int index
                         readonly property bool on: page.area === "keys" && page.r === 4 && page.c === index && keys.activeFocus
-                        width: 131 * Y.u; height: 54 * Y.u
+                        width: 132 * Y.u; height: 54 * Y.u
                         radius: 8 * Y.u
                         color: on ? Y.text : Y.raised
                         Text { anchors.centerIn: parent; text: parent.modelData; color: parent.on ? Y.ink : "#bbbbbb"; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
@@ -299,6 +300,7 @@ FocusScope {
         // nothing typed yet: a shelf under the keys (YouTube's recommended searches; Home's first shelf here)
         Shelf {
             id: landing
+            objectName: "landing"
             property bool loaded: false
             function load() {
                 loaded = true;
@@ -318,6 +320,7 @@ FocusScope {
     // ------------------------------------------------------------------ results
     Feed {
         id: feed
+        objectName: "results"
         visible: page.results
         y: 198 * Y.u
         width: parent.width

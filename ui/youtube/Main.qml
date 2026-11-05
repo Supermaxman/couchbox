@@ -31,6 +31,9 @@ ApplicationWindow {
     readonly property bool playing: stack.depth > 0 && stack.currentItem && stack.currentItem.videoId !== undefined
     readonly property var tabs: ({music: 1, gaming: 1, news: 1, podcasts: 1, movies: 1, live: 1, sports: 1})
     property bool picking: false               // "Who's watching" is up
+    // Library's tiles that need no account (a guest's Library shows them over its sign-in note)
+    readonly property var guestTiles: [{title: "Movies & TV", id: "FEstorefront", colors: ["#7a5600", "#d6a10a"]},
+                                       {title: "Podcasts", id: "FEtopics_podcasts", colors: ["#6a0f6a", "#b0209a"]}]
     property bool pickedAtStart: false         // ... as the app started (Back there leaves the app)
 
     Component.onCompleted: {
@@ -78,6 +81,7 @@ ApplicationWindow {
         if (key === "home") return home;
         if (key === "search") return search;
         if (tabs[key]) return tab;
+        if (key === "settings") return settings;
         if (key === "subscriptions" && Y.signedIn) return subscriptions;
         if (key === "library" && Y.signedIn) return library;
         return message;
@@ -92,16 +96,18 @@ ApplicationWindow {
         else if (tabs[key]) { tab.key = key; tab.browseId = e.browse; tab.label = e.label; tab.loaded = false; tab.load(); }
         else if (page(key) === subscriptions) { if (!subscriptions.loaded) subscriptions.load(); }
         else if (page(key) === library) { if (!library.loaded) library.load(); }
+        else if (key === "settings") settings.load();
         else {
             message.key = key;
             message.facts = [];
             message.action = "";
-            if (key === "shorts") { message.title = "Shorts"; message.body = "Short videos, one after another: Down for the next one."; message.action = "Watch Shorts"; }
+            message.tiles = key === "library" && !Y.signedIn ? win.guestTiles : [];
+            if (key === "shorts") { message.title = ""; message.body = ""; }   // OK on it opens the Shorts player (onEnter)
             else if (key === "subscriptions" || key === "library") {
                 message.title = e.label;
                 message.body = key === "library" ? "Sign in to see your history, Watch later, playlists and the videos you've liked." : "Sign in to see the latest from the channels you subscribe to.";
                 message.action = "Sign in";
-            } else if (key === "settings") { message.title = "Settings"; message.body = ""; message.load(); }
+            }
         }
         updateState();
     }
@@ -119,7 +125,8 @@ ApplicationWindow {
     function pop() {
         if (stack.depth > 1) stack.pop(StackView.Immediate);
         else stack.clear(StackView.Immediate);            // pop() never takes the last page off
-        focusPage();
+        if (!stack.depth && section === "shorts") guide.forceActiveFocus();   // Shorts has no page of its own
+        else focusPage();
         updateState();
     }
     function play(id, at, seed) {
@@ -261,20 +268,23 @@ ApplicationWindow {
             // the open guide pushes the page to the right, as YouTube's does
             x: guide.open ? Y.guideOpen - Y.left : 0
             Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-            BrowsePage { id: home; anchors.fill: parent; key: "home"; browseId: "FEtopics"; visible: win.section === "home" }
-            BrowsePage { id: tab; anchors.fill: parent; key: "music"; visible: !!win.tabs[win.section] }
+            BrowsePage { id: home; objectName: "home"; anchors.fill: parent; key: "home"; browseId: "FEtopics"; visible: win.section === "home" }
+            BrowsePage { id: tab; objectName: "tab"; anchors.fill: parent; key: "music"; visible: !!win.tabs[win.section] }
             SearchPage { id: search; anchors.fill: parent; visible: win.section === "search" }
-            MessagePage { id: message; anchors.fill: parent; visible: win.page(win.section) === message }
-            SubscriptionsPage { id: subscriptions; anchors.fill: parent; visible: win.page(win.section) === subscriptions }
-            LibraryPage { id: library; anchors.fill: parent; visible: win.page(win.section) === library }
+            MessagePage { id: message; objectName: "message"; anchors.fill: parent; visible: win.page(win.section) === message }
+            SubscriptionsPage { id: subscriptions; objectName: "subscriptions"; anchors.fill: parent; visible: win.page(win.section) === subscriptions }
+            SettingsPage { id: settings; anchors.fill: parent; visible: win.section === "settings" }
+            LibraryPage { id: library; objectName: "library"; anchors.fill: parent; visible: win.page(win.section) === library }
         }
         Guide {
             id: guide
             height: parent.height
             visible: !stack.depth
             onChosen: key => win.choose(key)
-            onEnter: win.focusPage()
-            onOpenChanged: Y.dimmed = open
+            onEnter: { if (win.section === "shorts") Y.open({type: "shorts", id: "-"}); else win.focusPage(); }
+            pinned: win.section === "settings" && !stack.depth && !win.picking
+            onOpenChanged: Y.pushed = open
+            onActiveFocusChanged: Y.dimmed = activeFocus
         }
 
         StackView {
@@ -361,6 +371,26 @@ ApplicationWindow {
     // ------------------------------------------------------------------ idle, off-screen tests
     // Quit after half an hour without use, unless a video is playing.
     onActiveFocusItemChanged: { idle.restart(); updateState(); }
+
+    // what has the focus, for the control socket's "focus" op (ci/yt-box-check.sh): the named
+    // items from the page down to the focused one, whether it's on screen, and the page's details
+    function focusState() {
+        const names = [];
+        let it = win.activeFocusItem, shown = !!it;
+        for (let p = it; p; p = p.parent) {
+            if (p.objectName) names.unshift(p.objectName);
+            if (!p.visible || p.opacity === 0) shown = false;
+        }
+        const cur = stack.depth ? stack.currentItem : null;
+        const st = {focus: names.join("/"), item: String(it).split("(")[0], shown: shown, section: section, guideOpen: guide.open};
+        if (cur && cur.focusDetail) st.detail = cur.focusDetail();
+        else if (!cur && section === "search") st.detail = search.focusDetail();
+        return st;
+    }
+    Timer {
+        interval: 300; repeat: true; running: !win.shot
+        onTriggered: control.setFocus(JSON.stringify(win.focusState()))
+    }
     Timer {
         id: idle
         interval: 30 * 60 * 1000
@@ -374,9 +404,10 @@ ApplicationWindow {
         interval: 2000
         onTriggered: {
             const keys = win.arg("--keys");
-            if (keys) for (const k of keys.split(",")) shooter.press(k);
+            // the presses as the box delivers them (press, release, gaps, repeats): Shooter.run
+            shotTimer.interval = (keys ? shooter.run(keys) : 0) + 1500;
             shotTimer.start();
         }
     }
-    Timer { id: shotTimer; interval: 1500; onTriggered: { shooter.save(win.shot); Qt.quit(); } }
+    Timer { id: shotTimer; interval: 1500; onTriggered: { shooter.note(win.shot + ".focus.json", JSON.stringify(win.focusState())); shooter.save(win.shot); Qt.quit(); } }
 }
