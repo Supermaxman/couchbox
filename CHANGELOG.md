@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/Supermaxman/couchbox/compare/v0.13.0...v0.14.0) (2026-11-05)
+
+
+### New
+
+* couchbox-screenshot and couchbox-remote, to check the TV without anyone there ([#77](https://github.com/Supermaxman/couchbox/issues/77)) ([611a248](https://github.com/Supermaxman/couchbox/commit/611a24886f97d9f95eebdd3a0114f9fd61fe201b))
+
 ## [0.13.0](https://github.com/Supermaxman/couchbox/compare/v0.12.1...v0.13.0) (2026-11-05)
 
 
