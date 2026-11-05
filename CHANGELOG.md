@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/Supermaxman/couchbox/compare/v0.16.1...v0.16.2) (2026-11-05)
+
+
+### Fixed
+
+* match the refresh rate in our own player (read mpv properties, trust the declared rate) ([#86](https://github.com/Supermaxman/couchbox/issues/86)) ([29e4d76](https://github.com/Supermaxman/couchbox/commit/29e4d76bad998d54e0b40113b381b260586e387e))
+
 ## [0.16.1](https://github.com/Supermaxman/couchbox/compare/v0.16.0...v0.16.1) (2026-11-05)
 
 
