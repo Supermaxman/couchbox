@@ -304,14 +304,18 @@ def start_guard(pid: int) -> None:
     if pid in _guarded:
         return
     _guarded.add(pid)
+    cmd = [sys.executable, "-m", "couchbox.playback", "watch", str(pid)]
+    # its own unit: one started inside the app's (app-couchbox-dropout@….service) is stopped
+    # with the app, before it can put the TV back
+    unit = ["systemd-run", "--user", "--collect", "--quiet", f"--unit=couchbox-rate-guard-{pid}", "--"]
     try:
-        subprocess.Popen(
-            [sys.executable, "-m", "couchbox.playback", "watch", str(pid)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-        )
+        r = subprocess.run(unit + cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        if r.returncode == 0:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:  # no systemd user manager (tests, another desktop): a child of its own
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True, close_fds=True)
     except OSError as e:
         _log(f"no guard: {e}")
 
