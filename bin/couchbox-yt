@@ -283,6 +283,40 @@ class Backend(QObject):
         except (OSError, ValueError):
             return {}
 
+    def captions(self, url):
+        """A caption track (WebVTT) as a local file for mpv: fetched here, again after 1 and 3 s when
+        YouTube says 429 (too many requests), kept for the session."""
+        import hashlib
+        import tempfile
+        import time
+
+        import requests
+        if self.demo or not url.startswith("https://"):
+            return {"path": url}
+        folder = os.path.join(tempfile.gettempdir(), f"couchbox-yt-captions-{os.getuid()}")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        path = os.path.join(folder, hashlib.sha256(url.encode()).hexdigest()[:20] + ".vtt")
+        if os.path.exists(path):
+            return {"path": path}
+        last = ""
+        for wait in (0, 1, 3):
+            time.sleep(wait)
+            try:
+                r = self.yt.s.get(url, timeout=(8, 20))
+            except requests.RequestException as err:
+                last = str(err)
+                continue
+            if r.status_code == 200 and r.text.lstrip().startswith("WEBVTT"):
+                with open(path + ".tmp", "w") as f:
+                    f.write(r.text)
+                os.replace(path + ".tmp", path)
+                return {"path": path}
+            last = f"YouTube said {r.status_code}"
+            if r.status_code not in (429, 500, 502, 503):
+                break
+        print(f"captions: {last}", flush=True)
+        return {"error": "Captions aren't available right now."}
+
     def prefetch(self, vid):
         """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
         import time
@@ -399,9 +433,11 @@ class Backend(QObject):
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
+            "captions": lambda: self.captions(a["url"]),
             "mark": lambda: (started(a.get("step", "")), self.warm_once() if a.get("step") == "home-shown" else None, {"ok": True})[2],
             "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
             "historyRemove": lambda: self.history_remove(a.get("ids") or [], bool(a.get("dryRun", True)), a.get("profile")),
+            "historyToday": lambda: {"ids": [e["id"] for e in y.history_today(newest=60)]} if y.profile else {"ids": []},
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),

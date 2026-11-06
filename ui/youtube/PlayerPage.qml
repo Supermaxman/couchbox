@@ -27,7 +27,8 @@ FocusScope {
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
                                           height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
-                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer}; }
+                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer,
+                                          panelItem: panel && panel !== "description" && panel !== "comments" ? ((optionsFor(panel)[sidePanel.index] || {}).label || "") : ""}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
@@ -309,13 +310,20 @@ FocusScope {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             if (r.url.indexOf("demo://") === 0) video.load(r.url, at); else video.loadWith(r.url, at, r.opts || "");
-            if (captionsOn) { const c = (r.captions || []).find(x => x.name === captionsOn); if (c) video.addSubtitleTrack(c.url, c.name); }
+            if (captionsOn) { const c = (r.captions || []).find(x => x.name === captionsOn); if (c) player.addCaptions(c); }
         }, e => Y.toast(e));
+    }
+    // a caption track, fetched by the app (with retries: YouTube answers "429 Too Many Requests" at
+    // times) and given to mpv as a file
+    function addCaptions(c) {
+        const id = videoId;
+        Y.call("captions", {url: c.url}, r => { if (player && player.videoId === id && r.path) video.addSubtitleTrack(r.path, c.name); },
+               e => { if (player && player.videoId === id) { Y.toast("Captions aren't available right now."); if (captionsOn === c.name) captionsOn = ""; } });
     }
     function setCaptions(c) {
         if (!c) { video.setSubtitle(0); captionsOn = ""; return; }
         const have = video.subtitles.find(t => t.title === c.name);
-        if (have) video.setSubtitle(have.id); else video.addSubtitleTrack(c.url, c.name);
+        if (have) video.setSubtitle(have.id); else addCaptions(c);
         captionsOn = c.name;
     }
     function toggleCaptions() {
