@@ -189,3 +189,50 @@ def test_card_menu_reads_any_entry_renderer():
     }
     assert [(f["kind"], f["token"]) for f in Y.menu_feedback(cmd)] == [("not_interested", "tok")]
     assert Y._menu_channel(cmd) == "UCdemo0000000000000orbit"
+
+
+def test_a_carousel_tiles_spotlight_gives_the_hero_its_badges_and_synopsis():
+    spot = {
+        "entityMetadataRenderer": {
+            "title": {"runs": [{"text": "A Made-up Film"}]},
+            "description": {"runs": [{"text": "A lighthouse keeper and a very long winter."}]},
+            "bylines": [
+                {
+                    "lineRenderer": {
+                        "items": [
+                            {"lineItemRenderer": {"text": {"simpleText": "Primetime show"}}},
+                            {
+                                "lineItemRenderer": {
+                                    "badge": {"metadataBadgeRenderer": {"label": "Pay to watch", "style": "BADGE_STYLE_TYPE_YPC"}}
+                                }
+                            },
+                            {
+                                "lineItemRenderer": {
+                                    "badge": {"metadataBadgeRenderer": {"label": "TV-PG", "style": "BADGE_STYLE_TYPE_SIMPLE"}}
+                                }
+                            },
+                        ]
+                    }
+                }
+            ],
+        }
+    }
+    tile = {
+        "tileRenderer": {
+            "style": "TILE_STYLE_YTLR_CAROUSEL",
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": "carousel002",
+            "onSelectCommand": {"watchEndpoint": {"videoId": "carousel002"}},
+            "onFocusCommand": {"commandExecutorCommand": {"commands": [{"updateCarouselHeaderCommand": {"spotlight": spot}}]}},
+        }
+    }
+    it = Y.parse_shelf(
+        {
+            "shelfRenderer": {
+                "tvhtml5ShelfRendererType": "TVHTML5_SHELF_RENDERER_TYPE_CAROUSEL",
+                "content": {"horizontalListRenderer": {"items": [tile]}},
+            }
+        }
+    )[0]["items"][0]
+    assert it["title"] == "A Made-up Film" and it["badges"] == ["Pay to watch", "TV-PG"] and it["pay"] == ["Pay to watch"]
+    assert it["lines"] == ["Primetime show", "A lighthouse keeper and a very long winter."]

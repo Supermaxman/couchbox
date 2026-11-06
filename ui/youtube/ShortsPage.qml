@@ -132,7 +132,7 @@ FocusScope {
         radius: 36 * Y.u
         color: "transparent"
         border.width: 8 * Y.u
-        border.color: page.area === "video" && page.activeFocus ? Y.text : "#7a6f69"
+        border.color: page.area === "video" && page.activeFocus ? Y.text : "#717171"   // (unfocused: grey, as YouTube's)
     }
     Rectangle {                                // while it starts: its picture (or its colours, the demo)
         x: page.place.x; y: page.place.y; width: page.place.width; height: page.place.height

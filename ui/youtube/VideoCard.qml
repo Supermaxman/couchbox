@@ -137,7 +137,13 @@ Item {
         visible: !card.box && card.captioned
         anchors { left: art.left; top: art.bottom; topMargin: 23 * Y.u }
         width: card.artW
-        readonly property var lines: card.item.lines || []
+        // YouTube's lines, and the views and age from the video's page when its card left them out
+        readonly property var lines: (card.item.lines || []).length === 1 && Y.stats[card.item.id] ? card.item.lines.concat([Y.stats[card.item.id]]) : card.item.lines || []
+        Timer {
+            running: card.on && card.item.type === "video" && (card.item.lines || []).length === 1 && !Y.shot
+            interval: 700
+            onTriggered: Y.wantStats(card.item.id)
+        }
         readonly property var badges: card.item.badges || []
         Text {
             width: parent.width - (card.round ? 0 : 20 * Y.u)   // YouTube's title box stops 20 px short of the picture's edge

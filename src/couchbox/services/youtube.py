@@ -295,6 +295,25 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
         out["playlistId"] = target["playlistId"]
     if target.get("type") == "browse":
         out["type"], out["params"] = "browse", target.get("params", "")
+    # a carousel's (Movies & TV's hero row): what it is, badges and its synopsis, in the spotlight
+    # its focus puts over the row (updateCarouselHeaderCommand)
+    spot = next((x for x in _find(t.get("onFocusCommand") or {}, "entityMetadataRenderer") if isinstance(x, dict)), None)
+    if spot:
+        out["title"] = out["title"] or text(spot.get("title"))
+        words = []
+        for line in spot.get("bylines") or []:
+            for li in dig(line, "lineRenderer", "items") or []:
+                r = li.get("lineItemRenderer") or {}
+                b = dig(r, "badge", "metadataBadgeRenderer") or {}
+                if b.get("label"):
+                    if b["label"] not in out["badges"]:
+                        out["badges"].append(b["label"])
+                    if b.get("style") == "BADGE_STYLE_TYPE_YPC":
+                        out.setdefault("pay", []).append(b["label"])
+                elif text(r.get("text")).strip(" •"):
+                    words.append(text(r.get("text")).strip(" •"))
+        desc = " ".join(text(spot.get("description")).split())
+        out["lines"] = [" • ".join(words)] + ([desc] if desc else []) if (words or desc) else out["lines"]
     out["channelId"] = _menu_channel(t.get("onLongPressCommand"))
     fb = menu_feedback(t.get("onLongPressCommand"))
     if fb:
@@ -1577,6 +1596,15 @@ class YouTube:
         self.need_profile("tell YouTube what you'd rather not see")
         return {"ok": self.remove_from_history(token)}
 
+    def delete_playlist(self, playlist_id: str) -> dict[str, Any]:
+        """A playlist this account made, deleted (the box check's test one)."""
+        self.need_profile("delete playlists")
+        if playlist_id in ("WL", "LL") or not playlist_id:
+            raise YouTubeError("That playlist can't be deleted.")
+        self.call("playlist/delete", {"playlistId": playlist_id}, cache=False)
+        self.changed()
+        return {"ok": True}
+
     def create_playlist(self, title: str, video_id: str) -> dict[str, Any]:
         """A new private playlist with this video in it."""
         self.need_profile("make playlists")
@@ -2221,6 +2249,10 @@ class Demo(YouTube):
 
     def edit_playlist(self, edit, add=True):
         return self.save(((edit.get("actions") or [{}])[0]).get("addedVideoId", ""), "WL", add)
+
+    def delete_playlist(self, playlist_id):
+        self.state["saved"].pop(playlist_id, None)
+        return {"ok": True}
 
     def create_playlist(self, title, video_id):
         self.need_profile("make playlists")

@@ -40,7 +40,7 @@ FocusScope {
             if (f) o.push({key: "fb", label: k[1], icon: ({remove_history: "trash", not_interested: "not-interested", no_channel: "not-interested"})[k[0]], fb: f});
         }
         if (video) o.push({key: "share", label: "Share", icon: "share"});
-        if (item.channelId) o.push({key: "channel", label: "Go to channel", icon: "person"});
+        if (item.channelId || (video && item.type !== "live")) o.push({key: "channel", label: "Go to channel", icon: "person"});
         return o;
     }
     signal picked(string key, var item)       // what the app does: next, queue, channel
@@ -65,6 +65,12 @@ FocusScope {
     function pick() {
         const o = options[index], it = item;
         if (!o) return;
+        if (o.key === "channel" && !it.channelId) {   // (the card didn't say whose it is: its watch page does)
+            close();
+            Y.call("watch", {id: it.id}, r => { const c = ((r || {}).video || {}).channelId; if (c) picked("channel", Object.assign({}, it, {channelId: c})); else Y.toast("No channel for this video."); },
+                   e => Y.toast(e));
+            return;
+        }
         if (o.key === "next" || o.key === "queue" || o.key === "channel") { close(); picked(o.key, it); return; }
         if (o.key === "later") {
             if (needAccount("save videos")) return;

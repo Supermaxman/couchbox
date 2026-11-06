@@ -674,15 +674,22 @@ def search_walk(r, want):
 
 
 def menu_test(r, want):
-    """The card menu's one write, undone: a Home video saved through the hold-OK menu's "Save to
-    Watch later", checked, then taken out through Save to playlist's Watch later and checked. A
-    video already in Watch later is left alone. Only with the owner's OK (--menu-test). Before:
-    the menu's entries as YouTube sends them (menuProbe: words, icons, endpoint names)."""
+    """The card menu's one write, undone: a Home video saved, through the hold-OK menu's Save to
+    playlist → New playlist, to a new private playlist; checked; the playlist deleted again and
+    that checked (this account's Watch later is full: YouTube keeps 5,000). Only with the
+    owner's OK (--menu-test). Before: the menu's entries as YouTube sends them (menuProbe)."""
     from couchbox import appctl
 
-    def in_wl(vid):
+    def playlists(vid):
         r_ = appctl.call("yt", {"op": "call", "fn": "saveOptions", "args": {"id": vid}}, timeout=30)
-        return next((bool(p.get("saved")) for p in r_.get("playlists") or [] if p.get("id") == "WL"), None)
+        return {p.get("id"): p for p in r_.get("playlists") or []}
+
+    try:
+        probe = appctl.call("yt", {"op": "call", "fn": "menuProbe", "args": {}}, timeout=30)
+        with open(os.path.join(r.out, "menu-probe.json"), "w") as fh:
+            json.dump(probe, fh, indent=1)
+    except Exception as err:  # noqa: BLE001
+        print(f"(menuProbe: {err})", flush=True)
 
     f = r.step("menu-home", lambda f: (f.get("page") == "home" and f.get("signedIn") and (f.get("card") or {}).get("type") == "video",
                                        f"signed in {f.get('signedIn')}, on {(f.get('card') or {}).get('id')}"), settle=6)
@@ -690,43 +697,37 @@ def menu_test(r, want):
     if not vid or not f.get("signedIn"):
         print("ABORT: no video in focus on Home, signed in; nothing saved", flush=True)
         return
-    if in_wl(vid):
-        print(f"(menu test: {vid} is in Watch later already: left alone, nothing tested)", flush=True)
-        return
-    try:
-        probe = appctl.call("yt", {"op": "call", "fn": "menuProbe", "args": {}}, timeout=30)
-        with open(os.path.join(r.out, "menu-probe.json"), "w") as fh:
-            json.dump(probe, fh, indent=1)
-        print(f"(a Home card's menu: {[e.get('label') for e in probe.get('entries') or []]}; in menu-probe.json)", flush=True)
-    except Exception as err:  # noqa: BLE001
-        print(f"(menuProbe: {err})", flush=True)
+    before = playlists(vid)
 
     def to_row(key):
-        for _ in range(12):
+        for _ in range(30):
             if d(focus()).get("at") == key:
                 return True
             remote("down", gap=0.3)
         return d(focus()).get("at") == key
 
     remote("ok@1.2")  # hold OK: the card's menu
-    r.step("menu-open", lambda f: ("later" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
-    to_row("later")
-    remote("ok")  # Save to Watch later
-    time.sleep(3)
-    saved = in_wl(vid)
-    r.step("menu-saved", lambda f: (saved is True, f"{vid} in Watch later: {saved}; notice {f.get('toast')!r}"), settle=0)
-    remote("ok@1.2")  # the menu again: Save to playlist, Watch later (ticked): out of it
+    r.step("menu-open", lambda f: ("playlist" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
     to_row("playlist")
     remote("ok")
-    r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists", f"mode {d(f).get('mode')}, on {d(f).get('at')}"), settle=2)
-    remote("ok")  # the first: Watch later
-    time.sleep(3)
-    gone = in_wl(vid)
-    r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in Watch later: {gone}"), settle=0)
-    if gone is not False:
-        print(f"WARNING: {vid} may still be in Watch later: take it out by hand", flush=True)
-    remote("back", "back")
-
+    r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists", f"mode {d(f).get('mode')}, {len(d(f).get('keys') or [])} rows"), settle=2)
+    if not to_row("newpl"):
+        print("ABORT: no New playlist row; nothing saved", flush=True)
+        remote("back", "back")
+        return
+    remote("ok")  # New playlist: made, with the video in it
+    time.sleep(4)
+    after = playlists(vid)
+    new = [k for k, p in after.items() if k not in before and p.get("saved")]
+    r.step("menu-saved", lambda f: (len(new) == 1, f"new playlists with {vid}: {new}; notice {f.get('toast')!r}"), settle=0)
+    for pid in new:
+        try:
+            appctl.call("yt", {"op": "call", "fn": "deletePlaylist", "args": {"id": pid}}, timeout=30)
+        except Exception as err:  # noqa: BLE001
+            print(f"WARNING: couldn't delete the test playlist {pid}: {err}: delete it by hand", flush=True)
+    time.sleep(2)
+    left = [k for k in playlists(vid) if k in new]
+    r.step("menu-unsaved", lambda f: (bool(new) and not left, f"the test playlist deleted: {not left}"), settle=0)
 
 def history_before(r):
     """Today's History before the run plays anything (for --clean-history: not to take those out)."""

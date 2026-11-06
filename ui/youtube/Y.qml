@@ -43,6 +43,13 @@ QtObject {
     // how far each video was watched in this run (the cards' red bars, up to date on the way back
     // from the player, before YouTube's pages say so): {id: fraction}
     property var seen: ({})
+    // a focused card's "views • age" when YouTube's card left it out: {id: line} (asked for once)
+    property var stats: ({})
+    function wantStats(id) {
+        if (!id || stats[id] !== undefined) return;
+        const m = Object.assign({}, stats); m[id] = ""; stats = m;
+        call("cardStats", {id: id}, r => { const n = Object.assign({}, y.stats); n[id] = r.line || ""; y.stats = n; }, () => {});
+    }
     function noteSeen(id, frac) { if (id && frac >= 0) { const m = Object.assign({}, seen); m[id] = Math.min(1, frac); seen = m; } }
     function progressOf(it) { return it ? (seen[it.id] !== undefined ? seen[it.id] : it.progress || 0) : 0; }
     // where a part-watched card starts: a few seconds before its red bar ends (0: from the start)

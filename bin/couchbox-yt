@@ -344,6 +344,18 @@ class Backend(QObject):
         except (OSError, ValueError):
             return {}
 
+    def card_stats(self, vid):
+        """A card's "views • age" when YouTube's card left it out (a part-watched one on Home):
+        from the video's watch page, kept for the session."""
+        if not hasattr(self, "_stats"):
+            self._stats = {}
+        if vid not in self._stats:
+            v = (self.yt.watch(vid) or {}).get("video") or {}
+            self._stats[vid] = " • ".join(x for x in (v.get("views", ""), v.get("date", "")) if x)
+            if len(self._stats) > 500:
+                self._stats.pop(next(iter(self._stats)))
+        return {"id": vid, "line": self._stats[vid]}
+
     def share(self, vid):
         """A video's link and its QR code (a phone's camera opens it), for a card menu's Share."""
         import re
@@ -498,9 +510,12 @@ class Backend(QObject):
             "saveOptions": lambda: y.save_options(a["id"]),
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "feedback": lambda: y.feedback(a["token"]),
+            "cardStats": lambda: self.card_stats(a["id"]),
+            "deletePlaylist": lambda: y.delete_playlist(a["id"]),
             "editPlaylist": lambda: y.edit_playlist(a["edit"], bool(a.get("add", True))),
-            "menuProbe": lambda: y.menu_probe(),
-            "commentsProbe": lambda: y.comments_probe(a["id"]),   # measuring: a comment with replies, its shape                 # measuring: a Home card's menu, as this profile gets it
+            "menuProbe": lambda: y.menu_probe(),           # measuring: a Home card's menu and lines, as this profile gets them
+            "commentsProbe": lambda: y.comments_probe(a["id"]),   # measuring: a comment with replies, its shape
+            "shortProbe": lambda: y.short_probe(a["id"]),         # measuring: a Short's subscription state, its shape
             "createPlaylist": lambda: y.create_playlist(a.get("title") or "New playlist", a.get("id", "")),
             "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
