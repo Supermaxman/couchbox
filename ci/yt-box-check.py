@@ -321,13 +321,14 @@ def player_walk(r):
     # the clock moves
     p1 = d(focus()).get("position", 0)
     r.step("clock", lambda f: (d(f).get("position", 0) > p1, f"position {p1} -> {d(f).get('position')}"), settle=3)
-    # paused seeks still show a picture (not black): back into the middle, back to 0:00, forward to
-    # 30 s. Up: the bar, where Left / Right seek 10 s
+    # paused seeks still show a picture (not black): back into the middle (the bar, Left, OK), back
+    # to 0:00 and forward to 30 s (Left / Right with the controls hidden: 10 s at once)
     remote("playpause")
     f = r.step("paused", lambda f: (bool(d(f).get("paused")), f"paused at {d(f).get('position')}"), settle=1)
     picture(r, "paused-picture")
     at = d(f).get("position", 0)
-    remote("up", *(["left"] if at >= 12 else []))
+    # Up: the bar (from hidden, Up shows the controls first: Up twice)
+    remote(*(["up", "up"] if d(focus()).get("mode") == "hidden" else ["up"]), *(["left", "ok"] if at >= 12 else ["back"]))   # (OK: there; Back: the bar down)
     r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
     mid = picture(r, "paused-seek-mid-picture")
     for _ in range(12):  # back to 0:00 (a resumed video starts minutes in): Left, 4 at a time, until there
@@ -344,26 +345,30 @@ def player_walk(r):
     remote("playpause", "down")
     time.sleep(6)  # the controls hide
     r.step("controls-hidden", lambda f: (d(f).get("mode") == "hidden", f"mode {d(f).get('mode')}"), settle=0)
+    # Up as YouTube's TV app has it: hidden, Up shows the controls (on Play / Pause); Up again,
+    # the bar (scrubbing); Up there, back to the video, playing, with the controls hidden
+    remote("up")
+    r.step("up-controls", lambda f: (d(f).get("mode") == "controls" and d(f).get("button") == "play", f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=0.6)
+    remote("up")
+    r.step("up-bar", lambda f: (d(f).get("mode") in ("bar",), f"mode {d(f).get('mode')}"), settle=0.6)
     p0 = d(focus()).get("position", 0)
-    remote("right")
-    r.step("scrub", lambda f: (d(f).get("mode") == "bar" and "controls" in f["focus"], f"mode {d(f).get('mode')}, to {d(f).get('scrub')}"), settle=0.6)
-    # Up while scrubbing: the chapters when the video has some, else back to the video, the scrub
-    # undone (YouTube's: only OK, or a moment's pause, goes there). Right and Up together: a
-    # scrub goes there by itself 2 s after the last press (the step above took longer)
-    time.sleep(2.5)
-    p0 = d(focus()).get("position", 0)
-    remote("right", "up", gap=0.4)
+    remote("right", "right", gap=0.4)  # scrubbing: where it would go (only OK jumps)
+    r.step("scrub", lambda f: (d(f).get("mode") == "bar" and d(f).get("scrub", -1) > p0, f"mode {d(f).get('mode')}, to {d(f).get('scrub')}"), settle=0.6)
+    remote("up")  # the chapters (when the video has some), else back to the video, the scrub undone
     f = r.step("scrub-up", lambda f: (d(f).get("mode") == "chapters"
                                       or (d(f).get("mode") == "hidden" and d(f).get("scrub", -1) < 0 and abs(d(f).get("position", 0) - p0) < 8),
                                       f"mode {d(f).get('mode')}, position {p0} -> {d(f).get('position')}, scrub {d(f).get('scrub')}"), settle=1)
     if d(f).get("mode") == "chapters":
-        remote("back")  # the chapters: back to the bar
-    else:
-        p1 = d(focus()).get("position", 0)
-        remote("right", "back", gap=0.4)  # scrubbing again, Back: undone too
-        r.step("scrub-back", lambda f: (d(f).get("mode") == "hidden" and d(f).get("scrub", -1) < 0 and abs(d(f).get("position", 0) - p1) < 8,
-                                        f"mode {d(f).get('mode')}, position {p1} -> {d(f).get('position')}"), settle=1)
-        remote("right")
+        remote("up")  # Up from the chapters: back to the video
+        r.step("chapters-up", lambda f: (d(f).get("mode") == "hidden" and not d(f).get("paused"), f"mode {d(f).get('mode')}, paused {d(f).get('paused')}"), settle=1)
+    p1 = d(focus()).get("position", 0)
+    remote("right")  # hidden: a quick seek, at once
+    r.step("quick-seek", lambda f: (d(f).get("position", 0) >= p1 + 8, f"position {p1} -> {d(f).get('position')}"), settle=1.5)
+    remote("back")
+    time.sleep(1)
+    remote("down")  # hidden: the controls (on Play / Pause)
+    time.sleep(0.6)
+    remote("up")  # the bar
     time.sleep(0.5)
     remote("down")
     f = r.step("scrub-down", lambda f: (d(f).get("mode") == "controls", f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=0.6)

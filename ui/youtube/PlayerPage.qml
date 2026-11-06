@@ -4,9 +4,11 @@
 // save, Thanks | captions, settings); and the related videos under them, rows of three.
 // The remote:
 //   OK            with the controls hidden: show them (it doesn't pause); on them: the focused one
-//   Left / Right  back / forward 10 s (the bar shows)      Rewind / Fast-forward: the same (MPRIS)
-//   Up / Down     show the controls; Down again: the related videos; Up from the controls: the bar,
-//                 with the chapters' pictures above it; Up again picks a chapter (Left / Right, OK)
+//   Left / Right  hidden: back / forward 10 s at once (the bar shows)   Rewind / Fast-forward: the same
+//   Up / Down     hidden: the controls, on Play / Pause; Down again: the related videos; Up from the
+//                 controls: the bar, scrubbing (Left / Right move where it'd go, only OK jumps); Up
+//                 there: the chapters when it has some ("Press up to view chapters"), else back
+//                 to the video; Up from the chapters: back to the video
 //   Back          from the related videos to the controls, then hide them, then leave the player
 // Description and comments open beside the video; the settings menu has quality, speed and
 // captions (CC turns captions on and off). At the end, Up next (the queue first) after a countdown.
@@ -94,26 +96,24 @@ FocusScope {
     // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
     // chapters' pictures over it and the hint show, as on YouTube's TV app
     readonly property bool seeking: mode === "bar" || mode === "chapters"
-    // scrubbing (Left / Right on the bar, not live): where it would go, shown on the bar and in
-    // the frame; OK goes there, as does a moment's pause (as YouTube's: a tap of Right skips on);
-    // Up (no chapters) and Back leave it where it was (-1: nothing pending)
+    // Left / Right with the controls hidden: 10 s back or on at once (the bar shows while they
+    // do: quick seeks). On the bar reached with Up (scrubbing, the storyboard's frames): where it
+    // would go, shown on the bar and in the frame, and only OK goes there; Up, Down and Back
+    // leave it where it was (-1: nothing pending), as YouTube's TV app does
     property real scrub: -1
+    property bool quickSeek: false             // the bar came up for Left / Right from hidden: they seek at once
     readonly property real shownPos: scrub >= 0 ? scrub : pos
-    Timer { id: scrubCommit; interval: 2000; onTriggered: player.commitScrub() }
     function scrubBy(d) {
         scrub = Math.max(0, Math.min(Math.max(0, duration - 1), (scrub >= 0 ? scrub : pos) + d));
-        scrubCommit.restart();
-        if (mode === "hidden") mode = "bar";
         hide.restart();
     }
     function commitScrub() {
-        scrubCommit.stop();
         if (scrub < 0) return;
         const to = scrub;
         scrub = -1;
         video.seekTo(to);
     }
-    function cancelScrub() { scrubCommit.stop(); scrub = -1; }
+    function cancelScrub() { scrub = -1; }
     readonly property int chapter: Y.chapterAt(chapters, shownPos)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
     readonly property string label: brandTitle || v.title || (s ? s.title : "") || seed.title || ""
@@ -497,6 +497,7 @@ FocusScope {
     readonly property bool captionsShown: mode !== "related" && !seeking
     onCaptionsShownChanged: video.setSubtitleShown(captionsShown)
     onModeChanged: {
+        if (mode === "hidden") { quickSeek = false; cancelScrub(); }   // (a scrub left to time out doesn't jump)
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
         else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
     }
@@ -559,20 +560,20 @@ FocusScope {
         } else if (mode === "hidden") {
             if ((k === Qt.Key_Return || k === Qt.Key_Enter) && skipNotice) undoSkip();       // the notice's undo
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
-            else if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
-            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
-            else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
-            else if (k === Qt.Key_Down) { mode = "controls"; button = 4; hide.restart(); }
+            else if (k === Qt.Key_Left) { if (live) liveSkip(-10); else { skip(-10); quickSeek = true; } }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else { skip(10); quickSeek = true; } }
+            // Up (or Down): the controls, on Play / Pause; Up again: the bar
+            else if (k === Qt.Key_Up || k === Qt.Key_Down) { mode = "controls"; button = 4; hide.restart(); }
             else return;
         } else if (mode === "bar") {
-            if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
-            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
+            if (k === Qt.Key_Left) { if (live) liveSkip(-10); else if (quickSeek) skip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else if (quickSeek) skip(10); else scrubBy(10); }
             else if ((k === Qt.Key_Return || k === Qt.Key_Enter) && scrub >= 0) { commitScrub(); mode = "hidden"; }   // there, playing
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.togglePause(); hide.restart(); }
-            else if (k === Qt.Key_Down) { commitScrub(); mode = "controls"; hide.restart(); }
+            else if (k === Qt.Key_Down) { cancelScrub(); mode = "controls"; hide.restart(); }
             // Up: the chapters (when it has some: "Press up to view chapters"), else back to the video
             else if (k === Qt.Key_Up) {
-                if (chapters.length > 1) { scrubCommit.stop(); chapterPick = Math.max(0, chapter); mode = "chapters"; hide.restart(); }
+                if (chapters.length > 1 && !quickSeek) { chapterPick = Math.max(0, chapter); mode = "chapters"; hide.restart(); }
                 else { cancelScrub(); mode = "hidden"; }
             }
             else return;
@@ -581,13 +582,14 @@ FocusScope {
             if (k === Qt.Key_Left) chapterPick = Math.max(0, chapterPick - 1);
             else if (k === Qt.Key_Right) chapterPick = Math.min(chapters.length - 1, chapterPick + 1);
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { cancelScrub(); video.seekTo(chapters[chapterPick].start); mode = "bar"; }
-            else if (k === Qt.Key_Down) { mode = "bar"; if (scrub >= 0) scrubCommit.restart(); }
+            else if (k === Qt.Key_Down) mode = "bar";
+            else if (k === Qt.Key_Up) { cancelScrub(); mode = "hidden"; }   // back to the video, where it was
             else return;
         } else if (mode === "controls") {
             hide.restart();
             if (k === Qt.Key_Left) button = Math.max(0, button - 1);
             else if (k === Qt.Key_Right) button = Math.min(controls.length - 1, button + 1);
-            else if (k === Qt.Key_Up) { if (!live) mode = "bar"; }
+            else if (k === Qt.Key_Up) { if (!live) { quickSeek = false; mode = "bar"; } }   // the bar: scrubbing
             else if (k === Qt.Key_Down) { if (related.count) mode = "related"; }
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) act(controls[button].key);
             else return;
