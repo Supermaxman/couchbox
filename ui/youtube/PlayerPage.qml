@@ -900,7 +900,7 @@ FocusScope {
                         color: "#1fffffff"
                         Row {
                             id: tools
-                            CtlButton { icon: "cc"; on: row.on(12); plain: true }   // (outlined either way, as YouTube's)
+                            CtlButton { icon: "cc"; on: row.on(12); plain: true; marked: !!player.captionsOn }   // (outlined; on: a bar under it)
                             CtlButton { icon: "settings"; on: row.on(13); plain: true }
                         }
                     }
