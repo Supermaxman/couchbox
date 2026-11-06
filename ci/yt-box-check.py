@@ -690,14 +690,23 @@ def search_walk(r, want):
 
 def menu_test(r, want):
     """The card menu's one write, undone: a Home video saved, through the hold-OK menu's Save to
-    playlist → New playlist, to a new private playlist; checked; the playlist deleted again and
-    that checked (this account's Watch later is full: YouTube keeps 5,000). Only with the
-    owner's OK (--menu-test). Before: the menu's entries as YouTube sends them (menuProbe)."""
+    playlist, to the account's most recent playlist without it (not Watch later: this account's
+    is full), checked; the same row again takes it out, checked. YouTube shows a playlist's new
+    state a moment late: each check asks until it does (15 s). Only with the owner's OK
+    (--menu-test). Before: the menu's entries as YouTube sends them (menuProbe)."""
     from couchbox import appctl
 
     def playlists(vid):
         r_ = appctl.call("yt", {"op": "call", "fn": "saveOptions", "args": {"id": vid}}, timeout=30)
         return {p.get("id"): p for p in r_.get("playlists") or []}
+
+    def settles(vid, pid, want_saved):
+        end = time.monotonic() + 15
+        while True:
+            got = playlists(vid).get(pid, {}).get("saved")
+            if got is want_saved or time.monotonic() > end:
+                return got
+            time.sleep(2)
 
     try:
         probe = appctl.call("yt", {"op": "call", "fn": "menuProbe", "args": {}}, timeout=30)
@@ -712,67 +721,43 @@ def menu_test(r, want):
     if not vid or not f.get("signedIn"):
         print("ABORT: no video in focus on Home, signed in; nothing saved", flush=True)
         return
-    before = playlists(vid)
+    target = next((k for k, p in playlists(vid).items() if k not in ("WL", "LL") and not p.get("saved")), "")
+    if not target:
+        print("ABORT: no playlist without the video to try; nothing saved", flush=True)
+        return
 
-    def to_row(key):
-        for _ in range(30):
-            if d(focus()).get("at") == key:
+    def to_row(key=None, pid=None):
+        for _ in range(40):
+            g = d(focus())
+            if (key and g.get("at") == key) or (pid and g.get("atId") == pid):
                 return True
             remote("down", gap=0.3)
-        return d(focus()).get("at") == key
+        g = d(focus())
+        return (key and g.get("at") == key) or (pid and g.get("atId") == pid)
 
     remote("ok@1.2")  # hold OK: the card's menu
     r.step("menu-open", lambda f: ("playlist" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
     to_row("playlist")
     remote("ok")
-    r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists", f"mode {d(f).get('mode')}, {len(d(f).get('keys') or [])} rows"), settle=2)
-    if not to_row("newpl"):
-        print("ABORT: no New playlist row; nothing saved", flush=True)
+    r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists" and "newpl" not in (d(f).get("keys") or []),
+                                        f"mode {d(f).get('mode')}, {len(d(f).get('keys') or [])} rows"), settle=2)
+    if not to_row(pid=target):
+        print(f"ABORT: couldn't reach the playlist {target} in the menu; nothing saved", flush=True)
         remote("back", "back")
         return
-    remote("ok")  # New playlist: made, with the video in it
-    time.sleep(4)
-    after = playlists(vid)
-    new = [k for k, p in after.items() if k not in before and p.get("saved")]
-    if not new:  # YouTube won't make one from the TV: an existing playlist instead, the video out again straight after
-        print(f"(New playlist refused: {focus().get('toast')!r}; an existing playlist instead)", flush=True)
-        target = next((k for k, p in after.items() if k not in ("WL", "LL") and not p.get("saved")), "")
-        if not target:
-            print("ABORT: no playlist without the video to try", flush=True)
-            return
-        remote("ok@1.2")
-        to_row("playlist")
-        remote("ok")
-        time.sleep(2)
-        for _ in range(40):
-            if d(focus()).get("atId") == target:
-                break
-            remote("down", gap=0.3)
-        if d(focus()).get("atId") != target:
-            print(f"ABORT: couldn't reach the playlist {target} in the menu", flush=True)
-            remote("back", "back")
-            return
-        remote("ok")
-        time.sleep(3)
-        saved = playlists(vid).get(target, {}).get("saved")
-        r.step("menu-saved", lambda f: (saved is True, f"{vid} in {target}: {saved}; notice {f.get('toast')!r}"), settle=0)
-        remote("ok")  # the same row again: out of it
-        time.sleep(3)
-        gone = playlists(vid).get(target, {}).get("saved")
-        r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in {target}: {gone}"), settle=0)
-        if gone is not False:
-            print(f"WARNING: {vid} may still be in {target}: take it out by hand", flush=True)
-        remote("back", "back")
-        return
-    r.step("menu-saved", lambda f: (len(new) == 1, f"new playlists with {vid}: {new}; notice {f.get('toast')!r}"), settle=0)
-    for pid in new:
-        try:
-            appctl.call("yt", {"op": "call", "fn": "deletePlaylist", "args": {"id": pid}}, timeout=30)
-        except Exception as err:  # noqa: BLE001
-            print(f"WARNING: couldn't delete the test playlist {pid}: {err}: delete it by hand", flush=True)
-    time.sleep(2)
-    left = [k for k in playlists(vid) if k in new]
-    r.step("menu-unsaved", lambda f: (bool(new) and not left, f"the test playlist deleted: {not left}"), settle=0)
+    remote("ok")
+    time.sleep(1)
+    toast = focus().get("toast")
+    saved = settles(vid, target, True)
+    r.step("menu-saved", lambda f: (saved is True, f"{vid} in {target}: {saved}; notice {toast!r}"), settle=0)
+    remote("ok")  # the same row again: out of it
+    time.sleep(1)
+    toast = focus().get("toast")
+    gone = settles(vid, target, False)
+    r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in {target}: {gone}; notice {toast!r}"), settle=0)
+    if gone is not False:
+        print(f"WARNING: {vid} may still be in {target}: take it out by hand", flush=True)
+    remote("back", "back")
 
 def history_before(r):
     """Today's History before the run plays anything (for --clean-history: not to take those out)."""

@@ -538,12 +538,10 @@ class Backend(QObject):
             "cardStats": lambda: self.card_stats(a["id"]),
             "liveBehind": lambda: self.live_dvr(a["id"], float(a.get("behind") or 0)),
             "deletePlaylist": lambda: y.delete_playlist(a["id"]),
-            "createProbe": lambda: y.create_probe(a["id"]),       # measuring: how YouTube offers New playlist
             "editPlaylist": lambda: y.edit_playlist(a["edit"], bool(a.get("add", True))),
             "menuProbe": lambda: y.menu_probe(),           # measuring: a Home card's menu and lines, as this profile gets them
             "commentsProbe": lambda: y.comments_probe(a["id"]),   # measuring: a comment with replies, its shape
             "shortProbe": lambda: y.short_probe(a["id"]),         # measuring: a Short's subscription state, its shape
-            "createPlaylist": lambda: y.create_playlist(a.get("title") or "New playlist", a.get("id", "")),
             "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,

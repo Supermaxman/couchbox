@@ -1,6 +1,6 @@
 // A card's menu (hold OK, or the Menu key, on a card), as YouTube's TV app has it: Play next, Add
 // to queue, Save to Watch later, Save to playlist (the account's playlists, ticked where the
-// video is, and a new one), Remove from watch history (History's cards), Not interested, Don't
+// video is), Remove from watch history (History's cards), Not interested, Don't
 // recommend channel, Share (the link as a QR code) and Go to channel. Each says what it did in a
 // notice. Up and Down move, OK picks, Back closes (or goes back to the menu).
 import QtQuick
@@ -13,7 +13,6 @@ FocusScope {
     property var returnFocus: null
     property string mode: "main"              // main | playlists | share
     property var playlists: []                // Save to playlist's: [{id, title, saved}]
-    property bool canCreate: true             // YouTube makes playlists from this TV (it refused once: not offered)
     property var shared: ({})                 // Share's: {url, qr}
     readonly property bool video: !!item && (item.type === "video" || item.type === "live" || item.type === "short")
     function fb(kind) { return ((item && item.feedback) || []).find(f => f.kind === kind) || null; }
@@ -24,7 +23,7 @@ FocusScope {
         if (!item) return o;
         if (mode === "playlists") {
             for (const p of playlists) o.push({key: "pl", label: p.title, icon: p.id === "WL" ? "history" : "list", checked: p.saved, pl: p});
-            if (canCreate) o.push({key: "newpl", label: "New playlist", icon: "plus"});   // (named "New playlist": the remote has no keyboard)
+            // (no New playlist: YouTube doesn't let the TV's sign-in make playlists)
             return o;
         }
         if (mode === "share") return o;
@@ -82,7 +81,7 @@ FocusScope {
             if (needAccount("save videos")) return;
             Y.call("saveOptions", {id: it.id}, r => {
                 if (menu.item !== it || !menu.visible) return;
-                menu.playlists = r.playlists || []; menu.canCreate = r.canCreate !== false; menu.mode = "playlists"; menu.index = 0;
+                menu.playlists = r.playlists || []; menu.mode = "playlists"; menu.index = 0;
             }, e => { Y.toast(e); close(); });
         } else if (o.key === "pl") {
             const add = !o.pl.saved;
@@ -90,11 +89,6 @@ FocusScope {
                 Y.toast((add ? "Saved to " : "Removed from ") + o.pl.title);
                 menu.playlists = menu.playlists.map(p => p.id === o.pl.id ? Object.assign({}, p, {saved: add}) : p);
             });
-        } else if (o.key === "newpl") {
-            const title = "New playlist";
-            close();
-            Y.call("createPlaylist", {id: it.id, title: title},
-                   () => Y.toast("Saved to a new playlist, “" + title + "” (rename it in the YouTube app)"), e => Y.toast(e));
         } else if (o.key === "fb") {
             if (needAccount("tell YouTube what you'd rather not see")) return;
             close();

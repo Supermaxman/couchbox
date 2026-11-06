@@ -1247,7 +1247,6 @@ class YouTube:
         )
         self.visitor = self._read("visitor.json").get("visitorData", "")
         self.restricted = False  # Restricted mode: the app sets it from its settings
-        self.create_broken = False  # YouTube refused to make a playlist every way: New playlist isn't offered
         self.cache: dict[str, tuple[float, Any]] = {}
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(max_workers=6)
@@ -1630,58 +1629,6 @@ class YouTube:
         self.changed()
         return {"ok": True}
 
-    def _create_option(self, video_id: str) -> dict[str, Any] | None:
-        """The add-to-playlist answer's New playlist: the renderer holding createPlaylistServiceEndpoint."""
-        opts = self.call("playlist/get_add_to_playlist", {"videoIds": [video_id]}, cache=False)
-        for key in ("addToPlaylistCreateRenderer", "createPlaylistButtonRenderer", "buttonRenderer"):
-            for r in _find(opts, key):
-                if isinstance(r, dict) and next(_find(r, "createPlaylistServiceEndpoint"), None) is not None:
-                    return r
-        ep = next(_find(opts, "createPlaylistServiceEndpoint"), None)
-        return {"serviceEndpoint": {"createPlaylistServiceEndpoint": ep}} if isinstance(ep, dict) else None
-
-    def create_probe(self, video_id: str) -> dict[str, Any]:
-        """How YouTube offers New playlist for a video, as this profile gets it: the option's shape
-        (words and key names), its endpoint's keys and the apiUrl it posts to. No tokens."""
-        self.need_profile("make playlists")
-        r = self._create_option(video_id)
-        if r is None:
-            return {"note": "no New playlist option in the add-to-playlist answer"}
-        ep = next(_find(r, "createPlaylistServiceEndpoint"), {}) or {}
-        api = next((m.get("apiUrl") for m in _find(r, "webCommandMetadata") if isinstance(m, dict) and m.get("apiUrl")), "")
-        return {"option": outline_words(r), "endpointKeys": sorted(ep), "apiUrl": api, "broken": self.create_broken}
-
-    def create_playlist(self, title: str, video_id: str) -> dict[str, Any]:
-        """A new private playlist with this video in it: as the add-to-playlist answer's New
-        playlist posts it (its apiUrl and params), else plainly, else made empty and the video
-        added. YouTube refusing every way (some sign-ins can't make playlists): create_broken, and
-        the card menu stops offering it."""
-        self.need_profile("make playlists")
-        opt = self._create_option(video_id) if video_id else None
-        ep = (next(_find(opt, "createPlaylistServiceEndpoint"), {}) or {}) if opt else {}
-        api = next((m.get("apiUrl") for m in _find(opt or {}, "webCommandMetadata") if isinstance(m, dict) and m.get("apiUrl")), "")
-        path = api.split("/youtubei/v1/", 1)[1] if "/youtubei/v1/" in api else "playlist/create"
-        tries = []
-        if ep:
-            tries.append((path, dict({k: v for k, v in ep.items() if k != "clickTrackingParams"}, title=title, privacyStatus="PRIVATE")))
-        tries.append(("playlist/create", {"title": title, "videoIds": [video_id] if video_id else [], "privacyStatus": "PRIVATE"}))
-        tries.append(("playlist/create", {"title": title, "privacyStatus": "PRIVATE"}))  # (empty; the video added after)
-        last = None
-        for ep_path, body in tries:
-            try:
-                resp = self.call(ep_path, body, cache=False)
-            except YouTubeError as err:
-                last = err
-                print(f"yt New playlist: {ep_path} with {sorted(body)}: {err.args[0]}", flush=True)
-                continue
-            pid = resp.get("playlistId", "")
-            if pid and video_id and not body.get("videoIds"):
-                self.save(video_id, pid, True)
-            self.changed()
-            return {"id": pid, "title": title}
-        self.create_broken = True
-        raise YouTubeError("YouTube won't make a playlist from this TV. Make one in the YouTube app, then save to it here.") from last
-
     def page_probe(self, browse_id: str) -> dict[str, Any]:
         """A page's outline as this profile gets it, for finding what isn't shown: the surface's
         own keys, and each section's renderers, shelf type, title, first items' kinds and how
@@ -1839,7 +1786,7 @@ class YouTube:
         out = parse_save_options(self.call("playlist/get_add_to_playlist", {"videoIds": [video_id]}, cache=False))
         if not any(p["id"] == "WL" for p in out):
             out.insert(0, {"id": "WL", "title": "Watch later", "saved": False})
-        return {"playlists": out, "canCreate": not self.create_broken}
+        return {"playlists": out}
 
     def save(self, video_id: str, playlist_id: str, add: bool) -> dict[str, Any]:
         self.need_profile("save videos")
@@ -1848,9 +1795,12 @@ class YouTube:
             if add
             else {"action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": video_id}
         )
-        self.call("browse/edit_playlist", {"playlistId": playlist_id, "actions": [action]}, cache=False)
+        resp = self.call("browse/edit_playlist", {"playlistId": playlist_id, "actions": [action]}, cache=False)
         self.changed()
-        return {"saved": add}
+        status = resp.get("status", "")
+        if status and status != "STATUS_SUCCEEDED":
+            raise YouTubeError(f"YouTube didn't {'save' if add else 'remove'} it ({status}).")
+        return {"saved": add, "ok": True, "status": status}
 
     # ---------------------------------------------------------------- history and resume
     def report(self, video_id: str, cpn: str, event: str, position: float, duration: float) -> dict[str, Any]:
@@ -2321,11 +2271,6 @@ class Demo(YouTube):
     def delete_playlist(self, playlist_id):
         self.state["saved"].pop(playlist_id, None)
         return {"ok": True}
-
-    def create_playlist(self, title, video_id):
-        self.need_profile("make playlists")
-        self.state["saved"].setdefault("PLdemonew", set()).add(video_id)
-        return {"id": "PLdemonew", "title": title}
 
     def report(self, video_id, cpn, event, position, duration):
         return {"ok": bool(self.profile)}
