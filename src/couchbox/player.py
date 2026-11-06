@@ -618,6 +618,7 @@ class MpvVideo(QQuickFramebufferObject):
             except Exception:  # noqa: BLE001
                 pass
 
+    @Slot()
     def stop(self):
         self._cancel_preload()
         self.mpv.command("stop")
