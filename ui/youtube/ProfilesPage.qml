@@ -23,9 +23,11 @@ FocusScope {
 
     function load(focusId) {
         Y.call("profiles", {}, r => {
-            page.profiles = r.profiles || [];
-            const want = focusId || r.last || r.current || "";
-            const i = page.profiles.findIndex(p => p.id === want);
+            const all = r.profiles || [];
+            const last = r.last || r.current || "";       // the one last watched as comes first (YouTube's order)
+            const k = all.findIndex(p => p.id === last);
+            page.profiles = k > 0 ? [all[k]].concat(all.slice(0, k), all.slice(k + 1)) : all;
+            const i = page.profiles.findIndex(p => p.id === (focusId || last));
             page.index = Math.max(0, i);
             page.area = "row";
             list.currentIndex = page.index;
@@ -69,22 +71,25 @@ FocusScope {
             GradientStop { position: 1; color: "#4a0c1c" }
         }
     }
-    Repeater {                                 // soft shapes, bottom right
-        model: [{x: 1430, y: 790, w: 520, h: 640, r: -28, a: "#d04a6a", b: "#7a1830"},
-                {x: 1720, y: 850, w: 360, h: 520, r: -18, a: "#e36f8f", b: "#a0244a"},
-                {x: 1190, y: 990, w: 760, h: 360, r: -8, a: "#c8405a", b: "#5a1020"}]
-        Rectangle {
-            id: blob
+    Repeater {                                 // petals and a ribbon, bottom right (soft gradients, drawn here)
+        model: [{x: 1380, y: 700, w: 560, h: 560, r: -20, a: "#d04a6a", b: "#6a1428", k: "petal"},
+                {x: 1660, y: 800, w: 420, h: 420, r: 25, a: "#e8789a", b: "#a0244a", k: "petal"},
+                {x: 1060, y: 900, w: 980, h: 300, r: -12, a: "#c8405a", b: "#4a0c1c", k: "ribbon"}]
+        Image {
             required property var modelData
             x: modelData.x * Y.u; y: modelData.y * Y.u
             width: modelData.w * Y.u; height: modelData.h * Y.u
-            radius: width / 2
+            sourceSize: Y.sz(width, height)
             rotation: modelData.r
             opacity: 0.85
-            gradient: Gradient {
-                GradientStop { position: 0; color: blob.modelData.a }
-                GradientStop { position: 1; color: blob.modelData.b }
-            }
+            smooth: true
+            source: "data:image/svg+xml;utf8," + encodeURIComponent(
+                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>"
+                + "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='" + modelData.a + "'/>"
+                + "<stop offset='1' stop-color='" + modelData.b + "'/></linearGradient></defs><path fill='url(#g)' d='"
+                + (modelData.k === "petal" ? "M2 98C2 40 40 2 98 2C98 60 60 98 2 98Z"     // a leaf: two arcs, pointed ends
+                                           : "M0 60C20 20 45 20 60 40S90 70 100 30V70C85 100 60 95 45 75S15 55 0 100Z")
+                + "'/></svg>")
         }
     }
     Logo {
@@ -146,7 +151,7 @@ FocusScope {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 372 * Y.u
                 spacing: 4 * Y.u
-                width: Math.max(cell.width + 40 * Y.u, 340 * Y.u)
+                width: cell.width                // names ellipsized to the tile
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
@@ -160,14 +165,16 @@ FocusScope {
                     visible: cell.on && !cell.add && !!cell.p.handle
                     horizontalAlignment: Text.AlignHCenter
                     text: cell.p.handle || ""
+                    elide: Text.ElideRight
                     color: "#c9c4c6"
                     font.family: Y.font; font.pixelSize: 24 * Y.u
                 }
                 Text {
                     width: parent.width
-                    visible: cell.on && !cell.add && !!cell.p.premium
+                    visible: cell.on && !cell.add && !!(cell.p.membership || cell.p.premium)
                     horizontalAlignment: Text.AlignHCenter
-                    text: "YouTube Premium"
+                    text: cell.p.membership || "YouTube Premium"
+                    elide: Text.ElideRight
                     color: "#c9c4c6"
                     font.family: Y.font; font.pixelSize: 24 * Y.u
                 }

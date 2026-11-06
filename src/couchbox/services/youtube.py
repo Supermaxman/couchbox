@@ -1098,6 +1098,11 @@ class YouTube:
             try:
                 chans = self.accounts_list(self.auth.token(a["id"]))
                 self.auth.save_channels(a["id"], chans)
+                prof = self.profile
+                if prof and prof.get("account") == a["id"]:  # the one watching now: its Premium at once
+                    now = self.find_profile(prof["id"]) or {}
+                    prof["premium"] = bool(prof.get("premium") or now.get("premium"))
+                    prof["membership"] = now.get("membership", "")
             except ytauth.SignedOut:
                 self.on_event("signedOut", {"account": a["id"], "name": a.get("name", "")})
             except Exception:
