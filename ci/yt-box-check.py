@@ -221,12 +221,16 @@ def d(f):
     return f.get("detail") or {}
 
 
-def picture(r, name):
-    """The last screenshot's video area (above the chapters' strip and the bar, dimmed 45%) isn't black."""
+def picture(r, name, ref=None):
+    """The last screenshot's video area (above the chapters' strip and the bar, dimmed 45%) isn't
+    black: over 10, or at least a quarter as bright as ref (another frame of the same video: its
+    first frame may be dark). Returns the brightness."""
     lum = brightness(r.png, (200, 60, 1520, 260))
-    ok = lum > 10
+    ok = lum > 10 or (ref is not None and ref > 0 and lum >= 0.25 * ref)
     r.failed += 0 if ok else 1
-    print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} {name}: mean brightness {lum:.1f} of the video area (black is under 10)", flush=True)
+    than = f", {ref:.1f} mid-video" if ref is not None else ""
+    print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} {name}: mean brightness {lum:.1f} of the video area (black is under 10{than})", flush=True)
+    return lum
 
 
 def show_controls():
@@ -234,6 +238,27 @@ def show_controls():
     if d(focus()).get("mode") == "hidden":
         remote("down")
         time.sleep(0.6)
+
+
+def anchor(target="home"):
+    """Show target (home, settings...) through the app's control socket: no keys pressed."""
+    from couchbox import appctl
+
+    guard()
+    try:
+        appctl.call("yt", {"op": "open", "target": target}, timeout=5)
+    except Exception as err:  # noqa: BLE001
+        print(f"(couldn't open {target}: {err})", flush=True)
+    time.sleep(2)
+
+
+def to_entry(key):
+    """From Home (opened through the socket), the guide, Up / Down to its entry `key`, and OK."""
+    anchor("home")
+    if guide_to(key):
+        ok_on(lambda f: f.get("guideAt") == key, f"the guide's {key}")
+    else:
+        print(f"(the guide has no {key} entry)", flush=True)
 
 
 def guest(r):
@@ -261,10 +286,21 @@ def guest(r):
     remote("left", "ok")  # the guide (on Search), OK: Search again
     r.step("search-reopen", lambda f: ("keys" in f["focus"] and not d(f).get("results"), "Search again: the keys"))
 
-    # a video from Home
+    # a video from Home longer than 5 minutes (a short one ends mid-walk: Up next takes over)
     remote("left", "down", "ok")
     r.step("home-again", lambda f: (f["page"] == "home", "Home"), settle=2)
-    remote("ok")
+    long_video = lambda c: c.get("type") == "video" and not c.get("live") and c.get("duration", 0) > 300  # noqa: E731
+    found = None
+    for _ in range(4):  # along a row, then the next row down
+        found = card_to(long_video, tries=7)
+        if found:
+            break
+        remote("down")
+    print(f"(the video: {found and found.get('duration')} s long)" if found else "(no video over 5 minutes on Home's first rows: the first card)", flush=True)
+    if found:
+        ok_on(lambda f: long_video(f.get("card") or {}), "a video over 5 minutes")
+    else:
+        remote("ok")
     r.step(
         "player",
         lambda f: (
@@ -302,14 +338,14 @@ def guest(r):
     at = d(f).get("position", 0)
     remote("up", *(["left"] if at >= 12 else []))
     r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
-    picture(r, "paused-seek-mid-picture")
+    mid = picture(r, "paused-seek-mid-picture")
     remote("left", "left", "left", "left")
     r.step(
         "paused-seek-0",
         lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"),
         settle=2.5,
     )
-    picture(r, "paused-seek-0-picture")
+    picture(r, "paused-seek-0-picture", ref=mid)
     remote("right", "right", "right")
     r.step("paused-seek-30", lambda f: (bool(d(f).get("paused")), f"position {d(f).get('position')}"), settle=2.5)
     picture(r, "paused-seek-30-picture")
@@ -380,10 +416,11 @@ def guest(r):
     remote("back")
     r.step("channel-back", lambda f: (f.get("page") == "player" and "controls" in f["focus"], f"page {f.get('page')}"), settle=2)
 
-    # out of the player, then the Shorts tab: straight into Shorts
+    # out of the player, then the Shorts tab: straight into Shorts. From here each part starts from
+    # Home, opened through the control socket, so one that goes wrong doesn't throw the rest out
     remote("back", "back")
     r.step("player-left", lambda f: (f["page"] == "home", f"page {f.get('page')}"), settle=2)
-    remote("left", "down", "ok")  # the guide on Home, Down: Shorts
+    to_entry("shorts")
     f = r.step("shorts", lambda f: ("shorts" in f["focus"], f"focus {f.get('focus')}"), settle=5)
     first = d(f).get("videoId")
     remote("down")  # the next Short
@@ -396,26 +433,26 @@ def guest(r):
     # a guest's Library (the tiles that need no account), Subscriptions (the sign-in note), Settings
     # beside the open guide, and Who's watching from the guide's picture (and Back from it)
     # the tabs: Music, Gaming, Movies & TV (their shelves load), then Library
-    remote("down", "ok")  # Shorts -> Music
+    to_entry("music")
     r.step(
         "tab-music",
         lambda f: (f.get("section") == "music" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
         settle=4,
     )
-    remote("left", "down", "down", "down", "ok")  # Music -> Subscriptions, Library, Gaming
+    to_entry("gaming")
     r.step(
         "tab-gaming",
         lambda f: (f.get("section") == "gaming" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
         settle=4,
     )
-    remote("left", "down", "down", "down", "ok")  # Gaming -> News, Podcasts, Movies & TV
+    to_entry("movies")
     r.step(
         "tab-movies",
         lambda f: (f.get("section") == "movies" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
         settle=4,
     )
     # a live stream from the Live tab's first row: it's live, seeks back (behind live) and forward
-    remote("left", "down", "ok")  # Movies & TV -> Live
+    to_entry("live")
     r.step("tab-live", lambda f: (f.get("section") == "live" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows"), settle=4)
     remote("ok")
     f = r.step(
@@ -424,25 +461,26 @@ def guest(r):
         settle=10,
     )
     if d(f).get("live"):
-        remote("back")  # the controls hide: Left / Right seek
-        time.sleep(1)
+        if d(focus()).get("mode") != "hidden":
+            remote("back")  # the controls hide: Left / Right seek (Back with them hidden leaves)
+            time.sleep(1)
         remote("left")
         r.step("live-behind", lambda f: ("behind live" in (f.get("toast") or ""), f"toast {f.get('toast')!r}"), settle=1)
         remote("right", "right")  # forward to live again
         r.step("live-forward", lambda f: (bool(f.get("toast")), f"toast {f.get('toast')!r}"), settle=1)
     remote("back", "back")  # out of the player, back on the Live tab
     r.step("live-left", lambda f: (f.get("section") == "live" and f["page"] != "player", f"page {f.get('page')}"), settle=2)
-    remote("left", *["up"] * 5, "ok")  # Live -> Movies & TV, Podcasts, News, Gaming, Library
+    to_entry("library")
     r.step("library", lambda f: (f.get("section") == "library" and "tiles" in f["focus"], f"section {f.get('section')}"), settle=2)
     remote("down")
     r.step("library-signin", lambda f: ("action" in f["focus"], "the Sign in button"), settle=1)
-    remote("left", "up", "ok")
+    to_entry("subscriptions")
     r.step(
         "subscriptions",
         lambda f: (f.get("section") == "subscriptions" and "message" in f["focus"], f"section {f.get('section')}"),
         settle=2,
     )
-    remote("left", *["down"] * 8, "ok", gap=0.35)  # Subscriptions -> ... -> Settings
+    to_entry("settings")
     r.step(
         "settings",
         lambda f: (
@@ -461,7 +499,7 @@ def guest(r):
     r.step("settings-flip-back", lambda f: (d(f).get("on") == was, f"Hide Shorts back to {d(f).get('on')}"), settle=1.5)
     remote("left", "down")
     r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
-    remote("left", *["up"] * 13, "ok", gap=0.3)  # the guide, up to its picture: Who's watching
+    to_entry("who")  # the guide's picture: Who's watching
     r.step("profiles", lambda f: ("profiles" in f["focus"], f"focus {f.get('focus')}"), settle=2)
     remote("back")
     r.step("profiles-back", lambda f: ("guide" in f["focus"], f"focus {f.get('focus')}"), settle=1.5)

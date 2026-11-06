@@ -412,7 +412,8 @@ ApplicationWindow {
             const c = p.currentItem;
             if (c && c.item !== undefined && c.kind !== undefined) {
                 const x = c.item || {};
-                return {type: x.type || "video", id: x.id || "", progress: x.progress || 0, live: !!x.live};
+                const len = String(x.duration || "").split(":").reduce((n, p) => n * 60 + (parseInt(p) || 0), 0);
+                return {type: x.type || "video", id: x.id || "", progress: x.progress || 0, live: !!x.live, duration: len};
             }
             if (c && c.modelData && c.modelData.colors) return {type: "tile", id: c.modelData.id || "", title: c.modelData.title || ""};
         }
