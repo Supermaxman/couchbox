@@ -99,7 +99,7 @@ QtObject {
     property var waiting: ({})
     function call(op, args, done, fail) {
         const id = nextId++;
-        waiting[id] = [done, fail];
+        waiting[id] = [done, fail, op];
         backend.call(id, op, JSON.stringify(args || {}));
     }
     property Connections replies: Connections {
@@ -113,7 +113,9 @@ QtObject {
             try {
                 if (r && r.error) { if (cb[1]) cb[1](r.error); else y.toast(r.error); }
                 else if (cb[0]) cb[0](r);
-            } catch (e) { console.log("youtube:", e); }
+            } catch (e) {                     // which answer, and where (QV4's stack: function@file:line)
+                console.log("youtube:", e, "| in the answer to", cb[2], "|", String(e.stack || "").split("\n").slice(0, 4).join(" < "));
+            }
         }
     }
 

@@ -104,6 +104,9 @@ FocusScope {
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
         mode = "controls"; button = 4; ending = false; captionsOn = "";
+        // the next video (Up next's countdown, a card): the controls take the focus back from the
+        // end screen, which hides (focus left on it went nowhere: the box check's steps 26-27)
+        if (player.activeFocus && !ctl.activeFocus) ctl.forceActiveFocus();
         if (speed !== 1) video.setSpeed(speed);
         showControls();
         Y.call("stream", {id: id}, r => {
@@ -245,7 +248,7 @@ FocusScope {
     function openPanel(which) {
         if (which === "save") {
             if (!Y.signedIn) return signInFirst("save videos");
-            Y.call("saveOptions", {id: videoId}, r => { player.saveOptions = r.playlists || []; player.panel = "save"; });
+            Y.call("saveOptions", {id: videoId}, r => { if (player) { player.saveOptions = r.playlists || []; player.panel = "save"; } });
             return;
         }
         if (which === "notify" && !Y.signedIn) return signInFirst("choose notifications");
@@ -936,7 +939,7 @@ FocusScope {
         objectName: "endscreen"
         anchors.fill: parent
         visible: player.ending
-        onPlayNow: { player.ending = false; player.playNext(); }
+        onPlayNow: { player.ending = false; ctl.forceActiveFocus(); player.playNext(); }
         onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; ctl.forceActiveFocus(); player.showControls(); }
     }
     Rectangle {                                // buffering

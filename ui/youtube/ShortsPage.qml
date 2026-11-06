@@ -62,7 +62,7 @@ FocusScope {
     function fetchNext() {
         const n = items[index + 1];
         nextInfo = {};
-        if (n) Y.call("short", {id: n.id}, r => { if (page.items[page.index + 1] && page.items[page.index + 1].id === n.id) page.nextInfo = r; }, () => {});
+        if (n) Y.call("short", {id: n.id}, r => { if (page && page.items[page.index + 1] && page.items[page.index + 1].id === n.id) page.nextInfo = r; }, () => {});
     }
 
     Keys.onPressed: e => {
@@ -89,11 +89,11 @@ FocusScope {
         if (side === 0) {
             if (!Y.signedIn) return Y.toast("Sign in to subscribe: the guide's picture, then Add account.");
             const on = !info.subscribed;
-            Y.call("subscribe", {id: info.channelId, on: on}, () => { page.info = Object.assign({}, page.info, {subscribed: on}); });
+            Y.call("subscribe", {id: info.channelId, on: on}, () => { if (page) page.info = Object.assign({}, page.info, {subscribed: on}); });
         } else if (side === 1) {
             if (!Y.signedIn) return Y.toast("Sign in to like Shorts.");
             const now = info.like === "like" ? "none" : "like";
-            Y.call("like", {id: videoId, status: now}, () => { page.info = Object.assign({}, page.info, {like: now}); });
+            Y.call("like", {id: videoId, status: now}, () => { if (page) page.info = Object.assign({}, page.info, {like: now}); });
         } else if (side === 2) Y.toast("Comments on Shorts come in a later update.");
         else if (side === 3) Y.toast("Remixing isn't on TVs.");
         else Y.toast("More options come in a later update.");
