@@ -47,7 +47,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import youtube, ytauth, ytextras, ytstream  # noqa: E402
+from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming  # noqa: E402
 
 
 class Backend(QObject):
@@ -176,7 +176,12 @@ class Backend(QObject):
 
     @Slot(int, str, str)
     def call(self, rid, op, args):
+        asked = yttiming.now()
+        if op == "stream" and '"max_height"' not in (args or ""):     # a video starting: until its first frame
+            watch.play = {"id": json.loads(args or "{}").get("id", ""), "t0": watch.last_ok if asked - watch.last_ok < 2 else asked}
+
         def work():
+            started = yttiming.now()
             try:
                 out = self.run(op, json.loads(args or "{}"))
             except (ytstream.Unavailable, youtube.YouTubeError) as err:
@@ -186,6 +191,9 @@ class Backend(QObject):
             except Exception as err:
                 traceback.print_exc()
                 out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
+            yttiming.note("call", op=op, ms=yttiming.ms(asked), queued=round((started - asked) * 1000))
+            if op == "stream" and watch.play and isinstance(out, dict):
+                watch.play["stream"] = yttiming.ms(watch.play["t0"])
             self.reply.emit(rid, json.dumps(out))
         self.pool.submit(work)
 
@@ -265,7 +273,9 @@ class Control(QObject):
         if op == "state":
             return dict(self.state, site="YouTube")
         if op == "focus":
-            return dict(self.focus, page=self.state.get("page", ""))
+            return dict(self.focus, page=self.state.get("page", ""), timing=yttiming.recent(40))
+        if op == "timing":
+            return {"timing": yttiming.recent()}
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):
@@ -356,6 +366,58 @@ class Shooter(QObject):
         return at
 
 
+class Watch(QObject):
+    """Timing (couchbox.services.yttiming): a key until the focus moved, OK on a video until its
+    first frame, frames that came late while the screen moved."""
+    window = None
+    last_key, last_key_name, last_ok, reported = 0.0, "", 0.0, True
+    play = None                                      # {id, t0, stream}: a video starting
+    frames = 0.0
+
+    def key(self, name):
+        self.last_key, self.last_key_name, self.reported = yttiming.now(), name, False
+        if name in ("Key_Return", "Key_Enter"):
+            self.last_ok = self.last_key
+
+    def attach(self, window):
+        self.window = window
+        window.activeFocusItemChanged.connect(self.moved)
+        window.frameSwapped.connect(self.swapped)
+
+    @Slot()
+    def moved(self):
+        if self.reported or yttiming.now() - self.last_key > 3:
+            return
+        self.reported = True
+        names, it = [], self.window.activeFocusItem()
+        while it is not None:
+            if it.objectName():
+                names.insert(0, it.objectName())
+            it = it.parentItem()
+        yttiming.note("key", key=self.last_key_name.removeprefix("Key_"), ms=yttiming.ms(self.last_key), to="/".join(names[-3:]))
+
+    @Slot()
+    def swapped(self):
+        t = yttiming.now()
+        gap, self.prev_gap = t - self.frames, getattr(self, "prev_gap", 1.0)
+        self.frames = t
+        if 0.05 < gap < 1.0 and self.prev_gap < 0.034:   # moving at 60 fps, then a frame late
+            yttiming.note("stall", ms=round(gap * 1000))
+        self.prev_gap = gap
+
+    def frame(self, kind, **kw):
+        """The player's first picture of a file (couchbox.player's TIMING hook)."""
+        p, self.play = self.play, None
+        if p:
+            yttiming.note("play", id=p["id"], stream=p.get("stream", -1), open=kw.get("open"), frame=kw.get("frame"),
+                          total=yttiming.ms(p["t0"]))
+        else:
+            yttiming.note("frame", **kw)
+
+
+watch = Watch()
+
+
 class KeyFilter(QObject):
     """OK, Back and the other one-shot keys act once per press, on whatever had the focus when
     they went down: their repeats (held, or the compositor's) are dropped, and so is a release
@@ -375,10 +437,14 @@ class KeyFilter(QObject):
         self.down = {}
 
     def eventFilter(self, obj, ev):
-        from PySide6.QtCore import QEvent
+        from PySide6.QtCore import QEvent, Qt
 
         if ev.type() == QEvent.KeyPress and not ev.isAutoRepeat():
             self.pressed.emit()
+            try:
+                watch.key(Qt.Key(int(ev.key())).name)
+            except ValueError:                           # (a key Qt has no name for)
+                watch.key(str(int(ev.key())))
         if ev.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or int(ev.key()) not in self.keys:
             return False
         if ev.isAutoRepeat():
@@ -466,6 +532,10 @@ def main():
     shooter.window = engine.rootObjects()[0]
     keyfilter.window = shooter.window
     shooter.window.installEventFilter(keyfilter)
+    from couchbox import playback, player
+    watch.attach(shooter.window)
+    player.TIMING = watch.frame
+    playback.ON_SWITCH = lambda took, mode: yttiming.note("rate", ms=took, mode=mode)
     code = app.exec()
     if control.server:
         control.server.close()

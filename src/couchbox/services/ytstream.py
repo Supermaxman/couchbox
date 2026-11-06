@@ -117,14 +117,18 @@ def _downloader():
     return _ydl
 
 
-def extract(video_id: str) -> dict[str, Any]:
-    """yt-dlp's information about a video (formats not chosen yet)."""
+def extract(video_id: str, phases: Any = None) -> dict[str, Any]:
+    """yt-dlp's information about a video (formats not chosen yet). phases (yttiming.Phases)
+    hears yt-dlp's progress messages: when each step began."""
     with _lock:
         ydl = _downloader()
+        ydl.params["logger"] = phases
         try:
             return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False, process=False)
         except Exception as err:  # yt-dlp's DownloadError, ExtractorError, ...
             raise Unavailable(friendly(str(err))) from err
+        finally:
+            ydl.params["logger"] = None
 
 
 # yt-dlp's errors as the TV says them (the first that matches)
@@ -336,8 +340,13 @@ def storyboard(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
 def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts)."""
+    from couchbox.services import yttiming
+
     t = time.monotonic()
-    info = extract(video_id)
+    waited = time.monotonic()
+    phases = yttiming.Phases()
+    info = extract(video_id, phases)
+    took = yttiming.ms(waited)
     out = playable(info, h264, max_height, superres)
     out.update(
         {
@@ -358,4 +367,9 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, supe
             "took": round(time.monotonic() - t, 2),
         }
     )
+    spans = phases.spans(took)
+    yttiming.note(
+        "stream", id=video_id, extract=took, protocol="hls" if "m3u8" in out["url"] or "/hls_playlist/" in out["url"] else "dash", **spans
+    )
+    out["timing"] = dict(spans, extract=took)
     return out

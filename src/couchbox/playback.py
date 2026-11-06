@@ -232,6 +232,9 @@ def outputs() -> list[Output]:
     return parse_outputs(system.sh(["kscreen-doctor", "-o"], check=False, timeout=15).stdout or "")
 
 
+ON_SWITCH = None  # an app's timing hook: (ms the switch took, the new mode)
+
+
 def set_rate(fps: float | None) -> list[str]:
     """Put each TV output in the mode for a fps video (None: Settings → Resolution), with
     kscreen-doctor, in the TV session. An output already there isn't touched (a switch blanks
@@ -246,9 +249,13 @@ def set_rate(fps: float | None) -> list[str]:
         if not target:
             continue
         if target.id != o.current:
+            t = time.monotonic()
             r = system.sh(["kscreen-doctor", f"output.{o.name}.mode.{target.id}"], check=False, timeout=15)
+            took = round((time.monotonic() - t) * 1000)
             why = f"for {fps:.3f} fps" if fps else "Settings' mode"
-            _log(f"{o.name}: {o.mode(o.current)} -> {target} {why}" + ("" if r.returncode == 0 else " (failed)"))
+            _log(f"{o.name}: {o.mode(o.current)} -> {target} {why} in {took} ms" + ("" if r.returncode == 0 else " (failed)"))
+            if ON_SWITCH:
+                ON_SWITCH(took, str(target))
         if home is None or target.id != home.id:
             away.append(o.name)
     return away

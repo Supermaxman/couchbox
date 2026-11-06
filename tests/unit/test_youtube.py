@@ -487,7 +487,7 @@ def test_resolve_reports_chapters_and_portrait(monkeypatch):
         "chapters": [{"start_time": 0, "title": "Start"}, {"start_time": 30, "title": "Middle"}, {"start_time": 40}],
         "formats": [fmt("18", "avc1.42001E", "mp4a.40.2", 1920, 30, width=1080)],
     }
-    monkeypatch.setattr(S, "extract", lambda vid: info)
+    monkeypatch.setattr(S, "extract", lambda vid, phases=None: info)
     out = S.resolve("vid00000018")
     assert out["portrait"] and out["chapters"] == [{"start": 0.0, "title": "Start"}, {"start": 30.0, "title": "Middle"}]
     assert out["url"] == "https://media.example/18" and out["title"] == "Tall"

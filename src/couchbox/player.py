@@ -103,6 +103,7 @@ FAST = {
 }
 _DEBUG = bool(os.environ.get("COUCHBOX_MPV_LOG"))  # also: what draws after a seek (MpvVideo._debug)
 _players = weakref.WeakSet()
+TIMING = None  # an app's timing hook (couchbox-yt: yttiming.note): how long a file takes to show
 _live = {}  # the playback settings (playback.LIVE), followed while the app runs
 
 
@@ -158,6 +159,11 @@ class _Renderer(QQuickFramebufferObject.Renderer):
         # render.h: mpv_render_context_update() after each update callback, before rendering
         new = self.ctx.update()
         self.item._debug(f"render {fbo.width()}x{fbo.height()} new-frame={new}")
+        it = self.item
+        if TIMING and new and it._t_loaded:  # the file's first picture
+            t = time.monotonic()
+            TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000))
+            it._t_load = it._t_loaded = 0.0
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
         _drop_frame_fence()
         if QQuickOpenGLUtils:
@@ -218,6 +224,8 @@ class MpvVideo(QQuickFramebufferObject):
             else None,
         )
         self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)
+        self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
+        self._t_loaded = 0.0
         self._pos = 0.0
         self._dur = 0.0
         self._paused = False
@@ -248,6 +256,11 @@ class MpvVideo(QQuickFramebufferObject):
         self._prop.connect(self._on_prop, Qt.QueuedConnection)
         for name in ("time-pos", "duration", "pause", "paused-for-cache", "eof-reached", "track-list", "sid"):
             self.mpv.observe_property(name, lambda n, v: self._prop.emit(n, v))
+
+        @self.mpv.event_callback("file-loaded")
+        def _loaded(ev):
+            if self._t_load and not self._t_loaded:
+                self._t_loaded = time.monotonic()
 
         @self.mpv.event_callback("end-file")
         def _end(ev):
@@ -346,6 +359,7 @@ class MpvVideo(QQuickFramebufferObject):
         opts = [f"start={int(start)}"] if start > 0 else []
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
+        self._t_load, self._t_loaded = time.monotonic(), 0.0
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 

@@ -3,7 +3,7 @@
 couchbox-input and the compositor), a screenshot after each step (couchbox-screenshot) and what
 had the focus then (the app's control socket: {"op": "focus"}).
 
-  sudo python3 ci/yt-box-check.py [--profile guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep]
+  sudo python3 ci/yt-box-check.py [--profile guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep] [--perf]
 
 It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running), then:
 Home; Search from the guide, typing on a keyboard and Enter; back Home; a video from Home;
@@ -19,6 +19,12 @@ Who's watching, Home, Subscriptions, Library's History, Watch later and Playlist
 part-watched video from History (under a minute: it must start where YouTube says), the channel
 and notification panels opened and closed, and Settings → Accounts. Nothing is liked,
 subscribed, saved or changed; the guest's "Sign in" steps and casting aren't run.
+
+--perf times the app instead (as the profile given, guest by default): start until Home shows,
+3 videos in turn from OK to their first picture (the stream in yt-dlp's parts, mpv opening it,
+the first frame, a TV refresh switch), opening Search, 3 of Home's rows (keys, calls, late
+frames), every back-end call's median and worst, and the app's processor use and memory: PERF
+lines, and OUT/perf.json.
 
 Before every key and every reading it checks that couchbox-yt is still the window in front and
 that no Frigate pop-up is up; if either fails it stops at once ("ABORT: ..."), pressing nothing
@@ -684,11 +690,161 @@ def settings_accounts(r):
         skip(r, "settings-accounts", "Settings isn't in the guide")
 
 
+# ------------------------------------------------------------------ perf: where the time goes
+def app_pid():
+    out = subprocess.run(["pgrep", "-u", TV_USER, "-f", APP], capture_output=True, text=True, check=False).stdout.split()
+    return int(out[0]) if out else 0
+
+
+def usage(pid):
+    """(processor seconds used so far, resident MB) of pid."""
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            st = fh.read().rsplit(")", 1)[1].split()
+        cpu = (int(st[11]) + int(st[12])) / os.sysconf("SC_CLK_TCK")
+        with open(f"/proc/{pid}/status") as fh:
+            rss = next((int(ln.split()[1]) for ln in fh if ln.startswith("VmRSS:")), 0) / 1024
+        return cpu, rss
+    except (OSError, ValueError, IndexError):
+        return 0.0, 0.0
+
+
+def timing_since(mark):
+    """The app's timing events (couchbox.services.yttiming) after `mark` (their "at")."""
+    from couchbox import appctl
+
+    try:
+        ev = appctl.call("yt", {"op": "timing"}, timeout=5).get("timing") or []
+    except Exception:  # noqa: BLE001
+        return []
+    return [e for e in ev if e.get("at", 0) > mark]
+
+
+def last_at():
+    ev = timing_since(-1)
+    return ev[-1]["at"] if ev else 0.0
+
+
+class Perf:
+    def __init__(self, out):
+        self.out, self.rows, self.pid = out, {}, app_pid()
+
+    def say(self, name, value, data=None):
+        print(f"PERF {name}: {value}", flush=True)
+        self.rows[name] = data if data is not None else value
+
+    def phase(self, name, fn):
+        """Run fn(); say its processor use and memory after it."""
+        c0, _ = usage(self.pid)
+        t0 = time.monotonic()
+        fn()
+        c1, rss = usage(self.pid)
+        wall = time.monotonic() - t0
+        self.say(f"{name}-cpu", f"{100 * (c1 - c0) / max(wall, 0.1):.0f}% of one core over {wall:.0f} s, {rss:.0f} MB resident",
+                 {"cpu_pct": round(100 * (c1 - c0) / max(wall, 0.1)), "seconds": round(wall, 1), "rss_mb": round(rss)})
+
+    def save(self):
+        with open(os.path.join(self.out, "perf.json"), "w") as fh:
+            json.dump(self.rows, fh, indent=1)
+
+
+def perf(r, started):
+    """Open the app, Home ready, 3 videos in turn to their first picture, Search, 3 of Home's rows:
+    what each took (and the app's processor use and memory), from the app's own timing."""
+    p = Perf(r.out)
+    for _ in range(90):
+        f = focus()
+        if f.get("page") == "home" and d(f).get("rows", 0) > 0:
+            break
+        time.sleep(0.25)
+    p.say("home-ready", f"{time.monotonic() - started:.1f} s from start", round(time.monotonic() - started, 2))
+    calls = [e for e in timing_since(-1) if e["kind"] == "call"]
+    p.say("start-calls", ", ".join(f"{e['op']} {e['ms']} ms" for e in calls[:8]), calls[:8])
+    p.pid = app_pid()
+    p.phase("idle-home", lambda: time.sleep(10))
+
+    def videos():
+        for i in range(3):
+            anchor("home")
+            time.sleep(2)
+            remote(*["right"] * i, gap=0.5)
+            c = card_to(lambda c: c.get("type") == "video" and not c.get("live"), tries=5)
+            mark = last_at()
+            if not c or not ok_on(lambda f: (f.get("card") or {}).get("type") == "video", "a video"):
+                p.say(f"video-{i + 1}", "no video card")
+                continue
+            play = None
+            for _ in range(160):  # up to 40 s
+                ev = timing_since(mark)
+                play = next((e for e in ev if e["kind"] == "play"), None)
+                if play:
+                    break
+                time.sleep(0.25)
+            ev = timing_since(mark)
+            stream = next((e for e in ev if e["kind"] == "stream"), {})
+            rate = next((e for e in ev if e["kind"] == "rate"), None)
+            key = next((e for e in ev if e["kind"] == "key"), {})
+            if not play:
+                p.say(f"video-{i + 1}", "no first frame in 40 s", {"events": ev})
+                continue
+            parts = {k: v for k, v in stream.items() if k not in ("at", "kind", "id")}
+            p.say(
+                f"video-{i + 1}",
+                f"first frame {play['total']} ms after OK (player page {key.get('ms', '?')} ms; stream {play['stream']} ms: "
+                f"{', '.join(f'{k} {v}' for k, v in parts.items())}; mpv open {play['open']} ms, first frame {play['frame']} ms more)"
+                + (f"; TV refresh switch {rate['ms']} ms ({rate['mode']})" if rate else ""),
+                {"play": play, "stream": stream, "key": key, "rate": rate},
+            )
+            time.sleep(3)
+        anchor("home")
+
+    p.phase("videos", videos)
+
+    def search():
+        anchor("home")
+        mark = last_at()
+        if guide_to("search") and ok_on(lambda f: f.get("guideAt") == "search", "Search"):
+            time.sleep(2)
+            ev = timing_since(mark)
+            keys = [e for e in ev if e["kind"] == "key"]
+            p.say("search-open", f"{keys[-1]['ms'] if keys else '?'} ms from OK to the keys; "
+                  + ", ".join(f"{e['op']} {e['ms']} ms" for e in ev if e["kind"] == "call"), ev)
+        else:
+            p.say("search-open", "Search isn't in the guide")
+
+    p.phase("search", search)
+
+    def rows():
+        anchor("home")
+        time.sleep(2)
+        mark = last_at()
+        for _ in range(3):
+            remote("down")
+            time.sleep(1.5)
+        ev = timing_since(mark)
+        keys = [e["ms"] for e in ev if e["kind"] == "key"]
+        stalls = [e["ms"] for e in ev if e["kind"] == "stall"]
+        p.say("home-rows", f"keys moved the focus in {keys} ms; {len(stalls)} late frames" + (f" (worst {max(stalls)} ms)" if stalls else "")
+              + "; " + ", ".join(f"{e['op']} {e['ms']} ms" for e in ev if e["kind"] == "call"), ev)
+
+    p.phase("home-rows", rows)
+
+    allcalls = [e for e in timing_since(-1) if e["kind"] == "call"]
+    by = {}
+    for e in allcalls:
+        by.setdefault(e["op"], []).append(e["ms"])
+    p.say("calls", "; ".join(f"{op} x{len(v)} median {sorted(v)[len(v) // 2]} max {max(v)} ms" for op, v in sorted(by.items())), by)
+    stalls = [e["ms"] for e in timing_since(-1) if e["kind"] == "stall"]
+    p.say("late-frames", f"{len(stalls)}" + (f", worst {max(stalls)} ms" if stalls else ""), stalls)
+    p.save()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="guest")
     ap.add_argument("--out", default="/tmp/yt-check")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--perf", action="store_true", help="time the app instead (COUCHBOX_YT_TIMING): start, 3 videos, Search, Home's rows")
     a = ap.parse_args()
     r = Run(a.out)
     # an account (its id, or account:page for a brand channel): the signed-in steps, read only
@@ -708,13 +864,15 @@ def main():
             f"--unit={unit}",
             "--setenv=COUCHBOX_MUTE=1",
             "--setenv=COUCHBOX_MPV_LOG=1",  # mpv's warnings, and what draws after a seek (mpv-debug lines)
+            "--setenv=COUCHBOX_YT_TIMING=1",  # yt-timing lines in app.log (and the focus report's timing)
             "--",
             APP,
             "--profile",
-            "pick" if want else a.profile,
+            (want or a.profile) if a.perf else "pick" if want else a.profile,
         ],
         check=True,
     )
+    started = time.monotonic()
     for _ in range(60):
         if "focus" in focus():
             break
@@ -722,7 +880,9 @@ def main():
     else:
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 
-    if want:
+    if a.perf:
+        perf(r, started)
+    elif want:
         account(r, want)
     else:
         guest(r)
@@ -730,7 +890,7 @@ def main():
     save_log(unit, a.out)
     if not a.keep:
         subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
-    print(f"{r.n - r.failed}/{r.n} passed; screenshots and focus in {a.out}")
+    print(f"{r.n - r.failed}/{r.n} passed; screenshots and focus in {a.out}" + (f", timings in {a.out}/perf.json" if a.perf else ""))
     sys.exit(1 if r.failed else 0)
 
 
