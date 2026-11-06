@@ -68,6 +68,7 @@ FocusScope {
         width: parent.width
         height: parent.height - y
         boxed: true
+        rowGap: 106 * Y.u                      // 115 px from a focused row to the next, as YouTube's
         onOpen: it => page.channelId.indexOf("VL") === 0 ? Y.playList(feed.itemsAfter(it), it) : Y.open(it)   // a playlist: in order
     }
     Connections {                             // Left off the first card: the back button, not the guide

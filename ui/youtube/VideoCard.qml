@@ -12,6 +12,7 @@ Item {
     property bool on: false
     property real w: Y.cardW                  // the thumbnail's width (a 16:9 card)
     property bool boxed: false
+    readonly property bool box: boxed && !round   // (a channel stays a round picture with its name under it)
     property color behind: Y.bg               // the colour around the card (its rounded corners)
     property bool captioned: true             // the title and lines under it (a hero shelf shows them above)
     property real metaSize: Y.tMeta           // the grey lines (search results: a little smaller)
@@ -31,7 +32,7 @@ Item {
     readonly property real thumbH: Math.round(w * 9 / 16)
     readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
     width: artW
-    height: art.height + (boxed ? panel.height : captioned ? caption.implicitHeight + 26 * Y.u : 0)
+    height: art.height + (box ? panel.height : captioned ? caption.implicitHeight + 26 * Y.u : 0)
 
     Item {
         id: art
@@ -81,7 +82,7 @@ Item {
             anchors.fill: parent
             r: card.round ? width / 2 : Y.radius
             color: card.behind
-            lower: !card.boxed
+            lower: !card.box
             visible: card.behind.a > 0
         }
         Rectangle {                          // the length, bottom right (LIVE in red)
@@ -124,7 +125,7 @@ Item {
     // views and age 37 under that: badges always sit in a line of text, before it
     Column {
         id: caption
-        visible: !card.boxed && card.captioned
+        visible: !card.box && card.captioned
         anchors { left: art.left; top: art.bottom; topMargin: 23 * Y.u }
         width: card.artW
         readonly property var lines: card.item.lines || []
@@ -179,7 +180,7 @@ Item {
     }
     Rectangle {                              // boxed: the panel under the picture
         id: panel
-        visible: card.boxed
+        visible: card.box
         anchors { left: art.left; right: art.right; top: art.bottom }
         height: 194 * Y.u
         color: card.on ? Y.text : Y.raised
@@ -213,7 +214,7 @@ Item {
         visible: card.on
         x: -Y.ring; y: -Y.ring
         width: card.artW + 2 * Y.ring
-        height: (card.boxed ? art.height + panel.height : art.height) + 2 * Y.ring
+        height: (card.box ? art.height + panel.height : art.height) + 2 * Y.ring
         radius: (card.round ? card.thumbH / 2 : Y.radius) + Y.ring
         color: "transparent"
         border.color: Y.text

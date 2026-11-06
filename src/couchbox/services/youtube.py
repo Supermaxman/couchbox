@@ -1203,9 +1203,21 @@ class YouTube:
             return {"shelves": []}
 
     def channel(self, channel_id: str, params: str = "") -> dict[str, Any]:
-        page = self.browse(channel_id, params)
+        body = {"browseId": channel_id}
+        if params:
+            body["params"] = params
+        resp = self.call("browse", body)
+        page = parse_page(resp)
         if not page["header"]:
             page["header"] = {"title": "", "avatar": "", "banner": "", "lines": [], "description": ""}
+        if not page["header"].get("description"):  # the TV's header has none: the channel's metadata's
+            md = next(_find(resp, "channelMetadataRenderer"), None) or {}
+            desc = md.get("description") if isinstance(md, dict) else ""
+            if not desc:
+                desc = next(
+                    (d for d in _find(resp.get("metadata") or resp.get("microformat") or {}, "description") if isinstance(d, str)), ""
+                )
+            page["header"]["description"] = " ".join(str(desc or "").split())[:300]
         return page
 
     def subscriptions(self) -> dict[str, Any]:
@@ -1646,7 +1658,17 @@ class Demo(YouTube):
         i = next((k for k, c in enumerate(DEMO_CHANNELS) if c[0] == channel_id), 0)
         cid, name, handle, subs = DEMO_CHANNELS[i]
         return {
-            "shelves": [self._shelf("Videos", i), self._shelf("Popular", i + 6), self._shelf("Shorts", i + 3, kind="short")],
+            "shelves": [
+                self._shelf("Videos", i),
+                self._shelf("Popular", i + 6),
+                {
+                    "title": "Channels",
+                    "subtitle": "",
+                    "more": "",
+                    "items": [item(type="channel", id=c, title=t, lines=[h, s]) for c, t, h, s in DEMO_CHANNELS if c != cid],
+                },
+                self._shelf("Shorts", i + 3, kind="short"),
+            ],
             "more": "",
             "nudge": None,
             "header": {
