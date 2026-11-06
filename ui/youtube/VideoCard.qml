@@ -131,7 +131,7 @@ Item {
         readonly property var lines: card.item.lines || []
         readonly property var badges: card.item.badges || []
         Text {
-            width: parent.width
+            width: parent.width - (card.round ? 0 : 20 * Y.u)   // YouTube's title box stops 20 px short of the picture's edge
             text: card.title
             color: card.on ? Y.text : Y.dim
             font.family: Y.font; font.pixelSize: Y.tTitle; font.weight: Font.DemiBold
