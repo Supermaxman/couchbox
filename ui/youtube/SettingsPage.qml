@@ -118,7 +118,7 @@ FocusScope {
         x: 172 * Y.u; y: 80 * Y.u
         height: 48 * Y.u; verticalAlignment: Text.AlignVCenter
         text: "Settings"
-        color: Y.text; font.family: Y.font; font.pixelSize: 46 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.titleFont; font.pixelSize: 46 * Y.titleScale * Y.u; font.weight: Font.Bold
     }
     Flickable {                               // the categories, scrolled so the chosen one is always whole
         id: cats
@@ -211,7 +211,7 @@ FocusScope {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 text: page.detail.title || ""
-                color: Y.text; font.family: Y.font; font.pixelSize: 56 * Y.u; font.weight: Font.Bold
+                color: Y.text; font.family: Y.titleFont; font.pixelSize: 56 * Y.titleScale * Y.u; font.weight: Font.Bold
             }
             Text {
                 visible: !!page.detail.body

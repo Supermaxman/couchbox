@@ -66,7 +66,7 @@ FocusScope {
         height: 72 * Y.u
         verticalAlignment: Text.AlignVCenter
         text: "Subscriptions"
-        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.titleFont; font.pixelSize: 44 * Y.titleScale * Y.u; font.weight: Font.Bold
     }
     ListView {
         id: list

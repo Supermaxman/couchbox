@@ -108,7 +108,10 @@ FocusScope {
             // pinned beside Settings: scrolled to its end, Settings in view
             readonly property int at: guide.pinned && !guide.activeFocus ? guide.list.length : guide.cur
             readonly property real curY: topOf(Math.min(at, guide.list.length))
-            y: !guide.open || at < 0 ? 0
+            // folded: the current page's entry kept on the rail (Movies & TV, Live: below its end)
+            readonly property int sel: guide.list.findIndex(e => e.key === guide.section)
+            y: !guide.open ? -Math.max(0, topOf(Math.max(0, sel)) + 78 * Y.u - viewport.height)
+               : at < 0 ? 0
                : -Math.max(0, Math.min(full - viewport.height, viewport.y + curY + 39 * Y.u - 700 * Y.u))
             Behavior on y { NumberAnimation { duration: 140 } }
             Repeater {

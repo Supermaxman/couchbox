@@ -71,6 +71,10 @@ QtObject {
     readonly property color sponsor: "#00d400"
     readonly property color phone: "#121a2e"          // the "Type on your phone" card
     readonly property string font: "Roboto"
+    // page titles (Subscriptions, Settings and its panes', a list's): YouTube's are YouTube Sans
+    // (not ours to ship); Ubuntu's font is its closest (fonts-ubuntu), else Roboto
+    readonly property string titleFont: Qt.fontFamilies().indexOf("Ubuntu") >= 0 ? "Ubuntu" : font
+    readonly property real titleScale: titleFont === "Ubuntu" ? 1.04 : 1
 
     readonly property real left: 156 * u              // where pages start, right of the collapsed guide
     readonly property real guideOpen: 534 * u         // ... and with the guide open
