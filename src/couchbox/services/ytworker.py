@@ -88,6 +88,27 @@ def slim(info: dict[str, Any]) -> dict[str, Any]:
 DASH_LEAD = 1.0  # seconds: DASH that opens within this is waited for (trying it meanwhile), else HLS now
 
 
+def touch(url: str) -> None:
+    """The stream's servers, looked up and each address asked for its first bytes, in the
+    background: mpv's own first requests then find the name known and the file at hand (opening a
+    signed-in DASH stream took 0.25 s on the box, or 1.3 s: 0.73 s for the video's first answer,
+    0.57 s for the sound's)."""
+    import re
+
+    urls = [u for u in re.findall(r"%\d+%(https://[^;]+)", url)] if url.startswith("edl://") else [url] if url.startswith("http") else []
+
+    def get(u: str) -> None:
+        import requests
+
+        try:
+            requests.get(u, headers={"Range": "bytes=0-1023"}, timeout=5).close()
+        except requests.RequestException:
+            pass
+
+    for u in urls[:2]:
+        threading.Thread(target=get, args=(u,), daemon=True).start()
+
+
 def wait_until_open(url: str, until: float) -> None:
     """Until YouTube serves url (a one-byte range), or the time it gave (and a little more)."""
     import requests
@@ -184,6 +205,21 @@ class Worker:
             heapq.heappush(self.queue, (*key, req))
             self.cv.notify()
 
+    def info_touched(self, a: dict[str, Any]) -> None:
+        """prefetch: the information, and its stream's addresses looked up and asked for once."""
+        from couchbox.services import ytstream
+
+        info, cached = self.info(a)
+        if not cached:
+            try:
+                touch(
+                    ytstream.playable(info, a.get("h264", True), int(a.get("max_height") or ytstream.MAX_HEIGHT), a.get("superres", True))[
+                        "url"
+                    ]
+                )
+            except ytstream.Unavailable:
+                pass
+
     def info(self, a: dict[str, Any], phases: Any = None) -> tuple[dict[str, Any], bool]:
         """yt-dlp's information for a video: kept, from the app's own /player call (signed in: "player"
         and the cache "key", one per profile), else yt-dlp's."""
@@ -230,6 +266,8 @@ class Worker:
             wait_until_open(out.pop("probe"), out.pop("until"))
             waited, out["wait"] = yttiming.ms(w), 0
         out["timing"].update(phases.spans(took), extract=took, cached=cached, dash_wait=waited)
+        if not cached:
+            touch(out.get("url") or "")
         return out
 
     def run_one(self, req: dict[str, Any], asked: float) -> None:
@@ -240,7 +278,7 @@ class Worker:
             if op == "prefetch":
                 if time.monotonic() - asked > PREFETCH_STALE or self.cache.get(a.get("key") or a["id"]) is not None:
                     return self.answer(n, result={"ok": True, "skipped": True})
-                self.info(a)
+                self.info_touched(a)
                 return self.answer(n, result={"ok": True})
             if op == "resolve":
                 return self.answer(n, result=self.resolve(a))

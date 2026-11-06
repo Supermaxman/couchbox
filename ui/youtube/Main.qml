@@ -45,6 +45,7 @@ ApplicationWindow {
         Y.call("status", {}, r => {
             guide.entries = r.guide;
             if (r.settings) Y.settings = r.settings;
+            win.homeCopy = r.homeCopy || null;
             ready = true;
             const o = pendingOpen || arg("--open");
             const want = args.indexOf("--profile") >= 0 ? arg("--profile") : null;
@@ -68,12 +69,16 @@ ApplicationWindow {
         if (libraryL.item) libraryL.item.loaded = false;
         if (subscriptionsL.item) subscriptionsL.item.loaded = false;
         homeLater = !!then && then.indexOf("video:") === 0;   // straight into a video: Home when it's left
+        const id = profile ? profile.id : "guest";              // Home's copy from last time, if it's this profile's
+        home.copy = homeCopy && homeCopy.profile === id ? homeCopy.page : null;
+        homeCopy = null;
         choose("home");
         focusPage();
         if (then) openTarget(then);
         updateState();
     }
     property bool homeLater: false
+    property var homeCopy: null                // (status: Home as it was, for the profile the app starts as)
     function showProfiles() {
         picking = true;
         profilesPage.load(Y.profile ? Y.profile.id : "");

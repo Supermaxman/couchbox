@@ -91,7 +91,7 @@ class Backend(QObject):
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
-            self.pool.submit(self.warm)                  # the worker (and yt-dlp) now: the first video starts sooner
+            self.warmed = False                          # the worker warms up once Home shows (not while the QML loads)
             self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
             self.pool.submit(self.yt.refresh_channels)
 
@@ -231,6 +231,25 @@ class Backend(QObject):
                 pass
         return out
 
+    def warm_once(self):
+        if not self.demo and not getattr(self, "warmed", True):
+            self.warmed = True
+            self.pool.submit(self.warm)
+
+    def home_copy_of_last(self):
+        """Home's copy for the profile the app starts as (the last one): in "status", so Home shows
+        with the first answer (no round trips more while the QML is busy starting)."""
+        if self.demo:
+            return None
+        last = self.yt.auth.last_profile() or "guest"
+        prof = self.yt.find_profile(last)
+        name = (prof.get("id") if prof else "") or "guest"
+        try:
+            with open(os.path.join(self.yt.dir, "home-" + "".join(ch if ch.isalnum() else "_" for ch in name) + ".json")) as f:
+                return {"profile": name, "page": json.load(f)}
+        except (OSError, ValueError):
+            return None
+
     def home_cached(self):
         if self.demo:
             return {}
@@ -322,7 +341,7 @@ class Backend(QObject):
         y = self.yt
         ops = {
             "status": lambda: dict(y.profiles(), guide=[{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
-                                   demo=self.demo, settings=self.settings.get()),
+                                   demo=self.demo, settings=self.settings.get(), homeCopy=self.home_copy_of_last()),
             "settings": lambda: self.settings.get(),
             "setting": lambda: self.settings.set(a["key"], a["value"]),
             "segments": lambda: self.segments(a["id"]),
@@ -356,7 +375,7 @@ class Backend(QObject):
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
-            "mark": lambda: (started(a.get("step", "")), {"ok": True})[1],
+            "mark": lambda: (started(a.get("step", "")), self.warm_once() if a.get("step") == "home-shown" else None, {"ok": True})[2],
             "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
             "historyRemove": lambda: self.history_remove(a.get("ids") or [], bool(a.get("dryRun", True)), a.get("profile")),
             "comments": lambda: y.comments(a["token"]),

@@ -16,6 +16,7 @@ FocusScope {
     // remote has moved on meanwhile (then the copy stays until Home loads again)
     property bool fromCopy: false
     property string asking: ""                 // the page asked for, while its answer is on the way
+    property var copy: null                    // Home's copy handed over at the start (Main: the status answer)
     function load() {
         const what = key + "|" + browseId;
         if (asking === what) return;           // already on its way (Home was asked for twice at start)
@@ -33,7 +34,9 @@ FocusScope {
         };
         const fail = e => { if (!page) return; if (asking === what) asking = ""; if (!fromCopy) { loaded = true; problem = e; } };
         if (key === "home") {
-            Y.call("homeCached", {}, r => { if (page && !loaded && r.page && (r.page.shelves || []).length) { fromCopy = true; show(r.page); } }, () => {});
+            if (copy && (copy.shelves || []).length) { fromCopy = true; show(copy); }
+            else Y.call("homeCached", {}, r => { if (page && !loaded && r.page && (r.page.shelves || []).length) { fromCopy = true; show(r.page); } }, () => {});
+            copy = null;
             Y.call("home", {}, done, fail);
         } else Y.call("browse", {id: browseId}, done, fail);
     }

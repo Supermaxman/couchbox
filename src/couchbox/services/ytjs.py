@@ -72,7 +72,7 @@ class Node:
     proc: subprocess.Popen | None = None
     n = 0
     used = 0.0
-    IDLE = 300
+    IDLE = 120
     watcher: threading.Thread | None = None
 
     @classmethod
