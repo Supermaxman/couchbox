@@ -35,11 +35,15 @@ FocusScope {
     Column {
         visible: !!shelf.row.hero
         x: shelf.indent
-        y: (shelf.hasHead ? 70 * Y.u : 0) + 180 * Y.u
+        // its foot 74 above the row: a title without badges or a synopsis sits down by the row
+        y: (shelf.hasHead ? 70 * Y.u : 0) + 468 * Y.u - 74 * Y.u - height
         width: shelf.width - shelf.indent - 280 * Y.u
         Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 48 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
-        Item { width: 1; height: 14 * Y.u }
+        readonly property bool hasLine: !!((shelf.focused.lines || [])[0] || (shelf.focused.badges || []).length)
+        readonly property bool hasText: (shelf.focused.lines || []).length > 1
+        Item { width: 1; height: 14 * Y.u; visible: parent.hasLine }
         Row {
+            visible: parent.hasLine
             height: 34 * Y.u
             spacing: 8 * Y.u
             Text { text: (shelf.focused.lines || [])[0] || ""; color: Y.dim; font.family: Y.font; font.pixelSize: 24 * Y.u; height: parent.height; verticalAlignment: Text.AlignVCenter }
@@ -54,8 +58,9 @@ FocusScope {
                 }
             }
         }
-        Item { width: 1; height: 20 * Y.u }
+        Item { width: 1; height: 20 * Y.u; visible: parent.hasText }
         Text {
+            visible: parent.hasText
             width: Math.min(parent.width, 830 * Y.u)
             text: (shelf.focused.lines || []).slice(1).join(" • ")
             color: Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u

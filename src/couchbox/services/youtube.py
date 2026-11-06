@@ -1567,6 +1567,8 @@ class YouTube:
                     "entries": entries,
                     "partWatchedLines": lines,
                     "panel": outline_words(cmd.get("showEngagementPanelEndpoint") or {}),
+                    # the card itself (its lines: where views and age are, when YouTube sends them)
+                    "tile": outline_words({k: v for k, v in t.items() if k != "onLongPressCommand"}),
                 }
         return {"entries": [], "note": "no video tile on Home"}
 
@@ -1615,6 +1617,8 @@ class YouTube:
                     "items": [next(iter(i), "") for i in items[:3] if isinstance(i, dict)],
                     "first": {k: inner.get(k) for k in ("style", "contentType") if isinstance(inner, dict) and k in inner},
                     "outline": outline(inner) if not parse_shelf(s) else None,  # a dropped one's first item: its shape
+                    # a hero row's (Movies & TV's carousel) first item, with its words: where its badges and synopsis are
+                    "heroItem": outline_words(inner) if r.get("tvhtml5ShelfRendererType", "").endswith("CAROUSEL") else None,
                     "kept": 0 if any(k in AD_RENDERERS for k in s) else len(parse_shelf(s)),
                 }
             )
@@ -1703,6 +1707,13 @@ class YouTube:
         """The Shorts to play: a sequence (the guide's Shorts, or after one), then its continuation."""
         body = {"continuation": token} if token else {"sequenceParams": params or SHORTS_PARAMS}
         return parse_short_sequence(self.call("reel/reel_watch_sequence", body, cache=False))
+
+    def short_probe(self, video_id: str) -> dict[str, Any]:
+        """A Short's reel answer as this profile gets it (where its channel's subscription is):
+        keys, short words and icon names only."""
+        resp = self.call("reel/reel_item_watch", {"playerRequest": {"videoId": video_id}, "params": "CAUwAg%3D%3D"}, cache=False)
+        subs = [outline_words(b) for k in ("subscribeButtonRenderer", "subscribeButtonViewModel") for b in _find(resp, k)][:3]
+        return {"top": sorted(resp), "overlay": sorted(resp.get("overlay") or {}), "subscribe": subs, "parsed": parse_short(resp)}
 
     def short(self, video_id: str) -> dict[str, Any]:
         return parse_short(self.call("reel/reel_item_watch", {"playerRequest": {"videoId": video_id}, "params": "CAUwAg%3D%3D"}))
