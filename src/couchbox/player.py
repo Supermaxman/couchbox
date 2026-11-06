@@ -535,6 +535,14 @@ class MpvVideo(QQuickFramebufferObject):
         videos; closed, Settings' mode comes back a few seconds later."""
         self._rate.set_hold(on)
 
+    @Slot(result=float)
+    def cacheTime(self):
+        """How far mpv has read ahead (demuxer-cache-time, the video's seconds; 0 when nothing)."""
+        try:
+            return float(self.mpv.demuxer_cache_time or 0)
+        except Exception:  # noqa: BLE001
+            return 0.0
+
     @Slot(bool)
     def setSubtitleShown(self, on):
         """Captions shown (or kept, hidden, under something drawn over them)."""

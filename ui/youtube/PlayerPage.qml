@@ -35,7 +35,9 @@ FocusScope {
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
-    Timer { interval: 250; repeat: true; running: player.visible && !!player.s; onTriggered: player.pos = video.position }
+    Timer { interval: 250; repeat: true; running: player.visible && !!player.s
+            onTriggered: { player.pos = video.position; if (player.mode !== "hidden") player.cached = video.cacheTime(); } }
+    property real cached: 0                    // how far mpv has read ahead (the bar's lighter part)
     Connections { target: video; function onPositionChanged() { player.pos = video.position; player.sponsorCheck(); } }
 
     // ------------------------------------------------------------------ SponsorBlock
@@ -735,6 +737,13 @@ FocusScope {
                             width: Math.max(1, (modelData.b - modelData.a) * bar.width - gapPx)
                             height: bar.height
                             Rectangle { anchors.fill: parent; radius: height / 2; color: "#5affffff" }
+                            Rectangle {        // read ahead: lighter, after the playhead
+                                width: Math.max(0, Math.min(parent.width, (player.duration > 0 ? Math.min(1, player.cached / player.duration) : 0) * bar.width - parent.x))
+                                height: parent.height
+                                radius: height / 2
+                                color: "#59ffffff"
+                                visible: !player.live
+                            }
                             Rectangle {
                                 width: Math.max(0, Math.min(parent.width, bar.frac * bar.width - parent.x))
                                 height: parent.height

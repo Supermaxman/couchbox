@@ -34,6 +34,7 @@ Rectangle {
     function setRatePolicy(p) {}
     function setRateHold(on) {}
     function setSubtitleShown(on) {}
+    function cacheTime() { return 0; }
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {
