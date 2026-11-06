@@ -11,7 +11,7 @@ FocusScope {
     function focusDetail() {
         const it = area === "list" ? "suggestion:" + (suggestions[li] || "")
                  : area === "keys" ? "key:" + (r === 4 ? buttons[c] : letters[r][c]) : area;
-        return {results: results, area: results ? "results" : area, item: results ? "" : it, query: query};
+        return {results: results, area: results ? "results" : area, item: results ? "" : it, query: query, suggestions: suggestions.length};
     }
     property string query: ""
     property bool results: false              // the results are showing (else the keys)

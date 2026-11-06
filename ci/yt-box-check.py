@@ -591,6 +591,26 @@ def account(r, want):
     shorts_walk(r)
     tabs_walk(r)
     settings_walk(r)
+    search_walk(r, want)
+
+
+def search_walk(r, want):
+    """Search's keys, suggestions and results, as a guest (a signed-in search would go into the
+    account's search history), then back to the account. No video is played."""
+    anchor("as:guest")
+    r.step("search-as-guest", lambda f: (not f.get("signedIn"), f"signed in {f.get('signedIn')}"), settle=3)
+    to_entry("search")
+    r.step("search-keys", lambda f: (f.get("page") == "search" and "keys" in f["focus"] and not d(f).get("results"),
+                                     f"{d(f).get('area')} {d(f).get('item')}"), settle=1.5)
+    remote("KEY_S", "KEY_K", "KEY_Y", gap=0.2)
+    r.step("search-suggestions", lambda f: (d(f).get("query") == "sky" and d(f).get("suggestions", 0) > 0,
+                                            f"query {d(f).get('query')!r}, {d(f).get('suggestions')} suggestions"), settle=2)
+    remote("KEY_ENTER")
+    r.step("search-results", lambda f: (bool(d(f).get("results")) and d(f).get("query") == "sky", f"results for {d(f).get('query')!r}"), settle=4)
+    remote("down")
+    r.step("search-results-down", lambda f: (bool(d(f).get("results")), f"results, {f.get('item')}"), settle=2)
+    anchor(f"as:{want}")
+    r.step("search-back-to-account", lambda f: (f.get("signedIn") and f.get("profile") == want, f"profile {f.get('profile')}"), settle=4)
 
 
 def history_before(r):
