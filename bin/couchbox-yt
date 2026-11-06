@@ -113,6 +113,16 @@ class Backend(QObject):
         return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"],
                 "visitor": self.yt.visitor}         # the TV's visitor data: the quick way (no watch webpage)
 
+    def probe(self, vid, profile=None):
+        """playerProbe: as the profile watching, or as `profile` (an id) without switching the app's."""
+        y = self.yt
+        if profile and not self.demo:
+            y = youtube.YouTube(self.yt.dir, client=dict(self.yt.client))
+            y.profile = y.find_profile(profile) or {}
+            if not y.profile:
+                raise youtube.YouTubeError(f"No profile {profile} on this TV.")
+        return y.player_probe(vid, None if self.demo else self.worker.call("clients"))
+
     def prefetch(self, vid):
         """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
         if not self.demo and vid:
@@ -196,7 +206,7 @@ class Backend(QObject):
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
-            "playerProbe": lambda: y.player_probe(a["id"], None if self.demo else self.worker.call("clients")),  # measuring (control socket)
+            "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),

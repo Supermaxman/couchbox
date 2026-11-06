@@ -452,3 +452,12 @@ def test_a_playlist_page_and_its_continuation():
     )
     more = {"continuationContents": {"playlistVideoListContinuation": {"contents": [video_tile("v7")]}}}
     assert [i["id"] for i in Y.parse_more_items(more)["items"]] == ["v7"]
+
+
+def test_a_bare_account_id_is_its_own_channel(tmp_path):
+    # couchbox-yt --profile ACCOUNT (the box check, playerProbe's profile): no picker, no colon needed
+    y, acct = client(tmp_path, {})
+    assert y.use(acct["id"])["profile"]["id"] == f"{acct['id']}:"
+    assert y.auth.last_profile() == f"{acct['id']}:"
+    assert y.find_profile(f"{acct['id']}:page-9")["pageId"] == "page-9"
+    assert y.find_profile("nobody") is None and y.find_profile("guest") is None

@@ -1032,15 +1032,23 @@ class YouTube:
     def profiles(self) -> dict[str, Any]:
         return {"profiles": self.auth.profiles(), "last": self.auth.last_profile(), "current": self.profile.get("id", "")}
 
+    def find_profile(self, pid: str) -> dict[str, Any] | None:
+        """A profile on this TV by its id ("ACCOUNT:PAGE"; a bare ACCOUNT is its own channel)."""
+        if not pid or pid == "guest":
+            return None
+        if ":" not in pid:
+            pid += ":"
+        return next((p for p in self.auth.profiles() if p["id"] == pid), None)
+
     def use(self, pid: str) -> dict[str, Any]:
         """Watch as this profile ("" or "guest": signed out)."""
-        prof = next((p for p in self.auth.profiles() if p["id"] == pid), None) if pid and pid != "guest" else None
+        prof = self.find_profile(pid)
         if pid and pid != "guest" and not prof:
             raise YouTubeError("That profile isn't on this TV any more.")
         with self.lock:
             self.profile = prof or {}
             self.cache.clear()
-        self.auth.set_last_profile(pid or "guest")
+        self.auth.set_last_profile(self.profile.get("id", "") or "guest")
         return {"profile": self.profile or None}
 
     def refresh_channels(self) -> None:
