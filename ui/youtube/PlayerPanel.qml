@@ -32,7 +32,7 @@ FocusScope {
 
     Column {
         width: parent.width
-        y: (panel.channel ? 28 : panel.levels ? 14 : 38) * Y.u
+        y: (panel.channel ? 28 : 38) * Y.u
         spacing: 12 * Y.u
         RoundImage {
             visible: !!panel.name
@@ -73,7 +73,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
         }
-        Item { width: 1; height: (panel.name ? 18 : 30) * Y.u }
+        Item { width: 1; height: (panel.name ? 18 : panel.levels ? 6 : 30) * Y.u }   // (the bell's levels: their title at y 59, the list 24 higher)
         Repeater {
             model: panel.options
             Rectangle {

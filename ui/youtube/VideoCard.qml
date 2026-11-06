@@ -97,7 +97,7 @@ Item {
         Rectangle {                          // the length, bottom right (LIVE in red)
             z: 2
             visible: !!card.item.duration || card.item.live || card.kind === "short"
-            anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 10 : 8) * Y.u }
+            anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: ((progress.visible ? 10 : 8) + (card.overVideo ? 4 : 0)) * Y.u }
             width: badgeRow.implicitWidth + 16 * Y.u
             height: badge.implicitHeight + 4 * Y.u
             radius: 6 * Y.u

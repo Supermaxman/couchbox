@@ -120,7 +120,7 @@ FocusScope {
             }
             Component {
                 id: tilesC
-                Tiles { tiles: cell.modelData.tiles || []; indent: feed.indent; focus: true }
+                Tiles { tiles: cell.modelData.tiles || []; indent: feed.indent; focus: true; room: Math.max(0, 95 * Y.u - feed.rowGap) }
             }
             Component {
                 id: nudgeC

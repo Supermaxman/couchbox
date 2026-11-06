@@ -167,7 +167,7 @@ FocusScope {
         width: 580 * Y.u
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 96 * Y.u
-        spacing: 34 * Y.u
+        spacing: 0                             // (the rows' middles 102 apart, as YouTube's: 650, 752, 854, 948)
         Text {
             width: parent.width
             text: page.info.title || ""
@@ -175,18 +175,23 @@ FocusScope {
             lineHeightMode: Text.FixedHeight; lineHeight: 48 * Y.u
             wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
         }
+        Item { width: 1; height: 34 * Y.u }
         Row {
             visible: !!page.nextInfo.title
+            height: 40 * Y.u
             x: 7 * Y.u                         // (YouTube's sits a little right of the title)
             spacing: 22 * Y.u
             Icon { name: "play"; size: 40 * Y.u; color: Y.text; anchors.verticalCenter: parent.verticalCenter }
             Text { width: 500 * Y.u; text: page.nextInfo.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
         }
+        Item { width: 1; height: 55 * Y.u }
         Row {
+            height: 54 * Y.u
             spacing: 18 * Y.u
             RoundImage { width: 54 * Y.u; height: width; source: page.info.avatar || ""; fallback: page.info.handle ? page.info.handle.slice(1) : ""; anchors.verticalCenter: parent.verticalCenter }
             Text { text: page.info.handle || ""; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
         }
+        Item { width: 1; height: 39 * Y.u }
         Rectangle {                            // Subscribe / Subscribed
             readonly property bool on: page.area === "side" && page.side === 0 && page.activeFocus
             width: subRow.implicitWidth + 44 * Y.u; height: 72 * Y.u; radius: height / 2
@@ -200,6 +205,7 @@ FocusScope {
                 Text { text: page.info.subscribed ? "Subscribed" : "Subscribe"; color: parent.parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
             }
         }
+        Item { width: 1; height: 22 * Y.u }
         Row {
             x: -8 * Y.u
             spacing: 24 * Y.u

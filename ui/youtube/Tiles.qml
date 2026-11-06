@@ -7,7 +7,8 @@ FocusScope {
     property var tiles: []
     property real indent: Y.left
     width: parent ? parent.width : 0
-    height: 213 * Y.u                         // the tiles (168) and room under them, as YouTube's
+    property real room: 45 * Y.u              // under the tiles (with the feed's gap: ~105 px to the next row's title)
+    height: 168 * Y.u + room
     Item {                                    // cut at the guide's rail (x 130): tiles scrolled left don't show under it
         id: cut
         x: tiles.indent - 26 * Y.u

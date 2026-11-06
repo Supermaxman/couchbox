@@ -21,13 +21,13 @@ Row {
     }
     Image {                                   // the name, as strokes (letters, below)
         readonly property var word: logo.word(logo.premium ? "Premium" : "YouTube")
-        height: logo.h * 0.86
-        width: height * word.width / 20
+        height: logo.h * 0.9
+        width: height * word.width / 20 * 1.15     // (a little wider than drawn: YouTube's mark is 208 x 43 with Premium)
         anchors.verticalCenter: parent.verticalCenter
         sourceSize: Y.sz(width, height)
         smooth: true
         source: "data:image/svg+xml;utf8," + encodeURIComponent(
-            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + word.width + " 20'>"
+            "<svg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 " + word.width + " 20'>"
             + "<g fill='none' stroke='" + Y.text + "' stroke-width='2.6' stroke-linecap='butt' stroke-linejoin='round'>" + word.strokes + "</g>"
             + "<g fill='" + Y.text + "'>" + word.fills + "</g></svg>")
     }
