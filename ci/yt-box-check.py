@@ -780,6 +780,10 @@ def account_core(r, want):
         print("ABORT: not signed in as the account; pressing nothing more", flush=True)
         return False
     history_before(r)
+    remote("down")  # Home's second row (the first row's cards large, then gone above), and back up
+    r.step("home-row2-signed-in", lambda f: (f.get("page") == "home" and d(f).get("row") == 1, f"row {d(f).get('row')}"), settle=2)
+    remote("up")
+    time.sleep(1)
 
     # Subscriptions: the channels down the side and the feed; a channel's own feed
     if guide_to("subscriptions") and ok_on(lambda f: f.get("guideAt") == "subscriptions", "Subscriptions"):
