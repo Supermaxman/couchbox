@@ -12,15 +12,17 @@ FocusScope {
     readonly property string label: "Add account"
     signal closed()
 
+    // the answers can come after the page is gone (the code was used: the app moves on to Home)
     function load(fresh) {
-        const show = r => { page.c = r; };
-        if (fresh) Y.call("signInStart", {}, show, e => page.c = {state: "error", message: e});
-        else Y.call("signInState", {}, r => { if (r.state === "waiting") show(r); else page.load(true); }, e => page.c = {state: "error", message: e});
+        const show = r => { if (page) page.c = r; };
+        const fail = e => { if (page) page.c = {state: "error", message: e}; };
+        if (fresh) Y.call("signInStart", {}, show, fail);
+        else Y.call("signInState", {}, r => { if (!page) return; if (r.state === "waiting") show(r); else page.load(true); }, fail);
     }
     Component.onCompleted: load(false)
     Timer {                                    // the countdown, and whether it's been used yet
         interval: 3000; repeat: true; running: page.visible && page.c.state === "waiting"
-        onTriggered: Y.call("signInState", {}, r => { if (r.state !== "waiting" || r.code === page.c.code) page.c = Object.assign({}, page.c, r); }, () => {})
+        onTriggered: Y.call("signInState", {}, r => { if (page && (r.state !== "waiting" || r.code === page.c.code)) page.c = Object.assign({}, page.c, r); }, () => {})
     }
     Keys.onLeftPressed: button = 0
     Keys.onRightPressed: button = 1

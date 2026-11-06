@@ -11,6 +11,8 @@ FocusScope {
     property var items: []                     // [{id, thumb, color}]
     property string more: ""
     property int index: 0
+    property string problem: ""                // nothing to play: why
+    property int emptyTries: 0                 // batches in a row with no new Shorts
     property var info: ({})                    // the current Short's title, channel... (short)
     property var nextInfo: ({})
     property var s: null                       // its stream
@@ -31,14 +33,20 @@ FocusScope {
         loadMore();
     }
     Component.onDestruction: { Y.videoRect = Qt.rect(0, 0, 0, 0); video.stop(); }
+    // A batch can come back empty with more to follow (signed in, the first one often does): ask
+    // again a few times before saying there's nothing.
     function loadMore() {
         Y.call("shorts", {token: more}, r => {
+            if (!page) return;
             const add = (r.items || []).filter(x => !items.some(y => y.id === x.id));
             items = items.concat(add);
             more = r.more || "";
+            emptyTries = add.length ? 0 : emptyTries + 1;
             if (!s && items.length) play(0);
+            else if (!items.length && more && emptyTries < 4) loadMore();
+            else if (!items.length) problem = "No Shorts to show right now.";
             fetchNext();
-        }, e => { if (!items.length) Y.toast(e); });
+        }, e => { if (page && !items.length) problem = e; });
     }
     function play(i) {
         if (i < 0 || i >= items.length) return;
@@ -142,7 +150,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             visible: !page.s && !page.cur.thumb
-            text: page.items.length ? "Loading…" : "Finding Shorts…"
+            text: page.problem || (page.items.length ? "Loading…" : "Finding Shorts…")
             color: Y.dim; font.family: Y.font; font.pixelSize: 30 * Y.u
         }
     }

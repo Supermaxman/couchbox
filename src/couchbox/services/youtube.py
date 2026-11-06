@@ -773,7 +773,7 @@ def parse_short_sequence(resp: dict[str, Any]) -> dict[str, Any]:
     """reel/reel_watch_sequence: the Shorts to play next: [{id, thumb, color}], more."""
     out = []
     for e in resp.get("entries") or []:
-        r = dig(e, "command", "reelWatchEndpoint") or {}
+        r = dig(e, "command", "reelWatchEndpoint") or next(_find(e, "reelWatchEndpoint"), None) or {}
         if r.get("videoId"):
             pal = dig(r, "thumbnail", "darkColorPalette", "section1Color")
             out.append(
