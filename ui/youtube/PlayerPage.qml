@@ -368,7 +368,7 @@ FocusScope {
         if (mode === "hidden") { mode = "controls"; }
         hide.restart();
     }
-    Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending) player.mode = "hidden" }
+    Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending && !player.panel) player.mode = "hidden" }
     function skip(d) {
         if (!s) return;
         video.seek(d);                         // a live stream too: back into its DVR window and forward again
@@ -385,9 +385,12 @@ FocusScope {
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
         finished();
     }
+    // captions above the controls while they're up (YouTube's: never under the scrim or the related row)
+    readonly property bool captionsHigh: mode !== "hidden" || !!panel
+    onCaptionsHighChanged: video.setSubtitlePosition(captionsHigh ? 58 : 100)
     onModeChanged: {
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
-        else { ctl.forceActiveFocus(); related.index = 0; }      // the row folds back to its first line
+        else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
     }
     Connections {
         target: related
@@ -537,7 +540,7 @@ FocusScope {
         line: player.panel === "channel" ? [player.v.handle || "", player.v.subscribers || ""].filter(x => !!x).join(" · ") : ""
         title: ({notify: "Notifications", save: "Save video to…", settings: "Settings", quality: "Quality", speed: "Playback speed", captions: "Captions"})[player.panel] || ""
         subtitle: player.panel === "notify" ? "You'll get notified in the mobile app or on YouTube.com based on your account settings"
-                : player.panel === "quality" ? "H.264, the Pi's best: Auto picks up to 1080p60" : ""
+                : player.panel === "quality" ? "Auto picks the best this TV plays smoothly, up to 1080p at 60 frames a second" : ""
         onPicked: i => player.panelPick(i)
         onClosed: player.back()                // Quality, speed or captions: back to the settings menu; else closed
     }

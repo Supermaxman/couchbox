@@ -417,7 +417,8 @@ ApplicationWindow {
     Rectangle {                                  // notices
         id: toast
         function show(t) { toastText.text = t; opacity = 1; toastTimer.restart(); }
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 56 * win.u }
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: win.playing ? 56 * win.u : parent.height - height - 56 * win.u   // playing: at the top, clear of the captions
         width: Math.min(toastText.implicitWidth + 64 * win.u, parent.width * 0.8)
         height: 76 * win.u
         radius: height / 2

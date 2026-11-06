@@ -245,6 +245,13 @@ class MpvVideo(QQuickFramebufferObject):
             if os.environ.get("COUCHBOX_MPV_LOG")
             else None,
         )
+        if os.environ.get("COUCHBOX_MPV_SUB_BOX") == "1":  # an app's caption look (the YouTube app): on a 75% black box
+            try:
+                self.mpv["sub-border-style"] = "background-box"
+                self.mpv["sub-back-color"] = "#BF000000"
+                self.mpv["sub-shadow-offset"] = 0
+            except Exception:  # noqa: BLE001  (an mpv without these: as before)
+                pass
         self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)
         self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
         self._t_loaded = 0.0

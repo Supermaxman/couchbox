@@ -57,6 +57,7 @@ if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PA
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
+os.environ.setdefault("COUCHBOX_MPV_SUB_BOX", "1")     # captions on YouTube's 75% black box
 os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # resumed starts and skips to a keyframe (player.KEYFRAMES)
 os.environ.setdefault("COUCHBOX_MPV_CACHE", "32MiB,8MiB")    # mpv's read-ahead (~1 min of 1080p) and back buffer: always full, so small
 # YouTube's servers send an open-ended range at about playing speed: asked for in 4 MB pieces
