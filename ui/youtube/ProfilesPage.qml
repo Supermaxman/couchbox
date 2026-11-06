@@ -66,12 +66,12 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0; color: "#130d0f" }
-            GradientStop { position: 0.6; color: "#2a0d15" }
-            GradientStop { position: 1; color: "#4a0c1c" }
+            GradientStop { position: 0; color: "#120d0e" }
+            GradientStop { position: 0.6; color: "#1a0e11" }
+            GradientStop { position: 1; color: "#221013" }
         }
     }
-    Repeater {                                 // petals and a ribbon, bottom right (soft gradients, drawn here)
+    Repeater {                                 // rounded blobs, bottom right (soft gradients, drawn here)
         model: [{x: 1380, y: 700, w: 560, h: 560, r: -20, a: "#d04a6a", b: "#6a1428", k: "petal"},
                 {x: 1660, y: 800, w: 420, h: 420, r: 25, a: "#e8789a", b: "#a0244a", k: "petal"},
                 {x: 1060, y: 900, w: 980, h: 300, r: -12, a: "#c8405a", b: "#4a0c1c", k: "ribbon"}]
@@ -81,14 +81,14 @@ FocusScope {
             width: modelData.w * Y.u; height: modelData.h * Y.u
             sourceSize: Y.sz(width, height)
             rotation: modelData.r
-            opacity: 0.85
+            opacity: 0.7
             smooth: true
             source: "data:image/svg+xml;utf8," + encodeURIComponent(
                 "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>"
                 + "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='" + modelData.a + "'/>"
                 + "<stop offset='1' stop-color='" + modelData.b + "'/></linearGradient></defs><path fill='url(#g)' d='"
-                + (modelData.k === "petal" ? "M2 98C2 40 40 2 98 2C98 60 60 98 2 98Z"     // a leaf: two arcs, pointed ends
-                                           : "M0 60C20 20 45 20 60 40S90 70 100 30V70C85 100 60 95 45 75S15 55 0 100Z")
+                + (modelData.k === "petal" ? "M52 3C78 4 97 24 96 50S74 98 46 96 3 74 4 48 26 2 52 3Z"     // a rounded blob
+                                           : "M8 52C10 30 34 18 56 22S96 36 94 58 66 90 42 86 6 74 8 52Z")
                 + "'/></svg>")
         }
     }

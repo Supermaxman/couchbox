@@ -84,7 +84,12 @@ FocusScope {
             Y.call("searches", {}, s => { if (!page.query.trim()) { page.recent = true; page.suggestions = (s.items || []).slice(0, 5); page.settle(); } }, () => {});
             return;
         }
-        Y.call("suggest", {q: q}, s => { if (s.q === page.query) { page.recent = false; page.suggestions = (s.items || []).slice(0, 9); page.settle(); } }, () => {});
+        Y.call("suggest", {q: q}, s => {
+            if (s.q !== page.query) return;
+            // the first row repeats what's typed, as YouTube's (then its suggestions)
+            const typed = page.query.trim(), rest = (s.items || []).filter(x => x.toLowerCase() !== typed.toLowerCase());
+            page.recent = false; page.suggestions = [typed].concat(rest).slice(0, 9); page.settle();
+        }, () => {});
     }
     function settle() {                       // the suggestions came: the first takes the focus, if nothing's been pressed
         if (fresh && area !== "landing") area = suggestions.length ? "list" : "keys";
