@@ -87,7 +87,7 @@ Item {
         }
         Rectangle {                          // the length, bottom right (LIVE in red)
             visible: !!card.item.duration || card.item.live || card.kind === "short"
-            anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 14 : 8) * Y.u }
+            anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 10 : 8) * Y.u }
             width: badgeRow.implicitWidth + 16 * Y.u
             height: badge.implicitHeight + 4 * Y.u
             radius: 6 * Y.u
@@ -112,11 +112,11 @@ Item {
         }
         Item {                               // watched so far: red over a faint track
             id: progress
-            visible: (card.item.progress || 0) > 0
+            visible: Y.progressOf(card.item) > 0
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             height: 6 * Y.u
             Rectangle { anchors.fill: parent; color: "#66ffffff" }
-            Rectangle { width: parent.width * Math.min(1, card.item.progress || 0); height: parent.height; color: Y.red }
+            Rectangle { width: parent.width * Math.min(1, Y.progressOf(card.item)); height: parent.height; gradient: Y.progress }
         }
     }
 

@@ -122,11 +122,11 @@ FocusScope {
                 font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
             }
             Rectangle {                        // watched so far
-                visible: (big.it.progress || 0) > 0
+                visible: Y.progressOf(big.it) > 0
                 anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                 height: 6 * Y.u
                 color: "#66ffffff"
-                Rectangle { width: parent.width * Math.min(1, big.it.progress || 0); height: parent.height; color: Y.red }
+                Rectangle { width: parent.width * Math.min(1, Y.progressOf(big.it)); height: parent.height; gradient: Y.progress }
             }
             Ring { visible: cl.activeFocus && cl.cur === 0 }
         }
@@ -170,11 +170,11 @@ FocusScope {
                             Text { id: ld; anchors.centerIn: parent; text: lc.modelData.duration || ""; color: "white"; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                         }
                         Rectangle {
-                            visible: (lc.modelData.progress || 0) > 0
+                            visible: Y.progressOf(lc.modelData) > 0
                             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                             height: 5 * Y.u
                             color: "#66ffffff"
-                            Rectangle { width: parent.width * Math.min(1, lc.modelData.progress || 0); height: parent.height; color: Y.red }
+                            Rectangle { width: parent.width * Math.min(1, Y.progressOf(lc.modelData)); height: parent.height; gradient: Y.progress }
                         }
                     }
                     Column {

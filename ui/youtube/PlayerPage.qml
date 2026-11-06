@@ -118,7 +118,7 @@ FocusScope {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             // where this profile left off: the card's (a part-watched card's red bar) unless told
-            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(player.seed.progress, r.duration || player.seed.duration);
+            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(Y.progressOf(player.seed), r.duration || player.seed.duration);
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
             if (waitLeft <= 0) begin();
             showControls();
@@ -155,7 +155,11 @@ FocusScope {
         onTriggered: { player.waitLeft--; if (player.waitLeft <= 0) player.begin(); }
     }
     Component.onCompleted: start(videoId, startAt)
+    function noteSeen() {                       // the cards' red bars, for the way back
+        if (videoId && s && !s.live && duration > 0 && pos > 0) Y.noteSeen(videoId, video.ended ? 1 : pos / duration);
+    }
     Component.onDestruction: {
+        noteSeen();
         if (s && reported) report(video.ended ? "end" : "pause");
         Y.videoSide = false;
         video.stop();
@@ -171,6 +175,7 @@ FocusScope {
     function playNext() {
         const n = upNext();
         if (!n) { finished(); return; }
+        noteSeen();
         if (n.queued) Y.queue = Y.queue.slice(1);
         seed = n.item;
         // YouTube's "Video paused. Continue watching?": autoplay, and no key for 2 hours (not with
@@ -553,15 +558,15 @@ FocusScope {
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
         // the scrim, as YouTube's TV app has it with the controls (or the related row) up: the
-        // video dimmed by about 45%, and from y 600 down a dark blue-violet
-        Rectangle { anchors.fill: parent; color: "#73000000" }
+        // video dimmed by about half, and from y 560 down a dark blue-violet, #08051e at the bottom
+        Rectangle { anchors.fill: parent; color: "#85000000" }
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 480 * Y.u
+            height: 520 * Y.u
             gradient: Gradient {
-                GradientStop { position: 0; color: "#00100c2c" }
-                GradientStop { position: 0.55; color: "#b3100c2c" }
-                GradientStop { position: 1; color: "#f2100c2c" }
+                GradientStop { position: 0; color: "#0008051e" }
+                GradientStop { position: 0.5; color: "#c708051e" }
+                GradientStop { position: 1; color: "#ff08051e" }
             }
         }
 
@@ -669,17 +674,20 @@ FocusScope {
                                 width: Math.max(0, Math.min(parent.width, bar.frac * bar.width - parent.x))
                                 height: parent.height
                                 radius: height / 2
-                                color: player.mode === "bar" || player.mode === "chapters" ? Y.red : Y.text
+                                color: Y.text
+                                gradient: player.mode === "bar" || player.mode === "chapters" ? Y.progress : null
                             }
                         }
                     }
                     Repeater {                 // SponsorBlock's parts, in its colours
                         model: Y.settings.sponsorblock && player.duration > 0 ? player.segments : []
-                        Rectangle {
+                        Rectangle {            // (at least 8 px wide, inside the bar, its end rounded at the bar's end)
                             required property var modelData
-                            x: Math.min(1, modelData.start / player.duration) * bar.width
-                            width: Math.max(3 * Y.u, (Math.min(modelData.end, player.duration) - modelData.start) / player.duration * bar.width)
+                            readonly property real w: Math.max(8 * Y.u, (Math.min(modelData.end, player.duration) - modelData.start) / player.duration * bar.width)
+                            x: Math.max(0, Math.min(modelData.start / player.duration * bar.width, bar.width - w))
+                            width: w
                             height: bar.height
+                            radius: x + width >= bar.width - 1 || x <= 0 ? height / 2 : 0
                             color: Y.segmentColors[modelData.category] || Y.sponsor
                         }
                     }

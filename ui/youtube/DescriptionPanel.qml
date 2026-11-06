@@ -133,7 +133,7 @@ FocusScope {
                         width: parent.width
                         text: panel.d.summary || ""
                         color: sumCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u
-                        wrapMode: Text.WordWrap; maximumLineCount: panel.expanded && panel.index === 2 ? 20 : 3; elide: Text.ElideRight
+                        wrapMode: Text.WordWrap; maximumLineCount: panel.expanded && panel.index === 2 ? 20 : 3; elide: Text.ElideNone   // cut off, no "…" (YouTube's)
                         lineHeightMode: Text.FixedHeight; lineHeight: 33 * Y.u
                     }
                 }
@@ -165,7 +165,7 @@ FocusScope {
                             textFormat: Text.StyledText
                             text: panel.d.teaser ? "<b>" + Y.html(panel.d.teaser.author) + "</b> • " + Y.html(panel.d.teaser.text) : ""
                             color: comCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 25 * Y.u
-                            wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                            wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideNone
                         }
                     }
                 }

@@ -492,7 +492,7 @@ ApplicationWindow {
         if (!id || win.playing || !c || c.type !== "video") return;
         Y.call("stream", {id: id}, r => {
             if (win.focusedVideo !== id || win.playing || !r.url || r.live || r.wait > 0 || r.url.indexOf("demo://") === 0) return;
-            video.preload(r.url, Y.resumeAt(c.progress, r.duration || c.duration), r.opts || "");
+            video.preload(r.url, Y.resumeAt(Y.progressOf(c), r.duration || c.duration), r.opts || "");
         }, () => {});
     }
     Connections { target: keyfilter; function onPressed() { Qt.callLater(() => win.cardFocused(win.focusedCard(win.activeFocusItem))); } }

@@ -30,12 +30,18 @@ QtObject {
     // the TV's settings (ytextras.Settings: SponsorBlock, DeArrow, dislikes, Hide Shorts, H.264 only)
     property var settings: ({sponsorblock: true, skip: {sponsor: true}, dearrow: false, dislikes: false, hide_shorts: false, h264: true})
     function setting(key, value) { call("setting", {key: key, value: value}, s => y.settings = s); }
-    // SponsorBlock's colours for its kinds of segment (its own defaults), for the progress bar
+    // SponsorBlock's colours for its kinds of segment (its own defaults; Endcards lighter, to show on
+    // the dark bar), for the progress bar
     readonly property var segmentColors: ({sponsor: "#00d400", selfpromo: "#ffff00", interaction: "#cc00ff", intro: "#00ffff",
-                                           outro: "#0202ed", preview: "#008fd6", hook: "#395699", filler: "#7300ff", music_offtopic: "#ff9900"})
+                                           outro: "#4a5cff", preview: "#008fd6", hook: "#395699", filler: "#7300ff", music_offtopic: "#ff9900"})
     property bool dimmed: false               // the guide has the focus: the page behind it greys
     property real lastKey: Date.now()         // the last key pressed (couchbox-yt's key filter)
     property bool homeShown: false            // (the app's start: timing)
+    // how far each video was watched in this run (the cards' red bars, up to date on the way back
+    // from the player, before YouTube's pages say so): {id: fraction}
+    property var seen: ({})
+    function noteSeen(id, frac) { if (id && frac >= 0) { const m = Object.assign({}, seen); m[id] = Math.min(1, frac); seen = m; } }
+    function progressOf(it) { return it ? (seen[it.id] !== undefined ? seen[it.id] : it.progress || 0) : 0; }
     // where a part-watched card starts: a few seconds before its red bar ends (0: from the start)
     function resumeAt(progress, duration) {
         const p = progress || 0, d = typeof duration === "string" ? String(duration).split(":").reduce((n, x) => n * 60 + (parseInt(x) || 0), 0) : duration || 0;
@@ -56,6 +62,12 @@ QtObject {
     readonly property color glass: "#1affffff"        // pills on the page: white at 10%
     readonly property color ink: "#0f0f0f"            // text on a focused (white) row
     readonly property color red: "#ff0033"            // progress, the logo
+    readonly property color magenta: "#ff2791"        // the progress's other end (red to magenta, as YouTube's)
+    readonly property Gradient progress: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0; color: y.red }
+        GradientStop { position: 1; color: y.magenta }
+    }
     readonly property color sponsor: "#00d400"
     readonly property color phone: "#121a2e"          // the "Type on your phone" card
     readonly property string font: "Roboto"
