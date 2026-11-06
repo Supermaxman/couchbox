@@ -23,7 +23,7 @@ FocusScope {
     // the controls' keys land here (the player handles them): the focus comes back to it, not
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
-    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count,
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), scrub: Math.round(scrub), paused: !!video.paused, row: related.index, rows: related.count,
                                           captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
@@ -91,7 +91,27 @@ FocusScope {
     // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
     // chapters' pictures over it and the hint show, as on YouTube's TV app
     readonly property bool seeking: mode === "bar" || mode === "chapters"
-    readonly property int chapter: Y.chapterAt(chapters, pos)
+    // scrubbing (Left / Right on the bar, not live): where it would go, shown on the bar and in
+    // the frame; OK goes there, as does a moment's pause (as YouTube's: a tap of Right skips on);
+    // Up (no chapters) and Back leave it where it was (-1: nothing pending)
+    property real scrub: -1
+    readonly property real shownPos: scrub >= 0 ? scrub : pos
+    Timer { id: scrubCommit; interval: 2000; onTriggered: player.commitScrub() }
+    function scrubBy(d) {
+        scrub = Math.max(0, Math.min(Math.max(0, duration - 1), (scrub >= 0 ? scrub : pos) + d));
+        scrubCommit.restart();
+        if (mode === "hidden") mode = "bar";
+        hide.restart();
+    }
+    function commitScrub() {
+        scrubCommit.stop();
+        if (scrub < 0) return;
+        const to = scrub;
+        scrub = -1;
+        video.seekTo(to);
+    }
+    function cancelScrub() { scrubCommit.stop(); scrub = -1; }
+    readonly property int chapter: Y.chapterAt(chapters, shownPos)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
     readonly property string label: brandTitle || v.title || (s ? s.title : "") || seed.title || ""
     property string panel: ""                  // "" | channel | notify | save: a panel beside the video
@@ -107,7 +127,7 @@ FocusScope {
         videoId = id;
         startAt = at || 0;
         s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
-        related.rows = []; related.index = 0;   // (not the last video's row while this one's comes: it was, for a live one)
+        related.rows = []; related.index = 0; cancelScrub();   // (not the last video's row while this one's comes: it was, for a live one)
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
@@ -157,11 +177,12 @@ FocusScope {
         interval: 1000; repeat: true; running: player.waitLeft > 0
         onTriggered: { player.waitLeft--; if (player.waitLeft <= 0) player.begin(); }
     }
-    Component.onCompleted: start(videoId, startAt)
+    Component.onCompleted: { video.setRateHold(true); start(videoId, startAt); }   // (the TV's rate kept between videos)
     function noteSeen() {                       // the cards' red bars, for the way back
         if (videoId && s && !s.live && duration > 0 && pos > 0) Y.noteSeen(videoId, video.ended ? 1 : pos / duration);
     }
     Component.onDestruction: {
+        video.setRateHold(false);
         noteSeen();
         if (s && reported) report(video.ended ? "end" : "pause");
         Y.videoSide = false;
@@ -388,6 +409,7 @@ FocusScope {
         if (panel === "quality" || panel === "speed" || panel === "captions") { panel = "settings"; return; }
         if (panel) { panel = ""; return; }
         if (mode === "chapters") { mode = "bar"; hide.restart(); return; }
+        if (scrub >= 0) { cancelScrub(); mode = "hidden"; return; }   // Back: the scrub undone, the video where it was
         if (mode === "related") { mode = "controls"; hide.restart(); return; }
         // the controls up: Back only hides them (still loading, they can't hide: it leaves)
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
@@ -459,24 +481,29 @@ FocusScope {
         } else if (mode === "hidden") {
             if ((k === Qt.Key_Return || k === Qt.Key_Enter) && skipNotice) undoSkip();       // the notice's undo
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
-            else if (k === Qt.Key_Left) skip(-10);
-            else if (k === Qt.Key_Right) skip(10);
+            else if (k === Qt.Key_Left) { if (live) skip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) skip(10); else scrubBy(10); }
             else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
             else if (k === Qt.Key_Down) { mode = "controls"; button = 4; hide.restart(); }
             else return;
         } else if (mode === "bar") {
-            if (k === Qt.Key_Left) skip(-10);
-            else if (k === Qt.Key_Right) skip(10);
+            if (k === Qt.Key_Left) { if (live) skip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) skip(10); else scrubBy(10); }
+            else if ((k === Qt.Key_Return || k === Qt.Key_Enter) && scrub >= 0) { commitScrub(); mode = "hidden"; }   // there, playing
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.togglePause(); hide.restart(); }
-            else if (k === Qt.Key_Down) { mode = "controls"; hide.restart(); }
-            else if (k === Qt.Key_Up) { if (chapters.length > 1) { chapterPick = Math.max(0, chapter); mode = "chapters"; } hide.restart(); }
+            else if (k === Qt.Key_Down) { commitScrub(); mode = "controls"; hide.restart(); }
+            // Up: the chapters (when it has some: "Press up to view chapters"), else back to the video
+            else if (k === Qt.Key_Up) {
+                if (chapters.length > 1) { scrubCommit.stop(); chapterPick = Math.max(0, chapter); mode = "chapters"; hide.restart(); }
+                else { cancelScrub(); mode = "hidden"; }
+            }
             else return;
         } else if (mode === "chapters") {
             hide.restart();
             if (k === Qt.Key_Left) chapterPick = Math.max(0, chapterPick - 1);
             else if (k === Qt.Key_Right) chapterPick = Math.min(chapters.length - 1, chapterPick + 1);
-            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.seekTo(chapters[chapterPick].start); mode = "bar"; }
-            else if (k === Qt.Key_Down) mode = "bar";
+            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { cancelScrub(); video.seekTo(chapters[chapterPick].start); mode = "bar"; }
+            else if (k === Qt.Key_Down) { mode = "bar"; if (scrub >= 0) scrubCommit.restart(); }
             else return;
         } else if (mode === "controls") {
             hide.restart();
@@ -635,7 +662,7 @@ FocusScope {
                 Text {
                     visible: !player.seeking
                     y: 5 * Y.u
-                    text: player.live ? "" : Y.clock(player.pos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
+                    text: player.live ? "" : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
@@ -654,7 +681,7 @@ FocusScope {
                     y: 55 * Y.u
                     width: parent.width
                     height: 9 * Y.u
-                    readonly property real frac: player.duration > 0 ? Math.min(1, player.pos / player.duration) : 0
+                    readonly property real frac: player.duration > 0 ? Math.min(1, player.shownPos / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
                         if (!(d > 0) || c.length < 2) return [{a: 0, b: 1}];
@@ -716,8 +743,8 @@ FocusScope {
                 readonly property var sb: player.s ? player.s.storyboard : null
                 readonly property real cardW: 336 * Y.u
                 readonly property real anchorX: Math.max(96 * Y.u + cardW / 2, Math.min(width - 96 * Y.u - cardW / 2, barArea.x + bar.frac * bar.width))
-                readonly property var sheet: sb ? sb.sheets.find(g => player.pos >= g.start && player.pos < g.end) || sb.sheets[sb.sheets.length - 1] : null
-                readonly property int tile: sheet && sb ? Math.min(sb.cols * sb.rows - 1, Math.floor((player.pos - sheet.start) / Math.max(0.001, sheet.end - sheet.start) * sb.cols * sb.rows)) : 0
+                readonly property var sheet: sb ? sb.sheets.find(g => player.shownPos >= g.start && player.shownPos < g.end) || sb.sheets[sb.sheets.length - 1] : null
+                readonly property int tile: sheet && sb ? Math.min(sb.cols * sb.rows - 1, Math.floor((player.shownPos - sheet.start) / Math.max(0.001, sheet.end - sheet.start) * sb.cols * sb.rows)) : 0
                 Item {
                     visible: !!frameAt.sheet && !!frameAt.sb
                     x: frameAt.anchorX - frameAt.cardW / 2; y: 387 * Y.u
@@ -745,7 +772,7 @@ FocusScope {
                 Text {
                     x: frameAt.anchorX - width / 2
                     y: 649 * Y.u - height / 2
-                    text: Y.clock(player.pos)
+                    text: Y.clock(player.shownPos)
                     color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
                     style: Text.Raised; styleColor: "#60000000"
                 }
@@ -814,7 +841,7 @@ FocusScope {
                             y: 262 * Y.u - height / 2
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : player.pos)
+                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : player.shownPos)
                             color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u
                             style: Text.Raised; styleColor: "#60000000"
                         }
