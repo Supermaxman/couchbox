@@ -115,6 +115,24 @@ Run on the reference hardware before every minor release and 1.0. It's recorded 
 10. 8 h playback soak: `vcgencmd get_throttled` = `0x0`, no memory growth past the swap threshold.
 11. Factory reset, then the wizard again.
 
+### On the box: the remote, screenshots and recordings
+
+Over SSH, without anyone at the TV:
+
+- `couchbox-remote down ok wait:2 back` presses the remote's buttons (through couchbox-input's key map).
+- `couchbox-screenshot [--width 960] FILE` saves the screen as a PNG.
+- `couchbox-record start [FILE] [--seconds N] [--width W] [--fps F] [--audio]` records it as an H.264 MP4, in the background.
+  - `couchbox-record stop` finishes it, and `couchbox-record status` shows how it's going.
+  - `couchbox-record start --remote "wait:1 down ok wait:3"` records exactly those presses.
+  - `couchbox-record export FILE --gif --width 640` (or `--webm`, `--mp4`) makes a small clip for the README or the release notes.
+
+KWin lets a program capture the screen only if its `.desktop` file names KWin's interface, matched by the program's executable:
+
+- Screenshots use `org.kde.KWin.ScreenShot2` (`X-KDE-DBUS-Restricted-Interfaces`). Other `.desktop` files name `/usr/bin/python3` too, and KWin takes the first match. So couchbox-screenshot runs on its own hard link to Python, `/usr/lib/couchbox/libexec/couchbox-capture-python`. The postinst makes the link, and a trigger on `/usr/bin` renews it when Python is upgraded.
+- Recordings use `zkde_screencast_unstable_v1` (`X-KDE-Wayland-Interfaces`). It's a Wayland protocol, so a small C helper speaks it: `couchbox-screencast`, built with the package. The helper hands couchbox-record a PipeWire stream of the screen. GStreamer encodes that stream with libx264 at nice 10, since the Pi 5 has no H.264 encoder.
+  - The MP4's index is rewritten every second (mp4mux's reserved moov), so even a killed recorder leaves a file that plays.
+  - A recording stops by itself at its length (10 min by default), at 2 GB, or when less than 1 GB of disk is left.
+
 ## Private-values guard (`no-private-values`)
 
 - **What it checks:** a list of patterns kept in an encrypted Actions secret (`PRIVATE_PATTERNS`). The prototype's tailnet name, host names, LAN ranges and personal accounts never appear in the public repo, not even as the list itself.
