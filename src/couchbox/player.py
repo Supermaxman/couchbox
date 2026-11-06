@@ -250,6 +250,9 @@ class MpvVideo(QQuickFramebufferObject):
         self._t_loaded = 0.0
         self._t_start = 0
         self._loads = 0  # files loaded (loadWith)
+        self._preloaded = None  # (url, start) of the file preload() opened, paused
+        self._rate_was = True
+        self._mute_was = False
         self._pos_pending = False  # a position update is due (they're passed on 10 times a second)
         self._pos = 0.0
         self._dur = 0.0
@@ -392,7 +395,11 @@ class MpvVideo(QQuickFramebufferObject):
     @Slot(str, float, str)
     def loadWith(self, url, start, options):
         """load() with mpv options for this file only, in mpv's syntax ("a=1,b=%5%x,y,z"): the
-        YouTube app gives a live stream's sound as audio-file=%LEN%URL."""
+        YouTube app gives a live stream's sound as audio-file=%LEN%URL. The file preload() has
+        ready: it just plays (from start)."""
+        if self._preloaded and self._preloaded[0] == url:
+            return self._play_preloaded(start)
+        self._cancel_preload()
         self._live_cam = False
         self._ended = False
         self._error = ""
@@ -514,7 +521,69 @@ class MpvVideo(QQuickFramebufferObject):
         """Where subtitles sit (100: the bottom); raised while the controls are showing."""
         self.mpv.sub_pos = max(0, min(150, percent))
 
+    # ---------------------------------------------------------------- one file ready to play
+    PRELOAD_CACHE = "4MiB"  # what's read ahead of a preloaded file (no more: it may never play)
+
+    @Slot(str, float, str)
+    def preload(self, url, start, options):
+        """Open url (paused, muted, from start, reading little ahead), so loadWith() of the same
+        url only has to play it: the YouTube app's focused card, before OK. The TV's refresh rate
+        isn't followed meanwhile. One file at most; a real load replaces it."""
+        if self._preloaded and self._preloaded[0] == url:
+            return
+        if not self._preloaded and not self._ended and not self._paused and self._pos > 0:
+            return  # something plays: leave it
+        if not self._preloaded:
+            self._rate_was = self._rate.enabled
+            self._rate.set_enabled(False)
+            try:
+                self._mute_was = bool(self.mpv.mute)
+            except Exception:  # noqa: BLE001
+                self._mute_was = False
+        opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
+        opts += ["pause=yes", "mute=yes", f"demuxer-max-bytes={self.PRELOAD_CACHE}"]
+        if options:
+            opts.append(options)
+        try:
+            self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
+            self._preloaded = (url, float(start))
+            self._loads += 1
+        except Exception:  # noqa: BLE001
+            self._preloaded = None
+
     @Slot()
+    def cancelPreload(self):
+        self._cancel_preload(stop=True)
+
+    def _cancel_preload(self, stop=False):
+        if not self._preloaded:
+            return
+        self._preloaded = None
+        self._rate.set_enabled(self._rate_was)
+        if stop:
+            try:
+                self.mpv.command("stop")
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _play_preloaded(self, start):
+        _, at = self._preloaded
+        self._preloaded = None
+        self._ended = False
+        self._error = ""
+        self.endedChanged.emit()
+        self._t_load, self._t_loaded, self._t_start = time.monotonic(), time.monotonic(), int(start)
+        try:
+            self.mpv["demuxer-max-bytes"] = (os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0]
+            self.mpv.mute = self._mute_was
+            if abs(start - at) > 5:
+                self.mpv.command("seek", start, "absolute+keyframes" if KEYFRAMES else "absolute")
+            self.mpv.pause = False
+        except Exception:  # noqa: BLE001
+            pass
+        self._rate.set_enabled(self._rate_was)
+        self.frameReady.emit()
+
     @Slot()
     def warmUp(self):
         """A moment of black and silence, muted, while nothing plays: mpv's video output and render
@@ -538,6 +607,7 @@ class MpvVideo(QQuickFramebufferObject):
                 pass
 
     def stop(self):
+        self._cancel_preload()
         self.mpv.command("stop")
         QTimer.singleShot(1000, _trim)
 

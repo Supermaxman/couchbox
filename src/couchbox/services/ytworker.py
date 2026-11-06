@@ -132,6 +132,23 @@ class Cache:
         self.items[vid] = (until, info)
 
 
+def _libc():
+    import ctypes
+
+    try:
+        return ctypes.CDLL("libc.so.6")
+    except OSError:
+        return None
+
+
+LIBC = _libc()
+if LIBC is not None:
+    try:
+        LIBC.mallopt(-8, 1)  # M_ARENA_MAX: one (the worker does one thing at a time)
+    except AttributeError:
+        LIBC = None
+
+
 def rss_mb() -> float:
     try:
         with open("/proc/self/status") as fh:
@@ -275,6 +292,8 @@ class Worker:
                     self.cv.wait()
                 prio, stamp, _, req = heapq.heappop(self.queue)
             self.run_one(req, -stamp if prio else time.monotonic())
+            if LIBC is not None:
+                LIBC.malloc_trim(0)  # what an extraction freed, back to the system (it grew 68 -> 102 MB)
 
 
 def serve() -> None:

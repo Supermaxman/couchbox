@@ -36,6 +36,11 @@ QtObject {
     property bool dimmed: false               // the guide has the focus: the page behind it greys
     property real lastKey: Date.now()         // the last key pressed (couchbox-yt's key filter)
     property bool homeShown: false            // (the app's start: timing)
+    // where a part-watched card starts: a few seconds before its red bar ends (0: from the start)
+    function resumeAt(progress, duration) {
+        const p = progress || 0, d = typeof duration === "string" ? String(duration).split(":").reduce((n, x) => n * 60 + (parseInt(x) || 0), 0) : duration || 0;
+        return p > 0.02 && p < 0.95 && d > 0 ? Math.max(0, Math.floor(p * d - 3)) : 0;
+    }
     property Connections keyWatch: Connections { target: typeof keyfilter !== "undefined" ? keyfilter : null; ignoreUnknownSignals: true
                                              function onPressed() { y.lastKey = Date.now(); } }
     property bool pushed: false               // the guide is open: the page is pushed right

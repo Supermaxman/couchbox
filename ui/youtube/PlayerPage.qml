@@ -25,7 +25,8 @@ FocusScope {
     function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count,
                                           captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
                                           card: panel === "description" ? description.index : -1,
-                                          subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0)}; }
+                                          subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
+                                          height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
@@ -113,8 +114,7 @@ FocusScope {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             // where this profile left off: the card's (a part-watched card's red bar) unless told
-            const p = player.seed.progress || 0;
-            if (!player.startAt && p > 0.02 && p < 0.95 && r.duration && !r.live) player.startAt = Math.max(0, p * r.duration - 3);
+            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(player.seed.progress, r.duration || player.seed.duration);
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
             if (waitLeft <= 0) begin();
             showControls();

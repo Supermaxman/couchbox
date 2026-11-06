@@ -800,11 +800,11 @@ def perf(r, started, signed=False):
     """Open the app, Home ready, 3 videos in turn to their first picture, Search, 3 of Home's rows:
     what each took (and the app's processor use and memory), from the app's own timing."""
     p = Perf(r.out)
-    for _ in range(90):
+    for _ in range(300):
         f = focus()
         if f.get("page") == "home" and d(f).get("rows", 0) > 0:
             break
-        time.sleep(0.25)
+        time.sleep(0.1)
     p.say("home-ready", f"{time.monotonic() - started:.1f} s from start", round(time.monotonic() - started, 2))
     time.sleep(1)
     steps = [e for e in timing_since(-1) if e["kind"] == "startup"]
@@ -932,8 +932,11 @@ def perf(r, started, signed=False):
         for x in pids:
             each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / 30)
         total = sum(each.values())
-        p.say("playing-cpu", f"{total}% of one core over 30 s of {d(f).get('videoId')}: "
+        res = f"{d(f).get('height')}p{d(f).get('fps')}"
+        p.say("playing-cpu", f"{total}% of one core over 30 s of {d(f).get('videoId')} ({res}"
+              + ("" if (d(f).get("height") or 0) >= 1080 else ": not 1080p, not comparable") + "): "
               + ", ".join(f"{k} {v}%" for k, v in each.items()), total)
+        p.rows["playing-video"] = res
         anchor("home")
 
     p.phase("resume", resume)
@@ -1089,10 +1092,10 @@ def main():
         check=True,
     )
     started = time.monotonic()
-    for _ in range(60):
+    for _ in range(600):  # (every 0.1 s: perf's Home ready counts from here)
         if "focus" in focus():
             break
-        time.sleep(1)
+        time.sleep(0.1)
     else:
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 

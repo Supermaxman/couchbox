@@ -27,6 +27,8 @@ Rectangle {
     function setSubtitle(s) { subtitle = s; }
     function stop() {}
     function warmUp() {}
+    function preload(url, start, opts) {}
+    function cancelPreload() {}
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {

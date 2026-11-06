@@ -472,11 +472,22 @@ ApplicationWindow {
     // a video card that keeps the focus: its stream now, for OK (looked at again right after a key)
     function cardFocused(c) {
         const id = c && (c.type === "video" || c.type === "short") && !c.live ? c.id : "";
-        if (id !== win.focusedVideo) { win.focusedVideo = id; if (id) prefetch.restart(); }
+        if (id !== win.focusedVideo) { win.focusedVideo = id; win.focusedCardInfo = c || null; if (id) prefetch.restart(); }
+    }
+    property var focusedCardInfo: null
+    // ... and the video itself opened in mpv (paused, muted, reading little ahead): OK then only plays it
+    function preloadFocused() {
+        const id = win.focusedVideo, c = win.focusedCardInfo;
+        if (!id || win.playing || !c || c.type !== "video") return;
+        Y.call("stream", {id: id}, r => {
+            if (win.focusedVideo !== id || win.playing || !r.url || r.live || r.wait > 0 || r.url.indexOf("demo://") === 0) return;
+            video.preload(r.url, Y.resumeAt(c.progress, r.duration || c.duration), r.opts || "");
+        }, () => {});
     }
     Connections { target: keyfilter; function onPressed() { Qt.callLater(() => win.cardFocused(win.focusedCard(win.activeFocusItem))); } }
     property string focusedVideo: ""
-    Timer { id: prefetch; interval: 600; onTriggered: if (win.focusedVideo && !win.playing) Y.call("prefetch", {id: win.focusedVideo}, () => {}, () => {}) }
+    Timer { id: prefetch; interval: 600; onTriggered: if (win.focusedVideo && !win.playing) { Y.call("prefetch", {id: win.focusedVideo}, () => {}, () => {}); preload.restart(); } }
+    Timer { id: preload; interval: 400; onTriggered: win.preloadFocused() }
     Timer { interval: 1000; repeat: true; running: win.playing && !win.shot; onTriggered: win.updateState() }   // the position, for casting
     Timer {
         id: idle

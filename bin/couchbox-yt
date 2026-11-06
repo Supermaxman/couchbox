@@ -784,7 +784,13 @@ def main():
     shooter.window.frameSwapped.connect(lambda: getattr(shooter, "_drawn", False) or (setattr(shooter, "_drawn", True), started("first-frame")))
     keyfilter.window = shooter.window
     shooter.window.installEventFilter(keyfilter)
+    from PySide6.QtCore import QTimer
+
     from couchbox import playback, player
+    trim = QTimer()                                  # what's been freed, back to the system once a minute
+    trim.setInterval(60000)
+    trim.timeout.connect(player._trim)
+    trim.start()
     watch.attach(shooter.window)
     player.TIMING = watch.frame
     playback.ON_SWITCH = lambda took, mode: yttiming.note("rate", ms=took, mode=mode)

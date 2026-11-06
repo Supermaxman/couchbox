@@ -64,15 +64,37 @@ class SolverError(RuntimeError):
 
 
 class Node:
-    """The node process (one, shared): started on first use, again if it died."""
+    """The node process (one, shared): started on first use, again if it died, and stopped after
+    IDLE seconds unused (~95 MB; a new one starts from the kept reading of the player: ~0.5 s,
+    usually while a card has the focus, before OK)."""
 
     lock = threading.Lock()
     proc: subprocess.Popen | None = None
     n = 0
+    used = 0.0
+    IDLE = 300
+    watcher: threading.Thread | None = None
+
+    @classmethod
+    def _watch(cls) -> None:
+        import time
+
+        while True:
+            time.sleep(30)
+            with cls.lock:
+                if cls.proc is not None and cls.proc.poll() is None and time.monotonic() - cls.used > cls.IDLE:
+                    cls.proc.kill()
+                    cls.proc = None
 
     @classmethod
     def ask(cls, path: str, script: str, req: dict[str, Any]) -> dict[str, Any]:
+        import time
+
         with cls.lock:
+            cls.used = time.monotonic()
+            if cls.watcher is None:
+                cls.watcher = threading.Thread(target=cls._watch, daemon=True)
+                cls.watcher.start()
             if cls.proc is None or cls.proc.poll() is not None:
                 cls.proc = subprocess.Popen(  # noqa: S603
                     [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS],
