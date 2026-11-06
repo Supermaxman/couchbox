@@ -75,4 +75,4 @@ def test_live_without_hls_plays_its_adaptive_formats_through_the_box():
     info = ytstream.from_player(pr, lambda n, s: ({}, {}))
     assert info["is_live"] and all(f["url"].startswith("http://127.0.0.1:") for f in info["formats"])
     p = ytstream.playable(info)
-    assert p["live"] and p["itags"] == ["299", "140"] and p["url"].endswith("/299") and p["opts"].endswith("/140")
+    assert p["live"] and p["itags"] == ["299", "140"] and p["url"].endswith("/299") and "/140," in p["opts"] and p["opts"].endswith("force-seekable=yes")

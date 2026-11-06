@@ -694,8 +694,10 @@ FocusScope {
                 }
                 Text {
                     visible: !player.seeking
+                    x: player.live ? liveBar.implicitWidth + 34 * Y.u : 0      // (beside the LIVE badge)
                     y: 5 * Y.u
-                    text: player.live ? "" : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
+                    text: player.live ? (player.duration - player.pos > 8 ? Y.clock(player.duration - player.pos) + " behind live" : "")
+                                      : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }

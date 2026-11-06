@@ -305,6 +305,8 @@ def playable(
         out["url"] = edl(video["url"], audio["url"])
     else:
         out["url"] = video["url"]
+    if live:  # mpv calls a live stream unseekable: back into what it has read (its cache) and forward again
+        out["opts"] = ",".join(x for x in (out["opts"], "force-seekable=yes") if x)
     # nothing that plays now: wait until it does (the player says so meanwhile)
     out["wait"] = max(0, round(max((f.get("available_at") or 0) for f in (video, audio) if f) - time.time(), 1))
     if out["wait"]:

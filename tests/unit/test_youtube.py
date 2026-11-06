@@ -462,7 +462,7 @@ def test_playable_live_plays_the_video_playlist_with_its_sound():
     ]
     out = S.playable({"formats": live, "live_status": "is_live"})
     assert out["live"] and out["url"] == "https://media.example/270"
-    assert out["opts"] == "audio-file=%25%https://media.example/234" and out["acodec"] == ""
+    assert out["opts"] == "audio-file=%25%https://media.example/234,force-seekable=yes" and out["acodec"] == ""
 
 
 def test_formats_that_play_now_beat_ones_waiting_out_ads():
