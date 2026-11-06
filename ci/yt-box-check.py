@@ -691,6 +691,23 @@ def settings_accounts(r):
 
 
 # ------------------------------------------------------------------ perf: where the time goes
+def pss(pid):
+    try:
+        with open(f"/proc/{pid}/smaps_rollup") as fh:
+            return next((int(ln.split()[1]) for ln in fh if ln.startswith("Pss:")), 0) / 1024
+    except (OSError, ValueError):
+        return 0.0
+
+
+def name_of(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            cmd = fh.read().decode(errors="replace")
+    except OSError:
+        return "?"
+    return "worker" if "ytworker" in cmd else "node" if "--permission" in cmd else "app"
+
+
 def all_pids():
     """The app, its stream worker and the worker's node."""
     out = subprocess.run(["pgrep", "-u", TV_USER, "-f", f"{APP}|couchbox.services.ytworker|--permission -e"],
@@ -747,11 +764,13 @@ class Perf:
         a, procs = m.get("app") or {}, m.get("processes") or {}
         self.say(
             f"{name}-memory",
-            f"app {a.get('Rss')} MB resident ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); mpv cache "
-            + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
-            + "; " + ", ".join(f"{k} {sum(v)} MB" for k, v in procs.items()) + f"; {m.get('python_objects')} Python objects",
+            f"app {a.get('Rss')} MB resident, {a.get('Pss')} proportional ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); "
+            "mpv cache " + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
+            + "; " + ", ".join(f"{k} {sum(x.get('Rss', 0) for x in v)} MB ({sum(x.get('Pss', 0) for x in v)} PSS)" for k, v in procs.items())
+            + f"; {m.get('python_objects')} Python objects",
             m,
         )
+        return m
 
     def say(self, name, value, data=None):
         print(f"PERF {name}: {value}", flush=True)
@@ -773,7 +792,7 @@ class Perf:
             json.dump(self.rows, fh, indent=1)
 
 
-def perf(r, started):
+def perf(r, started, signed=False):
     """Open the app, Home ready, 3 videos in turn to their first picture, Search, 3 of Home's rows:
     what each took (and the app's processor use and memory), from the app's own timing."""
     p = Perf(r.out)
@@ -783,14 +802,21 @@ def perf(r, started):
             break
         time.sleep(0.25)
     p.say("home-ready", f"{time.monotonic() - started:.1f} s from start", round(time.monotonic() - started, 2))
+    time.sleep(1)
+    steps = [e for e in timing_since(-1) if e["kind"] == "startup"]
+    p.say("start-steps", ", ".join(f"{e['step']} {e['ms']} ms" for e in steps), steps)
     calls = [e for e in timing_since(-1) if e["kind"] == "call"]
     p.say("start-calls", ", ".join(f"{e['op']} {e['ms']} ms" for e in calls[:8]), calls[:8])
     p.pid = app_pid()
     p.phase("idle-home", lambda: time.sleep(10))
 
+    # signed in: 3 videos in all (each goes into the household's History): 1 cold, 1 warm, 1 resumed;
+    # the 10 videos for memory run as a guest only
+    count = 1 if signed else 3
+
     def videos(kind, row, dwell):
-        """3 videos from Home's row `row`: OK at once (cold: no prefetch), or after `dwell` s on the card."""
-        for i in range(3):
+        """Videos from Home's row `row`: OK at once (cold: no prefetch), or after `dwell` s on the card."""
+        for i in range(count):
             anchor("home")
             time.sleep(2)
             remote(*["down"] * row, *["right"] * i, gap=0.35)
@@ -894,12 +920,16 @@ def perf(r, started):
               f"(stream {play['stream']} ms, {stream.get('protocol')}; mpv open {play['open']} ms, first frame {play['frame']} ms more)",
               {"play": play, "stream": stream})
         pids = all_pids()
-        c0 = sum(usage(x)[0] for x in pids)
+        c0 = {x: usage(x)[0] for x in pids}
         time.sleep(30)
-        c1 = sum(usage(x)[0] for x in pids)
+        c1 = {x: usage(x)[0] for x in pids}
         f = focus()
-        p.say("playing-cpu", f"{100 * (c1 - c0) / 30:.0f}% of one core (app, worker and node) over 30 s of {d(f).get('videoId')}",
-              round(100 * (c1 - c0) / 30))
+        each = {}
+        for x in pids:
+            each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / 30)
+        total = sum(each.values())
+        p.say("playing-cpu", f"{total}% of one core over 30 s of {d(f).get('videoId')}: "
+              + ", ".join(f"{k} {v}%" for k, v in each.items()), total)
         anchor("home")
 
     p.phase("resume", resume)
@@ -918,9 +948,14 @@ def perf(r, started):
         time.sleep(3)
         p.memory("after-10-videos")
         total = sum(usage(x)[1] for x in all_pids())
-        p.say("after-10-videos-rss", f"{total:.0f} MB resident in all (app, worker, node)", round(total))
+        prop = sum(pss(x) for x in all_pids())
+        p.say("after-10-videos-rss", f"{total:.0f} MB resident in all (app, worker, node), {prop:.0f} MB proportional (PSS)", round(total))
+        p.rows["after-10-videos-pss"] = round(prop)
 
-    p.phase("ten-videos", ten)
+    if not signed:
+        p.phase("ten-videos", ten)
+    else:
+        p.say("ten-videos", "(run as a guest: --perf without --profile)")
 
     allcalls = [e for e in timing_since(-1) if e["kind"] == "call"]
     by = {}
@@ -939,7 +974,8 @@ TARGETS = (  # name, the perf rows' value, the most it may be, the unit (VacuumT
     ("resume start", lambda r: (r.get("resume") or {}).get("play", {}).get("total") if isinstance(r.get("resume"), dict) else None, 800, "ms"),
     ("Home ready", lambda r: round(r["home-ready"] * 1000) if isinstance(r.get("home-ready"), (int, float)) else None, 1500, "ms"),
     ("worst GUI stall", lambda r: max(r.get("late-frames") or [0]), 100, "ms"),
-    ("memory after 10 videos", lambda r: r.get("after-10-videos-rss"), 450, "MB"),
+    ("memory after 10 videos (RSS)", lambda r: r.get("after-10-videos-rss"), 450, "MB"),
+    ("memory after 10 videos (PSS; VacuumTube 621-649)", lambda r: r.get("after-10-videos-pss"), 450, "MB"),
     ("CPU playing", lambda r: r.get("playing-cpu"), None, "% of a core"),
 )
 
@@ -1000,7 +1036,7 @@ def main():
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 
     if a.perf:
-        perf(r, started)
+        perf(r, started, signed=bool(want))
     elif want:
         account(r, want)
     else:

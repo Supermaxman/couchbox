@@ -342,7 +342,7 @@ FocusScope {
     }
 
     // ready before Search is opened: the recent searches, the shelf under the keys
-    Component.onCompleted: { refreshSuggestions(); landing.load(); }
+    Component.onCompleted: refreshSuggestions()           // (the landing shelf loads when Search opens: begin())
 
     // coming back (from a video): the results keep the focus, else the keys
     onActiveFocusChanged: {

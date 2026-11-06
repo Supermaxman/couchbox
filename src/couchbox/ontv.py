@@ -85,6 +85,7 @@ PER_SOURCE = 8  # search: matches per app
 DONE = 0.97  # watched this much: finished, not "continue"
 KEEP = {"twitch": 15 * 60}  # a source that can't be reached keeps its last items this long (live: briefly)
 KEEP_DEFAULT = 6 * 3600
+YOUTUBE_MAX = 4  # YouTube's History is long: its newest few, among the other apps' (by when)
 FORGET = 30 * 86400  # remembered positions of items gone from every list
 VOICE = "http://127.0.0.1:8790"
 JELLYFIN_DEVTOOLS = 9224  # Jellyfin Desktop (couchbox-jellyfin)
@@ -604,7 +605,7 @@ def fetch_continue(source: str, clients: Clients) -> list[dict[str, Any]]:
         from couchbox.services import ytauth
 
         try:
-            return youtube_continue(clients.get("youtube-beta").browse("FEhistory"))
+            return youtube_continue(clients.get("youtube-beta").browse("FEhistory"), limit=YOUTUBE_MAX)
         except ytauth.SignedOut:
             raise NotSignedIn("YouTube (beta): the account was signed out; sign in again from Who's watching") from None
     c = clients.get(source)

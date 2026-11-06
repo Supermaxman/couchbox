@@ -23,7 +23,7 @@ FocusScope {
         problem = "";
         fromCopy = false;
         const asked = Date.now();
-        const show = r => { feed.setPage(r); if (page.activeFocus) page.focusFeed(); };
+        const show = r => { feed.setPage(r); if (page.activeFocus) page.focusFeed(); if (key === "home" && !Y.homeShown) { Y.homeShown = true; Y.call("mark", {step: "home-shown"}, () => {}, () => {}); } };
         const done = r => {
             if (!page) return;
             if (asking === what) asking = "";

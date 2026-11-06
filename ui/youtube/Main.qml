@@ -67,11 +67,13 @@ ApplicationWindow {
         home.loaded = false;
         library.loaded = false;
         subscriptions.loaded = false;
+        homeLater = !!then && then.indexOf("video:") === 0;   // straight into a video: Home when it's left
         choose("home");
         focusPage();
         if (then) openTarget(then);
         updateState();
     }
+    property bool homeLater: false
     function showProfiles() {
         picking = true;
         profilesPage.load(Y.profile ? Y.profile.id : "");
@@ -95,7 +97,7 @@ ApplicationWindow {
         section = key;
         guide.section = key;
         const e = entry(key);
-        if (key === "home") { if (!home.loaded) home.load(); }
+        if (key === "home") { if (!home.loaded && !homeLater) home.load(); }
         else if (key === "search") search.begin(search.query);
         else if (tabs[key]) { tab.key = key; tab.browseId = e.browse; tab.label = e.label; tab.loaded = false; tab.load(); }
         else if (page(key) === subscriptions) { if (!subscriptions.loaded) subscriptions.load(); }
@@ -130,6 +132,7 @@ ApplicationWindow {
         if (win.playing && Y.queueAuto) { Y.queue = []; Y.queueAuto = false; }   // a playlist's rest ends with its player
         if (stack.depth > 1) stack.pop(StackView.Immediate);
         else stack.clear(StackView.Immediate);            // pop() never takes the last page off
+        if (!stack.depth && homeLater) { homeLater = false; if (section === "home" && !home.loaded) home.load(); }
         if (!stack.depth && shortsFromGuide) {                // back on the guide, on Shorts
             shortsFromGuide = false;
             guide.forceActiveFocus();
