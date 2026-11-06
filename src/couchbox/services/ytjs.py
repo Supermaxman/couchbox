@@ -11,6 +11,7 @@ only its stdin and stdout.
 """
 
 import json
+import os
 import subprocess
 import threading
 from typing import Any
@@ -33,13 +34,17 @@ HANDLER_JS = r"""
     const out = {id: req.id};
     try {
       let s = solvers.get(req.player_url);
-      if (!s && !req.player) { out.need_player = true; console.log(JSON.stringify(out)); return; }
+      if (!s && !req.player && !req.prepared) { out.need_player = true; console.log(JSON.stringify(out)); return; }
       if (!s) {
-        const prepared = jsc({type: "player", player: req.player, requests: [], output_preprocessed: true}).preprocessed_player;
+        // the player read into its solver functions (the slow part: parsing ~2.5 MB of JS), or
+        // the copy of that from before (prepared: a file the app keeps per player version)
+        const prepared = req.prepared || jsc({type: "player", player: req.player, requests: [], output_preprocessed: true}).preprocessed_player;
         s = {n: null, sig: null};
         Function("_result", prepared)(s);
-        if (solvers.size > 4) solvers.delete(solvers.keys().next().value);
+        if (solvers.size > 1) solvers.delete(solvers.keys().next().value);
         solvers.set(req.player_url, s);
+        if (!req.prepared) out.prepared = prepared;
+        if (global.gc) global.gc();          // the parse's garbage: node back to a small size
       }
       out.responses = req.requests.map(r => {
         const f = s[r.type];
@@ -70,7 +75,7 @@ class Node:
         with cls.lock:
             if cls.proc is None or cls.proc.poll() is not None:
                 cls.proc = subprocess.Popen(  # noqa: S603
-                    [path, "--permission", "-e", BOOT_JS],
+                    [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
@@ -96,6 +101,43 @@ class Node:
                 raise SolverError(f"the challenge solver failed: {err}") from err
 
 
+def _prepared_file(player_url: str):
+    import hashlib
+    from pathlib import Path
+
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "couchbox-yt" / "jsc"
+    return base / (hashlib.sha256(player_url.encode()).hexdigest()[:24] + ".js")
+
+
+def ask_with_player(path: str, script: str, body: dict[str, Any], player_text) -> dict[str, Any]:
+    """Node's answer to body, giving it the player when it hasn't read this version yet: the copy
+    of it read before (a file per version, kept here, as the app's), else the player itself
+    (player_text()), whose reading is then kept for next time."""
+    out = Node.ask(path, script, body)
+    if not out.get("need_player"):
+        return out
+    f = _prepared_file(body["player_url"])
+    try:
+        out = Node.ask(path, script, dict(body, prepared=f.read_text()))
+        if not out.get("error"):
+            return out
+    except OSError:
+        pass
+    out = Node.ask(path, script, dict(body, player=player_text()))
+    prepared = out.pop("prepared", None)
+    if prepared:
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            for old in sorted(f.parent.glob("*.js"), key=lambda x: x.stat().st_mtime)[:-1]:
+                old.unlink()  # the newest other version is enough
+            tmp = f.with_suffix(".tmp")
+            tmp.write_text(prepared)
+            tmp.replace(f)
+        except OSError:
+            pass
+    return out
+
+
 def server_script(lib: str, core: str) -> str:
     return f"{lib}\nObject.assign(globalThis, lib);\n{core}\n{HANDLER_JS}"
 
@@ -117,7 +159,9 @@ def node_path() -> str:
 
 
 def current_player(session: Any = None) -> dict[str, Any]:
-    """The current player JS: {ver, sts, url, js}, looked at again after an hour."""
+    """The current player JS: {ver, sts, url}, looked at again after an hour (its version from
+    iframe_api, ~50 kB; its signatureTimestamp kept per version, so the ~2.5 MB player itself is
+    only fetched when it's new: player_js())."""
     import re
     import time
 
@@ -131,12 +175,56 @@ def current_player(session: Any = None) -> dict[str, Any]:
     if not ver:
         raise SolverError("no player version in iframe_api")
     if _player.get("ver") != ver.group(1):
-        url = PLAYER_URL.format(ver.group(1))
-        js = s.get(url, timeout=(8, 30)).text
-        sts = re.search(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})", js)
-        _player.update(ver=ver.group(1), url=url, js=js, sts=int(sts.group(1)) if sts else 0)
+        _player.clear()
+        _player.update(ver=ver.group(1), url=PLAYER_URL.format(ver.group(1)))
+        known = _read_sts()
+        if ver.group(1) in known:
+            _player["sts"] = known[ver.group(1)]
+        else:
+            js = player_js(_player, s)
+            m = re.search(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})", js)
+            _player["sts"] = int(m.group(1)) if m else 0
+            if _player["sts"]:
+                _write_sts({**{k: v for k, v in list(known.items())[-3:]}, ver.group(1): _player["sts"]})
     _player["until"] = time.time() + 3600
     return _player
+
+
+def player_js(p: dict[str, Any], session: Any = None) -> str:
+    """The player's JavaScript (fetched once per version, while it's needed)."""
+    import requests
+
+    if not p.get("js"):
+        p["js"] = (session or requests.Session()).get(p["url"], timeout=(8, 30)).text
+    return p["js"]
+
+
+def _sts_file():
+    return _prepared_file("sts").with_name("sts.json")
+
+
+def _read_sts() -> dict[str, int]:
+    try:
+        return json.loads(_sts_file().read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_sts(d: dict[str, int]) -> None:
+    try:
+        f = _sts_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(d))
+    except OSError:
+        pass
+
+
+def prepare() -> None:
+    """Node up, with the current player read (from the copy if there is one): the app's start."""
+    try:
+        solve(["warmup"], [])
+    except SolverError:
+        pass
 
 
 def solve(n: list[str], sig: list[str]) -> tuple[dict[str, str], dict[str, str]]:
@@ -151,9 +239,7 @@ def solve(n: list[str], sig: list[str]) -> tuple[dict[str, str], dict[str, str]]
     if not reqs:
         return {}, {}
     body = {"player_url": p["url"], "requests": reqs}
-    out = Node.ask(node_path(), _script, body)
-    if out.get("need_player"):
-        out = Node.ask(node_path(), _script, dict(body, player=p["js"]))
+    out = ask_with_player(node_path(), _script, body, lambda: player_js(p))
     if out.get("error"):
         raise SolverError(out["error"])
     got: dict[str, dict[str, str]] = {"n": {}, "sig": {}}
@@ -161,6 +247,7 @@ def solve(n: list[str], sig: list[str]) -> tuple[dict[str, str], dict[str, str]]
         if data["type"] == "error":
             raise SolverError(f"{r['type']}: {data['error']}")
         got[r["type"]] = data["data"]
+    p.pop("js", None)  # (read: node keeps what it needs)
     return got["n"], got["sig"]
 
 
@@ -204,10 +291,8 @@ def register() -> bool:
                 body = {"player_url": player_url, "requests": [{"type": r.type.value, "challenges": r.input.challenges} for r in group]}
                 self.logger.info("Solving JS challenges using node (kept running)")
                 try:
-                    out = Node.ask(self.runtime_info.path, self._script(), body)
-                    if out.get("need_player"):  # a player version it hasn't read yet
-                        player = self._get_player(next((r.video_id for r in group), None), player_url)
-                        out = Node.ask(self.runtime_info.path, self._script(), dict(body, player=player))
+                    vid = next((r.video_id for r in group), None)
+                    out = ask_with_player(self.runtime_info.path, self._script(), body, lambda: self._get_player(vid, player_url))
                 except SolverError as err:
                     raise JsChallengeProviderError(str(err)) from err
                 if out.get("error"):

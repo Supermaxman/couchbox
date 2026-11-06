@@ -1111,10 +1111,11 @@ class YouTube:
                 self.auth.set_premium(prof["account"], True)
         else:
             data = self._post(ep, body, as_client=as_client)
-        with self.lock:
-            if len(self.cache) > 200:
-                self.cache.clear()
-            self.cache[key] = (time.time(), data)
+        if cache:  # (only what may be read back: a watch page's or a player's answer is kept by no one)
+            with self.lock:
+                if len(self.cache) > 120:
+                    self.cache.clear()
+                self.cache[key] = (time.time(), data)
         return data
 
     def changed(self) -> None:

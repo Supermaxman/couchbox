@@ -103,6 +103,10 @@ FAST = {
 }
 _DEBUG = bool(os.environ.get("COUCHBOX_MPV_LOG"))  # also: what draws after a seek (MpvVideo._debug)
 _players = weakref.WeakSet()
+# Seeks to the keyframe at or before the spot (COUCHBOX_MPV_KEYFRAME_SEEKS=1, the YouTube app): a
+# precise one decodes from that keyframe up to the second asked for, in software on the Pi
+# (H.264): 1.5-2 s more for a resumed start or a 10 s skip. Back to 0 stays exact.
+KEYFRAMES = os.environ.get("COUCHBOX_MPV_KEYFRAME_SEEKS") == "1"
 TIMING = None  # an app's timing hook (couchbox-yt: yttiming.note): how long a file takes to show
 _live = {}  # the playback settings (playback.LIVE), followed while the app runs
 
@@ -369,7 +373,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._ended = False
         self._error = ""
         self.endedChanged.emit()
-        opts = [f"start={int(start)}"] if start > 0 else []
+        opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
@@ -435,7 +439,8 @@ class MpvVideo(QQuickFramebufferObject):
             if self._pos + delta < 0.5:
                 self.mpv.command("seek", 0, "absolute+exact")
             else:
-                self.mpv.command("seek", delta, "relative+exact" if abs(delta) < 15 else "relative")
+                exact = "relative+keyframes" if KEYFRAMES else "relative+exact"
+                self.mpv.command("seek", delta, exact if abs(delta) < 15 else "relative+keyframes" if KEYFRAMES else "relative")
         except Exception:
             pass
         self._after_seek(f"seek {delta:+g} from {self._pos:.1f}")
@@ -443,7 +448,7 @@ class MpvVideo(QQuickFramebufferObject):
     @Slot(float)
     def seekTo(self, pos):
         try:
-            self.mpv.command("seek", pos, "absolute")
+            self.mpv.command("seek", pos, "absolute+keyframes" if KEYFRAMES else "absolute")
         except Exception:
             pass
         self._after_seek(f"seek to {pos:.1f} from {self._pos:.1f}")

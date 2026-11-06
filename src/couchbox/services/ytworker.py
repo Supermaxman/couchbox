@@ -33,7 +33,58 @@ CACHE_SECONDS = 4 * 3600  # at most; less when the addresses expire sooner
 EXPIRY_MARGIN = 900  # an address this close to its expiry is asked for again
 PREFETCH_STALE = 8.0
 MAX_RSS_MB = 400
-MAX_CACHED = 60
+MAX_CACHED = 24
+# what's kept of yt-dlp's information per video (the rest is thumbnails, heat maps, every
+# language's caption formats...: megabytes once parsed)
+INFO_KEYS = (
+    "id",
+    "title",
+    "channel",
+    "uploader",
+    "channel_id",
+    "duration",
+    "chapters",
+    "view_count",
+    "like_count",
+    "timestamp",
+    "release_timestamp",
+    "live_status",
+    "is_live",
+)
+FORMAT_KEYS = (
+    "format_id",
+    "url",
+    "vcodec",
+    "acodec",
+    "width",
+    "height",
+    "fps",
+    "tbr",
+    "abr",
+    "audio_channels",
+    "format_note",
+    "language_preference",
+    "available_at",
+    "protocol",
+    "fragments",
+    "columns",
+    "rows",
+)
+
+
+def slim(info: dict[str, Any]) -> dict[str, Any]:
+    out = {k: info.get(k) for k in INFO_KEYS if k in info}
+    out["formats"] = [{k: f[k] for k in FORMAT_KEYS if k in f} for f in info.get("formats") or []]
+    want = ("en",)
+    out["subtitles"] = {lang: [t for t in tracks if t.get("ext") == "vtt"] for lang, tracks in (info.get("subtitles") or {}).items()}
+    out["automatic_captions"] = {
+        lang: [t for t in tracks if t.get("ext") == "vtt"]
+        for lang, tracks in (info.get("automatic_captions") or {}).items()
+        if lang.split("-")[0] in want
+    }
+    return out
+
+
 DASH_LEAD = 1.0  # seconds: DASH that opens within this is waited for (trying it meanwhile), else HLS now
 
 
@@ -133,6 +184,7 @@ class Worker:
                 phases.marks.append((0, "decipher"))
         else:
             info = ytstream.extract(a["id"], phases, a.get("visitor") or "")
+        info = slim(info)
         self.cache.put(key, info)
         return info, False
 
@@ -175,6 +227,12 @@ class Worker:
                 return self.answer(n, result={"ok": True})
             if op == "resolve":
                 return self.answer(n, result=self.resolve(a))
+            if op == "warm":  # the app's start: yt-dlp imported, node up with the player read
+                from couchbox.services import ytjs
+
+                ytstream.module()
+                ytjs.prepare()
+                return self.answer(n, result={"ok": True, "rss": round(rss_mb())})
             if op == "player":  # the player JS's version and signatureTimestamp (the app's /player calls)
                 from couchbox.services import ytjs
 

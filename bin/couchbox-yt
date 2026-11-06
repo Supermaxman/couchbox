@@ -40,6 +40,7 @@ if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PA
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
+os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # resumed starts and skips to a keyframe (player.KEYFRAMES)
 os.environ.setdefault("COUCHBOX_MPV_CACHE", "64MiB,16MiB")   # mpv's read-ahead and back buffer: YouTube needs less
 # YouTube's servers send an open-ended range at about playing speed: asked for in 4 MB pieces
 # (the first 256 kB, to start sooner) they come at once. Seeking a DASH stream (and a resumed
@@ -109,6 +110,10 @@ class Backend(QObject):
         except Exception:  # noqa: BLE001 (offline for now: yt-dlp's usual way meanwhile)
             pass
         try:
+            self.worker.call("warm", timeout=90)       # node up with the player read: the first video starts sooner
+        except Exception as err:  # noqa: BLE001
+            print(f"stream worker: {err}", flush=True)
+        try:
             self.yt.set_client(self.worker.call("client", timeout=60))
         except Exception as err:  # noqa: BLE001 (no yt-dlp yet: ours)
             print(f"stream worker: {err}", flush=True)
@@ -139,8 +144,14 @@ class Backend(QObject):
 
     def signed_player(self, vid):
         import time
-        if not getattr(self, "clients", None):
-            self.clients = self.worker.call("clients", timeout=60)
+        if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept: no yt-dlp needed for them at start)
+            path = os.path.join(self.yt.dir, "clients.json")
+            try:
+                with open(path) as f:
+                    self.clients = json.load(f)
+                self.pool.submit(self.refresh_clients, path)
+            except (OSError, ValueError):
+                self.refresh_clients(path)
         if getattr(self, "player_js", (0, None))[0] < time.time():
             self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
         sts = self.player_js[1].get("sts") or 0
@@ -156,6 +167,16 @@ class Backend(QObject):
             if (resp.get("playabilityStatus") or {}).get("status") == "OK" and (resp.get("streamingData") or {}).get("adaptiveFormats"):
                 return {k: resp.get(k) for k in ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")}
         return None
+
+    def refresh_clients(self, path):
+        c = self.worker.call("clients", timeout=60)
+        self.clients = c
+        try:
+            with open(path + ".tmp", "w") as f:
+                json.dump(c, f)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
 
     def signed_key(self, vid):
         prof = self.yt.profile.get("id", "") if self.yt.profile else ""
