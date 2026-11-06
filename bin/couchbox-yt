@@ -40,6 +40,7 @@ if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PA
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
+os.environ.setdefault("COUCHBOX_MPV_CACHE", "64MiB,16MiB")   # mpv's read-ahead and back buffer: YouTube needs less
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
@@ -195,6 +196,7 @@ class Backend(QObject):
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
+            "playerProbe": lambda: y.player_probe(a["id"]),  # measuring (the control socket's "call")
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),
@@ -399,7 +401,6 @@ class Watch(QObject):
     window = None
     last_key, last_key_name, last_ok, reported = 0.0, "", 0.0, True
     play = None                                      # {id, t0, stream}: a video starting
-    frames = 0.0
 
     def key(self, name):
         self.last_key, self.last_key_name, self.reported = yttiming.now(), name, False
@@ -407,9 +408,25 @@ class Watch(QObject):
             self.last_ok = self.last_key
 
     def attach(self, window):
+        from PySide6.QtCore import QTimer
+
         self.window = window
         window.activeFocusItemChanged.connect(self.moved)
-        window.frameSwapped.connect(self.swapped)
+        if yttiming.ON:                              # the GUI thread held up: a 50 ms timer that fires late
+            self.beat = QTimer()
+            self.beat.setInterval(50)
+            self.beat.timeout.connect(self.tick)
+            self.last_tick = yttiming.now()
+            self.beat.start()
+
+    @Slot()
+    def tick(self):
+        t = yttiming.now()
+        late = t - self.last_tick - 0.05
+        self.last_tick = t
+        if late > 0.1:                               # (Qt draws on this thread: no frame meanwhile)
+            yttiming.note("stall", ms=round(late * 1000), after=self.last_key_name.removeprefix("Key_"),
+                          since_key=yttiming.ms(self.last_key) if self.last_key else -1)
 
     @Slot()
     def moved(self):
@@ -423,21 +440,12 @@ class Watch(QObject):
             it = it.parentItem()
         yttiming.note("key", key=self.last_key_name.removeprefix("Key_"), ms=yttiming.ms(self.last_key), to="/".join(names[-3:]))
 
-    @Slot()
-    def swapped(self):
-        t = yttiming.now()
-        gap, self.prev_gap = t - self.frames, getattr(self, "prev_gap", 1.0)
-        self.frames = t
-        if 0.05 < gap < 1.0 and self.prev_gap < 0.034:   # moving at 60 fps, then a frame late
-            yttiming.note("stall", ms=round(gap * 1000))
-        self.prev_gap = gap
-
     def frame(self, kind, **kw):
         """The player's first picture of a file (couchbox.player's TIMING hook)."""
         p, self.play = self.play, None
         if p:
             yttiming.note("play", id=p["id"], stream=p.get("stream", -1), open=kw.get("open"), frame=kw.get("frame"),
-                          total=yttiming.ms(p["t0"]))
+                          total=yttiming.ms(p["t0"]), start=kw.get("start", 0))
         else:
             yttiming.note("frame", **kw)
 

@@ -65,3 +65,17 @@ def test_an_unplayable_video_says_why(monkeypatch):
     out = io.StringIO()
     ytworker.Worker(out).run_one({"n": 9, "op": "resolve", "args": {"id": "x"}}, time.monotonic())
     assert json.loads(out.getvalue()) == {"n": 9, "error": "This video is private.", "unavailable": True}
+
+
+def test_a_kept_video_is_answered_at_once_not_behind_a_prefetch(monkeypatch):
+    out = io.StringIO()
+    w = ytworker.Worker(out)
+    w.cache.put("kept", info("kept", int(time.time()) + 6 * 3600))
+    w.take({"n": 7, "op": "prefetch", "args": {"id": "other"}})  # queued (no worker thread runs here)
+    w.take({"n": 8, "op": "resolve", "args": {"id": "kept"}})
+    for _ in range(50):
+        if out.getvalue():
+            break
+        time.sleep(0.02)
+    answer = json.loads(out.getvalue().splitlines()[0])
+    assert answer["n"] == 8 and answer["result"]["timing"]["cached"] and len(w.queue) == 1

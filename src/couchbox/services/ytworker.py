@@ -104,6 +104,10 @@ class Worker:
             self.out.flush()
 
     def take(self, req: dict[str, Any]) -> None:
+        if req.get("op") == "resolve" and self.cache.get((req.get("args") or {}).get("id", "")) is not None:
+            # kept from before: answered now, not behind an extraction in progress (a prefetch)
+            threading.Thread(target=self.run_one, args=(req, time.monotonic()), daemon=True).start()
+            return
         prefetch = req.get("op") == "prefetch"
         # resolve and the rest in the order asked; prefetches after them, newest first
         key = (1, -time.monotonic(), next(self.seq)) if prefetch else (0, 0.0, next(self.seq))

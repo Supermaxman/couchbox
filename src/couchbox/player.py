@@ -162,7 +162,7 @@ class _Renderer(QQuickFramebufferObject.Renderer):
         it = self.item
         if TIMING and new and it._t_loaded:  # the file's first picture
             t = time.monotonic()
-            TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000))
+            TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000), start=it._t_start)
             it._t_load = it._t_loaded = 0.0
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
         _drop_frame_fence()
@@ -206,8 +206,8 @@ class MpvVideo(QQuickFramebufferObject):
             input_default_bindings="no",
             ytdl="no",
             cache="yes",
-            demuxer_max_bytes="120MiB",
-            demuxer_max_back_bytes="30MiB",
+            demuxer_max_bytes=(os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0],
+            demuxer_max_back_bytes=(os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[-1],
             hls_bitrate="max",
             sub_auto="no",
             slang="en,eng",
@@ -226,6 +226,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)
         self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
         self._t_loaded = 0.0
+        self._t_start = 0
         self._pos = 0.0
         self._dur = 0.0
         self._paused = False
@@ -359,7 +360,7 @@ class MpvVideo(QQuickFramebufferObject):
         opts = [f"start={int(start)}"] if start > 0 else []
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
-        self._t_load, self._t_loaded = time.monotonic(), 0.0
+        self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 

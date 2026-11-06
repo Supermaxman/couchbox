@@ -1194,6 +1194,31 @@ class YouTube:
         )
         return parse_suggestions(r.text)[:10]
 
+    def player_probe(self, video_id: str) -> dict[str, Any]:
+        """What YouTube's /player says to this TV for a video, as the profile watching (its sign-in):
+        whether it plans ads (the gap before DASH opens), and its formats (ciphered or not). For
+        measuring: no addresses or tokens in the answer."""
+        resp = self.call("player", {"videoId": video_id, "racyCheckOk": True, "contentCheckOk": True}, cache=False)
+        sd = resp.get("streamingData") or {}
+        fmts = sd.get("adaptiveFormats") or []
+        h264 = [f for f in fmts if "avc1" in (f.get("mimeType") or "")]
+        return {
+            "signedIn": bool(self.profile),
+            "premium": bool(self.profile.get("premium")) if self.profile else False,
+            "client": self.client.get("clientName", "") + " " + self.client.get("clientVersion", ""),
+            "playability": dig(resp, "playabilityStatus", "status") or "",
+            "reason": dig(resp, "playabilityStatus", "reason") or "",
+            "adPlacements": len(resp.get("adPlacements") or []),
+            "playerAds": len(resp.get("playerAds") or []),
+            "adaptiveFormats": len(fmts),
+            "h264": sorted({f.get("itag") for f in h264}),
+            "ciphered": sum(1 for f in fmts if "signatureCipher" in f or "cipher" in f),
+            "plainUrls": sum(1 for f in fmts if "url" in f),
+            "hls": bool(sd.get("hlsManifestUrl")),
+            "serverAbr": bool(sd.get("serverAbrStreamingUrl")),
+            "expiresInSeconds": sd.get("expiresInSeconds"),
+        }
+
     def watch(self, video_id: str) -> dict[str, Any]:
         out = parse_watch(self.call("next", {"videoId": video_id}, cache=False))
         out["signedIn"] = bool(self.profile)

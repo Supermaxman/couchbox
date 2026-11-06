@@ -21,7 +21,7 @@ and notification panels opened and closed, and Settings → Accounts. Nothing is
 subscribed, saved or changed; the guest's "Sign in" steps and casting aren't run.
 
 --perf times the app instead (as the profile given, guest by default): start until Home shows,
-3 videos in turn from OK to their first picture (the stream in yt-dlp's parts, mpv opening it,
+3 videos at once and 3 after 5 s on their card (prefetched) from OK to their first picture (the stream in yt-dlp's parts, mpv opening it,
 the first frame, a TV refresh switch), opening Search, 3 of Home's rows (keys, calls, late
 frames), every back-end call's median and worst, and the app's processor use and memory: PERF
 lines, and OUT/perf.json.
@@ -763,15 +763,18 @@ def perf(r, started):
     p.pid = app_pid()
     p.phase("idle-home", lambda: time.sleep(10))
 
-    def videos():
+    def videos(kind, row, dwell):
+        """3 videos from Home's row `row`: OK at once (cold: no prefetch), or after `dwell` s on the card."""
         for i in range(3):
             anchor("home")
             time.sleep(2)
-            remote(*["right"] * i, gap=0.5)
+            remote(*["down"] * row, *["right"] * i, gap=0.35)
             c = card_to(lambda c: c.get("type") == "video" and not c.get("live"), tries=5)
+            time.sleep(dwell)
             mark = last_at()
+            name = f"video-{kind}-{i + 1}"
             if not c or not ok_on(lambda f: (f.get("card") or {}).get("type") == "video", "a video"):
-                p.say(f"video-{i + 1}", "no video card")
+                p.say(name, "no video card")
                 continue
             play = None
             for _ in range(160):  # up to 40 s
@@ -780,25 +783,31 @@ def perf(r, started):
                 if play:
                     break
                 time.sleep(0.25)
+            time.sleep(3)  # a refresh switch comes a few seconds in
             ev = timing_since(mark)
             stream = next((e for e in ev if e["kind"] == "stream"), {})
             rate = next((e for e in ev if e["kind"] == "rate"), None)
             key = next((e for e in ev if e["kind"] == "key"), {})
+            stalls = [e["ms"] for e in ev if e["kind"] == "stall"]
             if not play:
-                p.say(f"video-{i + 1}", "no first frame in 40 s", {"events": ev})
+                p.say(name, "no first frame in 40 s", {"events": ev})
                 continue
             parts = {k: v for k, v in stream.items() if k not in ("at", "kind", "id")}
             p.say(
-                f"video-{i + 1}",
+                name,
                 f"first frame {play['total']} ms after OK (player page {key.get('ms', '?')} ms; stream {play['stream']} ms: "
-                f"{', '.join(f'{k} {v}' for k, v in parts.items())}; mpv open {play['open']} ms, first frame {play['frame']} ms more)"
-                + (f"; TV refresh switch {rate['ms']} ms ({rate['mode']})" if rate else ""),
-                {"play": play, "stream": stream, "key": key, "rate": rate},
+                f"{', '.join(f'{k} {v}' for k, v in parts.items())}; mpv open {play['open']} ms, first frame {play['frame']} ms more"
+                + (f", from {play.get('start')} s" if play.get("start") else "")
+                + ")"
+                + (f"; TV refresh switch {rate['ms']} ms ({rate['mode']}), {round((rate['at'] - play['at']) * 1000)} ms after the first frame"
+                   if rate else "; no refresh switch")
+                + (f"; GUI held up {stalls} ms" if stalls else ""),
+                {"play": play, "stream": stream, "key": key, "rate": rate, "stalls": stalls},
             )
-            time.sleep(3)
         anchor("home")
 
-    p.phase("videos", videos)
+    p.phase("videos-cold", lambda: videos("cold", 1, 0))
+    p.phase("videos-warm", lambda: videos("warm", 2, 5))
 
     def search():
         anchor("home")
