@@ -65,8 +65,8 @@ ApplicationWindow {
         picking = false;
         stack.clear(StackView.Immediate);
         home.loaded = false;
-        library.loaded = false;
-        subscriptions.loaded = false;
+        if (libraryL.item) libraryL.item.loaded = false;
+        if (subscriptionsL.item) subscriptionsL.item.loaded = false;
         homeLater = !!then && then.indexOf("video:") === 0;   // straight into a video: Home when it's left
         choose("home");
         focusPage();
@@ -82,13 +82,16 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ pages
+    // Home is made at the start; the other pages the first time they're shown (Loaders: the app's
+    // QML took ~770 ms to load on the box, every page made up front)
+    function pg(l) { if (!l.active) l.active = true; return l.item; }
     function page(key) {
         if (key === "home") return home;
-        if (key === "search") return search;
-        if (tabs[key]) return tab;
-        if (key === "settings") return settings;
-        if (key === "subscriptions" && Y.signedIn) return subscriptions;
-        if (key === "library" && Y.signedIn) return library;
+        if (key === "search") return pg(searchL);
+        if (tabs[key]) return pg(tabL);
+        if (key === "settings") return pg(settingsL);
+        if (key === "subscriptions" && Y.signedIn) return pg(subscriptionsL);
+        if (key === "library" && Y.signedIn) return pg(libraryL);
         return message;
     }
     function entry(key) { return (guide.entries || []).find(e => e.key === key) || {key: key, label: key, browse: ""}; }
@@ -98,11 +101,11 @@ ApplicationWindow {
         guide.section = key;
         const e = entry(key);
         if (key === "home") { if (!home.loaded && !homeLater) home.load(); }
-        else if (key === "search") search.begin(search.query);
-        else if (tabs[key]) { tab.key = key; tab.browseId = e.browse; tab.label = e.label; tab.loaded = false; tab.load(); }
-        else if (page(key) === subscriptions) { if (!subscriptions.loaded) subscriptions.load(); }
-        else if (page(key) === library) { if (!library.loaded) library.load(); }
-        else if (key === "settings") settings.load();
+        else if (key === "search") { const sp = pg(searchL); sp.begin(sp.query); }
+        else if (tabs[key]) { const t = pg(tabL); t.key = key; t.browseId = e.browse; t.label = e.label; t.loaded = false; t.load(); }
+        else if (key === "subscriptions" && Y.signedIn) { const sb = pg(subscriptionsL); if (!sb.loaded) sb.load(); }
+        else if (key === "library" && Y.signedIn) { const lb = pg(libraryL); if (!lb.loaded) lb.load(); }
+        else if (key === "settings") pg(settingsL).load();
         else {
             message.key = key;
             message.facts = [];
@@ -120,7 +123,7 @@ ApplicationWindow {
     function focusPage() {
         if (picking) profilesPage.forceActiveFocus();
         else if (stack.depth) stack.currentItem.forceActiveFocus();
-        else if (section === "search") search.forceActiveFocus();
+        else if (section === "search") pg(searchL).forceActiveFocus();
         else page(section).forceActiveFocus();
     }
     function push(c, props) {
@@ -165,7 +168,7 @@ ApplicationWindow {
             Qt.quit();
             return;
         }
-        if (section === "search" && search.back()) return;
+        if (section === "search" && searchL.item && searchL.item.back()) return;
         if (section === "search") { choose("home"); guide.forceActiveFocus(); return; }
         guide.forceActiveFocus();
     }
@@ -176,7 +179,8 @@ ApplicationWindow {
         function onSettingsChanged() {
             const a = win.lastSettings, b = Y.settings;
             if (a.hide_shorts !== undefined && (a.hide_shorts !== b.hide_shorts || a.dearrow !== b.dearrow)) {
-                home.loaded = false; tab.loaded = false; subscriptions.loaded = false; library.loaded = false;
+                home.loaded = false;
+                for (const l of [tabL, subscriptionsL, libraryL]) if (l.item) l.item.loaded = false;
             }
             win.lastSettings = b;
         }
@@ -195,7 +199,8 @@ ApplicationWindow {
         function onToast(t) { toast.show(t); }
         function onToGuide() {
             if (stack.depth || win.picking) return;
-            if (win.page(win.section) === subscriptions && subscriptions.feedFocused) subscriptions.toChannels();
+            const sb = subscriptionsL.item;
+            if (sb && win.page(win.section) === sb && sb.feedFocused) sb.toChannels();
             else guide.forceActiveFocus();
         }
         function onWhoIsWatching() { win.pickedAtStart = false; win.showProfiles(); }
@@ -204,8 +209,8 @@ ApplicationWindow {
         function onCardMenu(it, back) { cardMenu.open(it, back); }
         function onSearch(q) {
             win.choose("search");
-            if (q) search.search(q);
-            search.forceActiveFocus();
+            if (q) pg(searchL).search(q);
+            pg(searchL).forceActiveFocus();
         }
     }
 
@@ -223,7 +228,7 @@ ApplicationWindow {
             const m = rest.match(/^([\w-]{1,20})(?:@(\d+(?:\.\d+)?))?$/);
             if (m) play(m[1], m[2] ? parseFloat(m[2]) : 0, {});
         } else if (k === "search") { stack.clear(StackView.Immediate); Y.search(rest); }
-        else if (k === "typing") { stack.clear(StackView.Immediate); choose("search"); search.begin(rest); search.forceActiveFocus(); }
+        else if (k === "typing") { stack.clear(StackView.Immediate); choose("search"); pg(searchL).begin(rest); pg(searchL).forceActiveFocus(); }
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
         else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
         else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
@@ -306,12 +311,17 @@ ApplicationWindow {
             x: guide.open ? Y.guideOpen - Y.left : 0
             Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
             BrowsePage { id: home; objectName: "home"; anchors.fill: parent; key: "home"; browseId: "FEtopics"; visible: win.section === "home" }
-            BrowsePage { id: tab; objectName: "tab"; anchors.fill: parent; key: "music"; visible: !!win.tabs[win.section] }
-            SearchPage { id: search; anchors.fill: parent; visible: win.section === "search" }
+            Loader { id: tabL; anchors.fill: parent; active: false; visible: !!win.tabs[win.section]
+                     sourceComponent: BrowsePage { objectName: "tab"; key: "music" } }
+            Loader { id: searchL; anchors.fill: parent; active: false; visible: win.section === "search"
+                     sourceComponent: SearchPage {} }
             MessagePage { id: message; objectName: "message"; anchors.fill: parent; visible: win.page(win.section) === message }
-            SubscriptionsPage { id: subscriptions; objectName: "subscriptions"; anchors.fill: parent; visible: win.page(win.section) === subscriptions }
-            SettingsPage { id: settings; anchors.fill: parent; visible: win.section === "settings" }
-            LibraryPage { id: library; objectName: "library"; anchors.fill: parent; visible: win.page(win.section) === library }
+            Loader { id: subscriptionsL; anchors.fill: parent; active: false; visible: win.section === "subscriptions" && Y.signedIn
+                     sourceComponent: SubscriptionsPage { objectName: "subscriptions" } }
+            Loader { id: settingsL; anchors.fill: parent; active: false; visible: win.section === "settings"
+                     sourceComponent: SettingsPage {} }
+            Loader { id: libraryL; anchors.fill: parent; active: false; visible: win.section === "library" && Y.signedIn
+                     sourceComponent: LibraryPage { objectName: "library" } }
         }
         Guide {
             id: guide

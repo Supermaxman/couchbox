@@ -298,6 +298,13 @@ class MpvVideo(QQuickFramebufferObject):
         return self._renderer
 
     @Slot()
+    def _quiet(self):
+        try:
+            self.mpv["msg-level"] = "all=warn"
+        except Exception:  # noqa: BLE001
+            pass
+
+    @Slot()
     def _emit_pos(self):
         self._pos_pending = False
         self.positionChanged.emit()
@@ -393,6 +400,12 @@ class MpvVideo(QQuickFramebufferObject):
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
+        if TIMING and _DEBUG:  # what mpv does while it opens the file (connecting, reading, probing): 4 s of it
+            try:
+                self.mpv["msg-level"] = "all=warn,cplayer=v,stream=v,demux=v,ffmpeg=v,lavf=v"
+                QTimer.singleShot(4000, self._quiet)
+            except Exception:  # noqa: BLE001
+                pass
         QTimer.singleShot(2000, _trim)  # the file before's buffers, freed by now
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
