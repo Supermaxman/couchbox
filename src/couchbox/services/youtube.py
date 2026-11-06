@@ -1374,6 +1374,35 @@ class YouTube:
         self.changed()
         return {"id": resp.get("playlistId", ""), "title": title}
 
+    def page_probe(self, browse_id: str) -> dict[str, Any]:
+        """A page's outline as this profile gets it, for finding what isn't shown: the surface's
+        own keys, and each section's renderers, shelf type, title, first items' kinds and how
+        many shelves it gave (0: dropped). Names only: no tokens, no addresses."""
+        resp = self.call("browse", {"browseId": browse_id}, cache=False)
+        surface = dig(resp, "contents", "tvBrowseRenderer", "content", "tvSurfaceContentRenderer") or {}
+        out = {"surface": sorted(surface), "header": sorted(surface.get("header") or {}), "sections": []}
+        for s in section_list(resp).get("contents") or []:
+            if not isinstance(s, dict):
+                continue
+            r = s.get("shelfRenderer") or {}
+            lst = r.get("content") or {}
+            lst = next(iter(lst.values()), {}) if isinstance(lst, dict) and lst else {}
+            items = (lst.get("items") or []) if isinstance(lst, dict) else []
+            first = items[0] if items and isinstance(items[0], dict) else {}
+            inner = next(iter(first.values()), {}) if first else {}
+            out["sections"].append(
+                {
+                    "keys": sorted(s),
+                    "type": r.get("tvhtml5ShelfRendererType", ""),
+                    "title": shelf_title(r)[0] if r else "",
+                    "list": sorted(r.get("content") or {}) if r else [],
+                    "items": [next(iter(i), "") for i in items[:3] if isinstance(i, dict)],
+                    "first": {k: inner.get(k) for k in ("style", "contentType") if isinstance(inner, dict) and k in inner},
+                    "kept": 0 if any(k in AD_RENDERERS for k in s) else len(parse_shelf(s)),
+                }
+            )
+        return out
+
     def premium_probe(self) -> dict[str, Any]:
         """How this profile's answers mark Premium (where they say "premium"): its accounts list
         and a Home and History page."""
