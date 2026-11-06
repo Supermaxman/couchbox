@@ -524,3 +524,67 @@ def test_the_guard_runs_in_its_own_unit_so_it_outlives_the_app(monkeypatch):
     playback._guarded.discard(4243)
     playback.start_guard(4243)
     assert popens and popens[0][-2:] == ["watch", "4243"]
+
+
+# ------------------------------------------------------------------ YouTube's policy: films only, held while its player is open
+
+
+@pytest.mark.parametrize("fps", [29.97, 30.0, 59.94, 60.0])
+def test_film_only_never_switches_for_30_or_60(follow, fps):
+    f = follow()
+    f.set_policy("film")
+    run(f, playing(fps=fps), 10)
+    assert all(c is None for c in follow.calls)  # (Settings' mode at most: no switch away from it)
+
+
+@pytest.mark.parametrize("fps", [23.976, 24.0, 25.0, 50.0])
+def test_film_only_switches_for_films(follow, fps):
+    f = follow()
+    f.set_policy("film")
+    run(f, playing(fps=fps), 10)
+    assert follow.calls == [pytest.approx(fps)]
+
+
+def test_film_only_leaves_clips_be(follow):
+    f = follow()
+    f.set_policy("film")
+    run(f, playing(fps=25.0, duration=200.0), 10)
+    assert follow.calls == []
+
+
+def test_off_never_switches(follow):
+    f = follow()
+    f.set_policy("off")
+    run(f, playing(fps=23.976), 10)
+    assert not any(follow.calls)
+
+
+def test_held_the_tv_stays_between_videos_and_goes_back_after_the_player_closes(follow):
+    f = follow()
+    f.set_policy("film")
+    f.set_hold(True)  # the player opened
+    run(f, playing("film", fps=25.0), 5)
+    assert follow.calls == [pytest.approx(25.0)]
+    run(f, STOPPED, 30)  # between videos (autoplay's next one loading): no switch back
+    run(f, playing("vlog", fps=29.97), 10)  # a 30 fps one next: the TV stays at 50
+    assert follow.calls == [pytest.approx(25.0)]
+    f.set_hold(False)  # the player closed
+    run(f, STOPPED, 2)
+    assert follow.calls == [pytest.approx(25.0)]  # not yet: a video opened now wouldn't switch twice
+    run(f, STOPPED, 2)
+    assert follow.calls == [pytest.approx(25.0), None]
+
+
+def test_a_preload_doesnt_put_the_tv_back(follow):
+    f = follow()
+    f.set_policy("film")
+    f.set_hold(True)
+    run(f, playing("film", fps=25.0), 5)
+    f.set_hold(False)
+    f.suspend(True)  # Home's focused card preloaded right away
+    run(f, playing("preload", fps=29.97, paused=True), 2)
+    assert follow.calls == [pytest.approx(25.0)]
+    f.set_hold(True)  # another video opened within the 3 s: no blank
+    f.suspend(False)
+    run(f, playing("film2", fps=25.0), 10)
+    assert follow.calls == [pytest.approx(25.0), pytest.approx(25.0)]  # (the TV's there already: no kscreen switch)

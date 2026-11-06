@@ -304,6 +304,10 @@ ApplicationWindow {
         // the video, under everything: shown while the player is the page on top
         MpvVideo {
             id: video
+            // YouTube's frame rate matching (Settings → Video): films only by default
+            readonly property string ratePolicy: Y.settings.match_rate || "film"
+            onRatePolicyChanged: setRatePolicy(ratePolicy)
+            Component.onCompleted: setRatePolicy(ratePolicy)
             readonly property bool placed: Y.videoRect.width > 0          // Shorts
             x: placed ? Y.videoRect.x : Y.videoSide ? 54 * Y.u : 0
             y: placed ? Y.videoRect.y : Y.videoSide ? 219 * Y.u : 0

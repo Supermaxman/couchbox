@@ -523,6 +523,18 @@ class MpvVideo(QQuickFramebufferObject):
     def setSubtitle(self, sid):
         self.mpv.sid = sid if sid > 0 else "no"
 
+    @Slot(str)
+    def setRatePolicy(self, policy):
+        """An app's frame rate matching: "off", "film" (24 and 25 fps films only) or "always"
+        (the default, for the apps that don't say)."""
+        self._rate.set_policy(policy)
+
+    @Slot(bool)
+    def setRateHold(self, on):
+        """An app's player is open (on) or closed: while open, the TV keeps its rate between
+        videos; closed, Settings' mode comes back a few seconds later."""
+        self._rate.set_hold(on)
+
     @Slot(int)
     def setSubtitlePosition(self, percent):
         """Where subtitles sit (100: the bottom); raised while the controls are showing."""
@@ -561,8 +573,7 @@ class MpvVideo(QQuickFramebufferObject):
         if not self._preloaded and not self._ended and not self._paused and self._pos > 0:
             return  # something plays: leave it
         if not self._preloaded:
-            self._rate_was = self._rate.enabled
-            self._rate.set_enabled(False)
+            self._rate.suspend(True)  # (not looked at, and the TV not put back for it either)
             try:
                 self._mute_was = bool(self.mpv.mute)
             except Exception:  # noqa: BLE001
@@ -586,7 +597,7 @@ class MpvVideo(QQuickFramebufferObject):
         if not self._preloaded:
             return
         self._preloaded = None
-        self._rate.set_enabled(self._rate_was)
+        self._rate.suspend(False)
         if stop:
             try:
                 self.mpv.command("stop")
@@ -608,7 +619,7 @@ class MpvVideo(QQuickFramebufferObject):
             self.mpv.pause = False
         except Exception:  # noqa: BLE001
             pass
-        self._rate.set_enabled(self._rate_was)
+        self._rate.suspend(False)
         self.frameReady.emit()
 
     @Slot()

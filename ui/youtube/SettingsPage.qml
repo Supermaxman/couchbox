@@ -52,7 +52,10 @@ FocusScope {
                            {key: "unlock_resolution", label: "Unlock resolution", on: !!st.unlock_resolution, group: "Quality",
                             desc: "Sharper than 1080p, up to 4K, when H.264 only is off"},
                            {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres, group: "Quality",
-                            desc: "Skip the versions YouTube sharpened with AI"}]};
+                            desc: "Skip the versions YouTube sharpened with AI"},
+                           {key: "match_rate", label: "Match the TV to the video's frame rate", group: "The TV", value: st.match_rate || "film",
+                            choices: [["film", "Film only"], ["always", "Always"], ["off", "Off"]],
+                            desc: "Film only: for 24 and 25 fps films over 5 minutes (smoother; the screen goes black a moment when it changes). Always: for every video."}]};
         if (item.key === "player")
             return {title: "Player", body: "Keys on a keyboard: P and D faster and slower, A normal speed, C captions, M sound.", facts: [], rows: [
                 {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length", group: "On screen"},
@@ -99,7 +102,10 @@ FocusScope {
         if (!r) return;
         if (r.key === "who") Y.whoIsWatching();
         else if (r.key === "newcode") newCode();
-        else if (!r.off) Y.setting(r.key, !r.on);
+        else if (r.choices) {                 // a choice: OK steps to the next
+            const keys = r.choices.map(c => c[0]), i = keys.indexOf(r.value);
+            Y.setting(r.key, keys[(i + 1) % keys.length]);
+        } else if (!r.off) Y.setting(r.key, !r.on);
     }
     function enterRows() { if (rows.length) { area = "rows"; row = 0; } }
 
@@ -325,7 +331,14 @@ FocusScope {
                                         wrapMode: Text.WordWrap
                                     }
                                 }
+                                Text {                // a choice: its value (OK: the next)
+                                    visible: !!r.modelData.choices
+                                    anchors { right: parent.right; rightMargin: 42 * Y.u; verticalCenter: parent.verticalCenter }
+                                    text: r.modelData.choices ? ((r.modelData.choices.find(c => c[0] === r.modelData.value) || [0, ""])[1]) : ""
+                                    color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
+                                }
                                 Rectangle {           // a switch: white, its knob right, when on
+                                    visible: !r.modelData.choices
                                     anchors { right: parent.right; rightMargin: 42 * Y.u; verticalCenter: parent.verticalCenter }
                                     width: 76 * Y.u; height: 42 * Y.u; radius: height / 2
                                     color: r.modelData.on ? Y.text : "#5a5a5a"

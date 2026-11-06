@@ -362,6 +362,7 @@ STABLE_SPREAD = 0.005  # ... to within 0.5 %
 GIVE_UP = 30.0  # no frame rate to go by then (variable frame rate, audio only): leave the TV be
 MIN_DURATION = 300.0  # shorter (trailers, clips, recordings of an event): not worth two blank screens
 RESTORE_AFTER = 10.0  # stopped this long: Settings' mode again (the next episode starts sooner)
+HOLD_RESTORE = 3.0  # an app holding the TV's rate while its player is open (YouTube): this long after it closes
 AWAY_AFTER = 10.0  # paused and out of sight (its page closed, another app in front) this long: the same
 
 
@@ -413,6 +414,13 @@ class Follower:
         self.decided = False
         self.paused = False
         self.stopped_at: float | None = None
+        # an app's policy (YouTube's; the others keep "always"): "off", "film" (only 23.976, 24,
+        # 25 and 50 fps: a 59.94 <-> 60 or 29.97 <-> 30 switch blanks the TV for a second or two
+        # for one repeated frame in 16 s), or "always"
+        self.policy = "always"
+        self.hold = False  # its player is open: the TV keeps the rate between videos (autoplay, a queue)
+        self.released_at: float | None = None
+        self.suspended = False  # a paused, muted preload plays: not looked at (nor the TV put back)
         self.lock = threading.Lock()
 
     def _mine(self) -> bool:
@@ -447,6 +455,40 @@ class Follower:
                 release()
             self.switched = None
 
+    def set_policy(self, policy: str) -> None:
+        with self.lock:
+            if policy in ("off", "film", "always") and policy != self.policy:
+                _log(f"{self.who or 'player'}: frame rate matching {policy}")
+                self.policy = policy
+                self.path = None  # the video playing now is looked at again under it
+                if policy == "off":
+                    self._home(passive=True)
+
+    def set_hold(self, on: bool) -> None:
+        """The app's player opened (on) or closed: while it's open the TV keeps the rate it was
+        switched to between videos; closed, Settings' mode comes back HOLD_RESTORE later (a video
+        opened meanwhile, the TV isn't switched twice)."""
+        with self.lock:
+            if on == self.hold:
+                return
+            self.hold = on
+            self.released_at = None if on else self.clock()
+
+    def suspend(self, on: bool) -> None:
+        """A preload (paused, muted, not shown) in place of the video: it isn't looked at."""
+        with self.lock:
+            self.suspended = on
+            self.path = None
+
+    def _restore_due(self, now: float) -> bool:
+        """Stopped long enough for Settings' mode: RESTORE_AFTER, or HOLD_RESTORE after an app
+        holding the rate closed its player (and never while it's open)."""
+        if self.hold:
+            return False
+        if self.released_at is not None:
+            return now - max(self.released_at, self.stopped_at or now) >= HOLD_RESTORE
+        return self.stopped_at is not None and now - self.stopped_at >= RESTORE_AFTER
+
     def set_enabled(self, on: bool) -> None:
         with self.lock:
             self.enabled = on
@@ -462,12 +504,14 @@ class Follower:
         now = self.clock()
         if not self.enabled:
             return
-        if p.get("idle") or not p.get("path") or p.get("eof"):
+        if self.suspended or p.get("idle") or not p.get("path") or p.get("eof"):
             if self.stopped_at is None:
                 self.stopped_at = now
-            if now - self.stopped_at >= RESTORE_AFTER:
+            if self._restore_due(now):
                 if self.switched is not None:
-                    _log(f"{self.who or 'player'}: stopped for {RESTORE_AFTER:.0f} s: Settings' mode")
+                    _log(
+                        f"{self.who or 'player'}: stopped (its player {'closed' if self.released_at is not None else 'idle'}): Settings' mode"
+                    )
                 self._home(passive=True)
             self.path = None  # whatever plays next is looked at afresh (even the same file)
             return
@@ -495,14 +539,24 @@ class Follower:
         dur, cont = p.get("duration"), p.get("container_fps")
         dur = f"{dur:.0f} s" if _num(dur) else dur
         cont = round(cont, 3) if _num(cont) else cont
-        outcome = f"match {fps:.3f} fps" if fps else "Settings mode"
+        if fps and self.policy != "always" and not (self.policy == "film" and is_film(fps)):
+            why = (
+                "matching is off"
+                if self.policy == "off"
+                else f"{fps:.3f} fps isn't a film's (24 or 25): a switch would blank the TV for one repeated frame in 16 s"
+            )
+            fps = None
+        keep = not fps and self.hold and self.switched is not None
+        if keep:
+            why += f"; the TV stays at {self.switched:.3f} fps between videos (its player is open)"
+        outcome = f"match {fps:.3f} fps" if fps else "keep the TV as it is" if keep else "Settings mode"
         measured = [round(x, 3) for x in self.samples]
         _log(
             f"{self.who or 'player'}: {path_kind(p['path'])}, duration {dur}, declared {cont} fps, measured {measured} -> {outcome} ({why})"
         )
         if fps:
             self._switch(fps)
-        else:
+        elif not keep:
             self._home(passive)
 
     def _check_away(self, now: float, shown: bool) -> None:
@@ -544,6 +598,11 @@ class Follower:
         if dur < MIN_DURATION:
             return None, f"a clip: under {MIN_DURATION / 60:.0f} minutes"
         return fps, how
+
+
+def is_film(fps: float) -> bool:
+    """23.976, 24, 25 fps, or 47.95 to 50 (doubled): the rates worth matching the TV to."""
+    return 23.5 <= fps <= 25.5 or 47.0 <= fps <= 51.0
 
 
 def _num(v: Any) -> bool:

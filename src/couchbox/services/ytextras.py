@@ -55,6 +55,8 @@ DEFAULTS: dict[str, Any] = {
     "unlock_resolution": False,  # past 1080p (VP9/AV1, with H.264 only off)
     "pause_on_blur": False,  # pause when another window comes in front
     "remaining_time": False,  # the time left instead of the length
+    # the TV's refresh rate to the video's: off | film (24 and 25 fps films only) | always
+    "match_rate": "film",
     "cast": True,  # the TV as a cast target for the YouTube phone app (couchbox-yt-cast, DIAL and the Lounge)
     "guide_tabs": {"music": True, "gaming": True, "news": True, "podcasts": True, "movies": True, "live": True, "sports": True},
 }
@@ -77,6 +79,8 @@ class Settings:
                 out["skip"].update({c: bool(on) for c, on in v.items() if c in CATEGORIES})
             elif k == "guide_tabs" and isinstance(v, dict):
                 out["guide_tabs"].update({t: bool(on) for t, on in v.items() if t in DEFAULTS["guide_tabs"]})
+            elif k == "match_rate":
+                out[k] = v if v in ("off", "film", "always") else DEFAULTS[k]
             elif k in DEFAULTS and isinstance(v, type(DEFAULTS[k])):
                 out[k] = v
         return out
@@ -93,6 +97,10 @@ class Settings:
                 if key[4:] not in DEFAULTS["guide_tabs"]:
                     raise ValueError(f"no guide tab {key[4:]}")
                 cur["guide_tabs"][key[4:]] = bool(value)
+            elif key == "match_rate":
+                if value not in ("off", "film", "always"):
+                    raise ValueError(f"no frame rate matching {value!r}")
+                cur[key] = value
             elif key in DEFAULTS and not isinstance(DEFAULTS[key], dict):
                 cur[key] = type(DEFAULTS[key])(value)
             else:

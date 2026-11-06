@@ -31,6 +31,8 @@ Rectangle {
     function cancelPreload() {}
     function videoInfo() { return ""; }
     function subText() { return ""; }
+    function setRatePolicy(p) {}
+    function setRateHold(on) {}
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {
