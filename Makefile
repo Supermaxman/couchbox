@@ -25,9 +25,10 @@ build/helpers/zkde-screencast-unstable-v1-protocol.c: $(PROTO)
 	wayland-scanner private-code $< $@
 
 $(HELPER): helpers/couchbox-screencast.c build/helpers/zkde-screencast-unstable-v1-client-protocol.h build/helpers/zkde-screencast-unstable-v1-protocol.c
+	wl=$$($(PKG_CONFIG) --cflags --libs wayland-client) && \
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Wno-unused-parameter -Ibuild/helpers -o $@ \
 	  helpers/couchbox-screencast.c build/helpers/zkde-screencast-unstable-v1-protocol.c \
-	  $(LDFLAGS) $$($(PKG_CONFIG) --cflags --libs wayland-client)
+	  $(LDFLAGS) $$wl
 
 install: $(HELPER)
 	install -d $(PY) $(SHARE) $(LIBBIN) $(LIBEXEC) $(DESTDIR)/usr/bin

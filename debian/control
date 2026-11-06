@@ -2,7 +2,7 @@ Source: couchbox
 Section: video
 Priority: optional
 Maintainer: Couchbox Authors <couchbox@users.noreply.github.com>
-Build-Depends: debhelper-compat (= 13), dh-python, python3, libwayland-dev, libwayland-bin, plasma-wayland-protocols, pkgconf
+Build-Depends: debhelper-compat (= 13), dh-python, python3:any, libwayland-dev, libwayland-bin, plasma-wayland-protocols, pkgconf
 Standards-Version: 4.7.0
 Homepage: https://github.com/Supermaxman/couchbox
 Vcs-Git: https://github.com/Supermaxman/couchbox.git
