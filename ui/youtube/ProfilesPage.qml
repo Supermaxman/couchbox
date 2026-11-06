@@ -33,7 +33,7 @@ FocusScope {
             page.area = "row";
             list.currentIndex = page.index;
             list.positionViewAtIndex(page.index, ListView.Beginning);
-        });
+        }, () => { page.loaded = true; });   // (no profiles to show: Add account and Watch as guest still work)
     }
 
     property bool loaded: false               // (until the profiles come, OK would be on Add account: nothing)
