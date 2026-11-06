@@ -1061,8 +1061,8 @@ class YouTube:
         return parse_accounts(self._post("account/accounts_list", body, token=token))
 
     # ---------------------------------------------------------------- requests
-    def _post(self, ep: str, body: dict[str, Any], token: str = "", page: str = "") -> dict[str, Any]:
-        client = dict(self.client)
+    def _post(self, ep: str, body: dict[str, Any], token: str = "", page: str = "", as_client: dict | None = None) -> dict[str, Any]:
+        client = dict(self.client, **(as_client or {}))
         if self.visitor:
             client["visitorData"] = self.visitor
         context: dict[str, Any] = {"client": client}
@@ -1071,6 +1071,8 @@ class YouTube:
         headers = {"X-Goog-Visitor-Id": self.visitor} if self.visitor else {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        if as_client:
+            headers.update({"User-Agent": client["userAgent"], "X-YouTube-Client-Version": client["clientVersion"]})
         r = self.s.post(f"{API}/{ep}?prettyPrint=false", json={"context": context, **body}, headers=headers, timeout=TIMEOUT)
         if r.status_code >= 400:
             raise YouTubeError(f"YouTube said {r.status_code} ({ep})", r.status_code)
@@ -1081,26 +1083,26 @@ class YouTube:
             self._write("visitor.json", {"visitorData": vd})
         return data
 
-    def call(self, ep: str, body: dict[str, Any], cache: bool = True) -> dict[str, Any]:
+    def call(self, ep: str, body: dict[str, Any], cache: bool = True, as_client: dict | None = None) -> dict[str, Any]:
         prof = self.profile
-        key = prof.get("id", "") + ep + json.dumps(body, sort_keys=True)
+        key = prof.get("id", "") + ep + json.dumps(body, sort_keys=True) + json.dumps(as_client or {})
         hit = self.cache.get(key)
         if cache and hit and time.time() - hit[0] < CACHE_SECONDS:
             return hit[1]
         if prof:
             token = self.auth.token(prof["account"])
             try:
-                data = self._post(ep, body, token, prof.get("pageId", ""))
+                data = self._post(ep, body, token, prof.get("pageId", ""), as_client)
             except YouTubeError as err:
                 if err.args[1:] != (401,):
                     raise
                 self.auth.expire(prof["account"])  # refused: renew it once
-                data = self._post(ep, body, self.auth.token(prof["account"]), prof.get("pageId", ""))
+                data = self._post(ep, body, self.auth.token(prof["account"]), prof.get("pageId", ""), as_client)
             if ep == "browse" and not prof.get("premium") and is_premium(data):
                 prof["premium"] = True
                 self.auth.set_premium(prof["account"], True)
         else:
-            data = self._post(ep, body)
+            data = self._post(ep, body, as_client=as_client)
         with self.lock:
             if len(self.cache) > 200:
                 self.cache.clear()
@@ -1194,18 +1196,50 @@ class YouTube:
         )
         return parse_suggestions(r.text)[:10]
 
-    def player_probe(self, video_id: str) -> dict[str, Any]:
+    def signature_timestamp(self) -> int:
+        """The current player JS's signatureTimestamp (its version, as /player wants it), kept an hour."""
+        if getattr(self, "_sts", (0, 0))[0] > time.time():
+            return self._sts[1]
+        sts = 0
+        try:
+            js = self.s.get("https://www.youtube.com/iframe_api", timeout=TIMEOUT).text
+            ver = re.search(r"player\\?/([0-9a-fA-F]{8})\\?/", js)
+            if ver:
+                base = self.s.get(f"https://www.youtube.com/s/player/{ver.group(1)}/player_ias.vflset/en_US/base.js", timeout=TIMEOUT).text
+                m = re.search(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})", base)
+                sts = int(m.group(1)) if m else 0
+        except requests.RequestException:
+            pass
+        self._sts = (time.time() + 3600, sts)
+        return sts
+
+    def player_probe(self, video_id: str, clients: dict[str, dict] | None = None) -> dict[str, Any]:
+        """player_one as the app's own client and as each of clients (yt-dlp's: name -> context)."""
+        out = {"app": self.player_one(video_id)}
+        for name, c in (clients or {}).items():
+            try:
+                out[name] = self.player_one(video_id, c)
+            except YouTubeError as err:
+                out[name] = {"error": str(err.args[0])}
+        return out
+
+    def player_one(self, video_id: str, as_client: dict | None = None) -> dict[str, Any]:
         """What YouTube's /player says to this TV for a video, as the profile watching (its sign-in):
         whether it plans ads (the gap before DASH opens), and its formats (ciphered or not). For
         measuring: no addresses or tokens in the answer."""
-        resp = self.call("player", {"videoId": video_id, "racyCheckOk": True, "contentCheckOk": True}, cache=False)
+        body = {"videoId": video_id, "racyCheckOk": True, "contentCheckOk": True}
+        sts = self.signature_timestamp()
+        if sts:  # the player JS version the answer must suit (without it: "The page needs to be reloaded")
+            body["playbackContext"] = {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}
+        resp = self.call("player", body, cache=False, as_client=as_client)
         sd = resp.get("streamingData") or {}
         fmts = sd.get("adaptiveFormats") or []
         h264 = [f for f in fmts if "avc1" in (f.get("mimeType") or "")]
         return {
             "signedIn": bool(self.profile),
             "premium": bool(self.profile.get("premium")) if self.profile else False,
-            "client": self.client.get("clientName", "") + " " + self.client.get("clientVersion", ""),
+            "client": (as_client or self.client).get("clientName", "") + " " + (as_client or self.client).get("clientVersion", ""),
+            "sts": sts,
             "playability": dig(resp, "playabilityStatus", "status") or "",
             "reason": dig(resp, "playabilityStatus", "reason") or "",
             "adPlacements": len(resp.get("adPlacements") or []),

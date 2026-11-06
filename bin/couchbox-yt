@@ -196,7 +196,7 @@ class Backend(QObject):
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
-            "playerProbe": lambda: y.player_probe(a["id"]),  # measuring (the control socket's "call")
+            "playerProbe": lambda: y.player_probe(a["id"], None if self.demo else self.worker.call("clients")),  # measuring (control socket)
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),

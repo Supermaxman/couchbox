@@ -170,6 +170,19 @@ class Worker:
                 from couchbox.services import youtube
 
                 return self.answer(n, result=youtube.tv_client())
+            if op == "clients":  # yt-dlp's TV clients' contexts (measuring: playerProbe)
+                ytstream.module()
+                from yt_dlp.extractor.youtube._base import INNERTUBE_CLIENTS
+
+                keep = ("clientName", "clientVersion", "userAgent", "deviceMake", "deviceModel", "osName", "osVersion")
+                return self.answer(
+                    n,
+                    result={
+                        k: {x: v for x, v in INNERTUBE_CLIENTS[k]["INNERTUBE_CONTEXT"]["client"].items() if x in keep}
+                        for k in ("tv", "tv_samsung", "tv_downgraded")
+                        if k in INNERTUBE_CLIENTS
+                    },
+                )
             if op == "ping":
                 return self.answer(n, result={"ok": True, "rss": round(rss_mb())})
             return self.answer(n, error=f"unknown op {op}")
