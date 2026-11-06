@@ -280,6 +280,7 @@ def playable(
         raise Unavailable("YouTube didn't offer a format this TV can play.")
     out = {
         "protocol": "hls" if _hls(video) else "dash" if audio else "https",
+        "itags": [f.get("format_id") for f in (video, audio) if f],
         "live": live,
         "width": video.get("width") or 0,
         "height": video.get("height") or 0,

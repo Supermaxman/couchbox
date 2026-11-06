@@ -524,6 +524,18 @@ class MpvVideo(QQuickFramebufferObject):
     # ---------------------------------------------------------------- one file ready to play
     PRELOAD_CACHE = "4MiB"  # what's read ahead of a preloaded file (no more: it may never play)
 
+    @Slot(result=str)
+    def videoInfo(self):
+        """What mpv decodes now: "1920x1080@24 h264" ("" when nothing): checks and reports."""
+        try:
+            vp = self.mpv.video_params or {}
+            fps = self.mpv.container_fps or self.mpv.estimated_vf_fps or 0
+            if not vp.get("w"):
+                return ""
+            return f"{vp.get('w')}x{vp.get('h')}@{round(fps)} {self.mpv.video_codec or ''}".strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
     @Slot(str, float, str)
     def preload(self, url, start, options):
         """Open url (paused, muted, from start, reading little ahead), so loadWith() of the same

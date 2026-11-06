@@ -96,6 +96,8 @@ class Node:
     proc: subprocess.Popen | None = None
     path = ""
     n = 0
+    sandbox = True  # (bubblewrap, while it works here)
+    stats: dict[str, Any] = {"runtime": "", "sandboxed": False, "starts": 0, "solves": 0, "readings": 0}
     used = 0.0
     IDLE = {"node": 30, "quickjs": 600}
     watcher: threading.Thread | None = None
@@ -135,39 +137,135 @@ class Node:
                 cls.proc.kill()
                 _reap(cls.proc)
                 cls.proc = None
-            if cls.proc is None or cls.proc.poll() is not None:
-                cmd = (
-                    [path, "--std", "-e", BOOT_QJS]
-                    if _is_qjs(path)
-                    else [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS]
-                )
-                cls.proc = subprocess.Popen(  # noqa: S603
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    bufsize=1,
-                )
-                cls.path = path
-                cls.proc.stdin.write(json.dumps(script) + "\n")
-            cls.n += 1
-            req = dict(req, id=cls.n)
+            fresh = cls.proc is None or cls.proc.poll() is not None
+            if fresh:
+                cls._start(path, script)
+            cls.stats["solves"] += 1
+            if req.get("player"):
+                cls.stats["readings"] += 1
             try:
-                cls.proc.stdin.write(json.dumps(req) + "\n")
-                cls.proc.stdin.flush()
-                while True:
-                    line = cls.proc.stdout.readline()
-                    if not line:
-                        raise SolverError("the challenge solver stopped")
-                    out = json.loads(line)
-                    if out.get("id") == req["id"]:
-                        return out
-            except (OSError, ValueError) as err:
-                cls.proc.kill()
-                _reap(cls.proc)
-                cls.proc = None
-                raise SolverError(f"the challenge solver failed: {err}") from err
+                return cls._ask(req)
+            except SolverError:
+                if not (fresh and cls.stats.get("sandboxed")):
+                    raise
+                # the sandbox didn't let it run (no user namespaces here?): without it, said once
+                import sys
+
+                print(f"ytjs: {path} wouldn't run in bubblewrap here: running it without", file=sys.stderr, flush=True)
+                cls.sandbox = False
+                cls._start(path, script)
+                return cls._ask(req)
+
+    @classmethod
+    def _start(cls, path: str, script: str) -> None:
+        import sys
+
+        if _is_qjs(path):  # QuickJS reaches files and programs (its std and os modules): in a sandbox
+            cmd = [path, "--std", "-e", BOOT_QJS]
+            box = sandboxed(cmd) if cls.sandbox else None
+            if box is None and cls.sandbox:
+                print(f"ytjs: no {BWRAP}: QuickJS runs without a sandbox", file=sys.stderr, flush=True)
+                cls.sandbox = False
+            cmd = box or cmd
+        else:  # node: its own --permission (no files, programs or network)
+            cmd = [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS]
+        cls.proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+        cls.path = path
+        cls.stats.update(runtime="quickjs" if _is_qjs(path) else "node", sandboxed=cmd[0] == BWRAP, pid=cls.proc.pid)
+        cls.stats["starts"] += 1
+        try:
+            cls.proc.stdin.write(json.dumps(script) + "\n")
+        except OSError:
+            pass
+
+    @classmethod
+    def _ask(cls, req: dict[str, Any]) -> dict[str, Any]:
+        """(cls.lock held)"""
+        cls.n += 1
+        req = dict(req, id=cls.n)
+        try:
+            cls.proc.stdin.write(json.dumps(req) + "\n")
+            cls.proc.stdin.flush()
+            while True:
+                line = cls.proc.stdout.readline()
+                if not line:
+                    raise SolverError("the challenge solver stopped")
+                out = json.loads(line)
+                if out.get("id") == req["id"]:
+                    return out
+        except (OSError, ValueError) as err:
+            cls.proc.kill()
+            _reap(cls.proc)
+            cls.proc = None
+            raise SolverError(f"the challenge solver failed: {err}") from err
+
+    @classmethod
+    def status(cls) -> dict[str, Any]:
+        """Which runtime solves, how often, and its memory now (MB; 0: not running)."""
+        rss = 0
+        if cls.proc is not None and cls.proc.poll() is None:
+            todo = [cls.proc.pid]  # (in the sandbox: bwrap, and the runtime under it)
+            while todo:
+                pid = todo.pop()
+                try:
+                    with open(f"/proc/{pid}/status") as fh:
+                        rss += next((int(ln.split()[1]) for ln in fh if ln.startswith("VmRSS:")), 0) // 1024
+                    with open(f"/proc/{pid}/task/{pid}/children") as fh:
+                        todo += [int(x) for x in fh.read().split()]
+                except (OSError, ValueError):
+                    pass
+        return dict(cls.stats, alive=bool(rss), rss=rss)
+
+
+BWRAP = "/usr/bin/bwrap"
+
+
+def sandboxed(cmd: list[str]) -> list[str] | None:
+    """cmd in a bubblewrap sandbox: no network or other namespaces shared, nothing of the system
+    but the program and its libraries (read-only), no home, an empty /tmp, gone with its parent.
+    None without bwrap."""
+    if not os.access(BWRAP, os.X_OK):
+        return None
+    prog = os.path.realpath(cmd[0])
+    paths = {prog}
+    try:
+        out = subprocess.run(["ldd", prog], capture_output=True, text=True, timeout=5).stdout  # noqa: S607
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for ln in out.splitlines():
+        for part in ln.split():
+            if part.startswith("/"):
+                # the file where the loader looks for it (its folder's links followed: /lib/x ->
+                # /usr/lib/x, itself maybe a link), and what it finally is
+                paths.add(os.path.join(os.path.realpath(os.path.dirname(part)), os.path.basename(part)))
+                paths.add(os.path.realpath(part))
+    args = [
+        BWRAP,
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--clearenv",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+    ]
+    for link in ("/lib", "/lib64", "/bin", "/sbin"):  # (merged /usr: the loader's paths go through these)
+        if os.path.islink(link):
+            args += ["--symlink", os.readlink(link), link]
+    for p in sorted(paths):
+        if os.path.exists(p) and not any(p.startswith(link + "/") for link in ("/lib", "/lib64", "/bin", "/sbin") if os.path.islink(link)):
+            args += ["--ro-bind", p, p]
+    return args + [prog, *cmd[1:]]
 
 
 def _prepared_file(player_url: str):

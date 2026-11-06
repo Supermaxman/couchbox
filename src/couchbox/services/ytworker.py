@@ -312,6 +312,10 @@ class Worker:
                         if k in INNERTUBE_CLIENTS
                     },
                 )
+            if op == "solver":  # which runtime solves the challenges, how often, its memory
+                from couchbox.services import ytjs
+
+                return self.answer(n, result=ytjs.Node.status())
             if op == "ping":
                 return self.answer(n, result={"ok": True, "rss": round(rss_mb())})
             return self.answer(n, error=f"unknown op {op}")

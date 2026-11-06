@@ -82,6 +82,7 @@ started("imports")
 
 
 class Backend(QObject):
+    current = None                                   # (the one: for the memory report)
     """QML's way to youtube.py, ytauth.py and ytstream.py: call(id, op, args) answers later with
     reply(id, json); event(name, json) tells it what happened meanwhile (a code was used)."""
     reply = Signal(int, str)
@@ -102,6 +103,7 @@ class Backend(QObject):
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
         self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
+        Backend.current = self
         self.home_lock = threading.Lock()
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
@@ -682,9 +684,15 @@ def memory():
                     kids.setdefault(name, []).append(rollup(int(d)))
                 elif "--permission" in cmd and "readline" in cmd:
                     kids.setdefault("node", []).append(rollup(int(d)))
+                elif "qjs" in cmd and "--std" in cmd and not cmd.startswith(("bwrap", "/usr/bin/bwrap")):
+                    kids.setdefault("qjs", []).append(rollup(int(d)))
     except OSError:
         pass
     out["processes"] = kids
+    try:  # the challenge solver as the worker sees it
+        out["solver"] = Backend.current.worker.call("solver", timeout=5) if Backend.current and Backend.current.worker else None
+    except Exception:  # noqa: BLE001
+        out["solver"] = None
     return out
 
 

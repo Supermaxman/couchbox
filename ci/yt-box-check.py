@@ -709,12 +709,12 @@ def name_of(pid):
             cmd = fh.read().decode(errors="replace")
     except OSError:
         return "?"
-    return "worker" if "ytworker" in cmd else "node" if "--permission" in cmd else "app"
+    return "worker" if "ytworker" in cmd else "node" if "--permission" in cmd else "qjs" if "qjs" in cmd else "app"
 
 
 def all_pids():
     """The app, its stream worker and the worker's node."""
-    out = subprocess.run(["pgrep", "-u", TV_USER, "-f", f"{APP}|couchbox.services.ytworker|--permission -e"],
+    out = subprocess.run(["pgrep", "-u", TV_USER, "-f", f"{APP}|couchbox.services.ytworker|--permission -e|qjs --std"],
                          capture_output=True, text=True, check=False).stdout.split()
     return [int(x) for x in out]
 
@@ -771,6 +771,11 @@ class Perf:
             f"app {a.get('Rss')} MB resident, {a.get('Pss')} proportional ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); "
             "mpv cache " + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
             + "; " + ", ".join(f"{k} {sum(x.get('Rss', 0) for x in v)} MB ({sum(x.get('Pss', 0) for x in v)} PSS)" for k, v in procs.items())
+            + "; solver " + (
+                f"{(m.get('solver') or {}).get('runtime')} ({'sandboxed' if (m.get('solver') or {}).get('sandboxed') else 'NOT sandboxed'}): "
+                f"{(m.get('solver') or {}).get('solves')} solves, {(m.get('solver') or {}).get('readings')} player readings, "
+                f"{(m.get('solver') or {}).get('starts')} starts, {(m.get('solver') or {}).get('rss')} MB now"
+                if m.get("solver") and m["solver"].get("runtime") else "not used yet")
             + f"; {m.get('python_objects')} Python objects; QML: {(m.get('qml') or {}).get('items')} items, "
             + f"{(m.get('qml') or {}).get('images')} pictures ({(m.get('qml') or {}).get('image_mb')} MB decoded); app by kind: "
             + ", ".join(f"{k} {v}" for k, v in (m.get("app_by_kind") or {}).items()),
@@ -947,9 +952,16 @@ def perf(r, started, signed=False):
         for x in pids:
             each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / seconds)
         total = sum(each.values())
-        res = f"{d(f).get('height')}p{d(f).get('fps')}"
+        dec = d(f).get("decoded") or ""  # what mpv decodes: "1920x1080@24 h264"
+        try:
+            w, rest = dec.split("x", 1)
+            hgt, fps = rest.split("@", 1)
+            res, tall = f"{min(int(w), int(hgt))}p{fps.split()[0]} {fps.split()[1] if ' ' in fps else ''}".strip(), min(int(w), int(hgt))
+        except ValueError:
+            res, tall = f"{d(f).get('height')}p{d(f).get('fps')} (as the stream said)", d(f).get("height") or 0
+        res += f", itags {d(f).get('itags')}"
         p.say(name, f"{total}% of one core over {seconds} s of {d(f).get('videoId')} ({res}"
-              + ("" if (d(f).get("height") or 0) >= 1080 else ": not 1080p, not comparable")
+              + ("" if tall >= 1080 else ": not 1080p, not comparable")
               + f"; it played {moved} s" + ("" if moved >= seconds - 3 else ": NOT PLAYING THROUGHOUT") + "): "
               + ", ".join(f"{k} {v}%" for k, v in each.items()), total if moved >= seconds - 3 else None)
         p.rows[f"{name}-video"] = res

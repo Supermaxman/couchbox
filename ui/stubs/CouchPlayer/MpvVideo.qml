@@ -29,6 +29,7 @@ Rectangle {
     function warmUp() {}
     function preload(url, start, opts) {}
     function cancelPreload() {}
+    function videoInfo() { return ""; }
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {
