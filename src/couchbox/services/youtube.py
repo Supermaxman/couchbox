@@ -253,7 +253,10 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     for o in header.get("thumbnailOverlays") or []:  # posters and wormholes keep their text on the picture
         if not meta.get("title") and "tileMetadataRenderer" in o:
             meta = o["tileMetadataRenderer"]
-    out["title"] = text(meta.get("title"))
+    if not meta.get("title"):  # a carousel's (Movies & TV's hero row): wherever the tile keeps it
+        rest = {k: v for k, v in t.items() if k != "onLongPressCommand"}
+        meta = next((m for m in _find(rest, "tileMetadataRenderer") if isinstance(m, dict) and m.get("title")), meta)
+    out["title"] = text(meta.get("title")) or text(dig(t, "onLongPressCommand", "showMenuCommand", "title"))
     out["shape"] = tile_shape(t.get("style") or "", header.get("thumbnail"))
     for line in meta.get("lines") or []:
         parts = []
@@ -329,6 +332,17 @@ FEEDBACK_KINDS = (
     ("no_channel", ("REMOVE",), ("recommend channel",)),
     ("not_interested", ("NOT_INTERESTED",), ("not interested",)),
 )
+
+
+def outline(o: Any, depth: int = 0) -> Any:
+    """An answer's shape for a probe: its keys (and lists' first items), the leaves' types only."""
+    if depth > 7:
+        return "..."
+    if isinstance(o, dict):
+        return {k: outline(v, depth + 1) for k, v in o.items() if k not in ("trackingParams", "clickTrackingParams")}
+    if isinstance(o, list):
+        return [outline(o[0], depth + 1), len(o)] if o else []
+    return type(o).__name__
 
 
 def menu_feedback(cmd: Any) -> list[dict[str, str]]:
@@ -491,8 +505,12 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
         kind = r.get("tvhtml5ShelfRendererType") or ""
         if kind == "TVHTML5_SHELF_RENDERER_TYPE_GRID":
             out["grid"] = True
-        elif kind in ("TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF", "TVHTML5_SHELF_RENDERER_TYPE_WORMHOLES"):
-            out["hero"] = True  # Movies & TV: the focused title large above the row
+        elif kind in (
+            "TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF",
+            "TVHTML5_SHELF_RENDERER_TYPE_WORMHOLES",
+            "TVHTML5_SHELF_RENDERER_TYPE_CAROUSEL",
+        ):
+            out["hero"] = True  # Movies & TV: the focused title large above the row (signed in: its carousel)
         return [out]
     if "clusterShelfRenderer" in s:
         shelves = []
@@ -1398,6 +1416,7 @@ class YouTube:
                     "list": sorted(r.get("content") or {}) if r else [],
                     "items": [next(iter(i), "") for i in items[:3] if isinstance(i, dict)],
                     "first": {k: inner.get(k) for k in ("style", "contentType") if isinstance(inner, dict) and k in inner},
+                    "outline": outline(inner) if not parse_shelf(s) else None,  # a dropped one's first item: its shape
                     "kept": 0 if any(k in AD_RENDERERS for k in s) else len(parse_shelf(s)),
                 }
             )

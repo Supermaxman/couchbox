@@ -119,3 +119,27 @@ def test_card_menu_feedback_options():
     got = Y.menu_feedback(cmd)
     assert [(o["kind"], o["token"]) for o in got] == [("not_interested", "t1"), ("no_channel", "t2"), ("remove_history", "t3")]
     assert Y.menu_feedback(None) == []
+
+
+def test_movies_carousel_is_a_hero_row_even_with_its_title_in_the_menu():
+    tile = {
+        "tileRenderer": {
+            "style": "TILE_STYLE_YTLR_CAROUSEL",
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": "carousel001",
+            "header": {
+                "tileHeaderRenderer": {"thumbnail": {"thumbnails": [{"url": "https://i.example/c.jpg", "width": 1280, "height": 720}]}}
+            },
+            "onSelectCommand": {"watchEndpoint": {"videoId": "carousel001"}},
+            "onLongPressCommand": {"showMenuCommand": {"title": {"simpleText": "A Made-up Show"}}},
+        }
+    }
+    shelf = {
+        "shelfRenderer": {
+            "tvhtml5ShelfRendererType": "TVHTML5_SHELF_RENDERER_TYPE_CAROUSEL",
+            "content": {"horizontalListRenderer": {"items": [tile]}},
+        }
+    }
+    got = Y.parse_shelf(shelf)
+    assert len(got) == 1 and got[0]["hero"] and got[0]["items"][0]["title"] == "A Made-up Show"
+    assert Y.outline({"a": [{"b": "x"}], "trackingParams": "t"}) == {"a": [{"b": "str"}, 1]}

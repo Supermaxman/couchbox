@@ -37,7 +37,7 @@ FocusScope {
         x: shelf.indent
         y: (shelf.hasHead ? 70 * Y.u : 0) + 180 * Y.u
         width: shelf.width - shelf.indent - 280 * Y.u
-        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 56 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
+        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 48 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
         Item { width: 1; height: 14 * Y.u }
         Row {
             height: 34 * Y.u
