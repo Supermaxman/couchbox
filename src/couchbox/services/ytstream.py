@@ -525,13 +525,62 @@ def hls_formats(master: str) -> list[dict[str, Any]]:
     return out
 
 
+def _deciphered(raw: list[dict[str, Any]], solve: Any) -> list[dict[str, Any]]:
+    """An InnerTube answer's formats as yt-dlp's, each address deciphered (its signature and
+    "n", solve(n, sig) -> ({n: answer}, {sig: answer})); those it can't are left out."""
+    from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+
+    pending = []
+    for f in raw:
+        if f.get("url"):
+            url, s, sp = f["url"], "", ""
+        else:
+            c = parse_qs(f.get("signatureCipher") or f.get("cipher") or "")
+            url, s, sp = (c.get("url") or [""])[0], (c.get("s") or [""])[0], (c.get("sp") or ["signature"])[0]
+        if not url:
+            continue
+        n = (parse_qs(urlparse(url).query).get("n") or [""])[0]
+        pending.append((f, url, s, sp, n))
+    n_ans, sig_ans = solve([p[4] for p in pending if p[4]], [p[2] for p in pending if p[2]])
+    formats = []
+    for f, url, s, sp, n in pending:
+        u = urlparse(url)
+        q = parse_qsl(u.query, keep_blank_values=True)
+        if n:
+            if n not in n_ans:
+                continue
+            q = [(k, n_ans[n] if k == "n" else v) for k, v in q]
+        if s:
+            if s not in sig_ans:
+                continue
+            q.append((sp, sig_ans[s]))
+        vcodec, acodec = _codecs(f.get("mimeType") or "")
+        track = f.get("audioTrack") or {}
+        formats.append(
+            {
+                "format_id": f"{f.get('itag')}" + ("-drc" if f.get("isDrc") else ""),
+                "url": urlunparse(u._replace(query=urlencode(q))),
+                "vcodec": vcodec,
+                "acodec": acodec,
+                "width": f.get("width"),
+                "height": f.get("height"),
+                "fps": f.get("fps"),
+                "tbr": (f.get("bitrate") or 0) / 1000,
+                "abr": (f.get("averageBitrate") or f.get("bitrate") or 0) / 1000 if vcodec == "none" else None,
+                "audio_channels": f.get("audioChannels"),
+                "format_note": f.get("qualityLabel") or "",
+                "language_preference": (10 if track.get("audioIsDefault") else -1) if track else None,
+            }
+        )
+    return formats
+
+
 def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, Any]:
     """yt-dlp's information, as extract() gives it, from an InnerTube /player response (the TV
     client, signed in: no ads, so DASH opens at once): every format's address deciphered (its
-    signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). Unavailable when it has
-    nothing to play this way (live streams: yt-dlp's way)."""
-    from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
-
+    signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). A live stream: its HLS,
+    its DASH manifest, or else its adaptive formats through ytlive's server. Unavailable when it
+    has nothing to play this way."""
     status = (pr.get("playabilityStatus") or {}).get("status")
     if status != "OK":
         raise Unavailable((pr.get("playabilityStatus") or {}).get("reason") or "YouTube won't play this video here.")
@@ -579,50 +628,33 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
             "subtitles": {},
             "automatic_captions": {},
         }
-    if vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw:
+    live_adaptive = bool(vd.get("isLive") and raw and not sd.get("hlsManifestUrl") and not sd.get("dashManifestUrl"))
+    if not live_adaptive and (vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw):
         raise Unavailable("not a plain video (live): the usual way")
-    pending = []
-    for f in raw:
-        if f.get("url"):
-            url, s, sp = f["url"], "", ""
-        else:
-            c = parse_qs(f.get("signatureCipher") or f.get("cipher") or "")
-            url, s, sp = (c.get("url") or [""])[0], (c.get("s") or [""])[0], (c.get("sp") or ["signature"])[0]
-        if not url:
-            continue
-        n = (parse_qs(urlparse(url).query).get("n") or [""])[0]
-        pending.append((f, url, s, sp, n))
-    n_ans, sig_ans = solve([p[4] for p in pending if p[4]], [p[2] for p in pending if p[2]])
-    formats = []
-    for f, url, s, sp, n in pending:
-        u = urlparse(url)
-        q = parse_qsl(u.query, keep_blank_values=True)
-        if n:
-            if n not in n_ans:
-                continue
-            q = [(k, n_ans[n] if k == "n" else v) for k, v in q]
-        if s:
-            if s not in sig_ans:
-                continue
-            q.append((sp, sig_ans[s]))
-        vcodec, acodec = _codecs(f.get("mimeType") or "")
-        track = f.get("audioTrack") or {}
-        formats.append(
-            {
-                "format_id": f"{f.get('itag')}" + ("-drc" if f.get("isDrc") else ""),
-                "url": urlunparse(u._replace(query=urlencode(q))),
-                "vcodec": vcodec,
-                "acodec": acodec,
-                "width": f.get("width"),
-                "height": f.get("height"),
-                "fps": f.get("fps"),
-                "tbr": (f.get("bitrate") or 0) / 1000,
-                "abr": (f.get("averageBitrate") or f.get("bitrate") or 0) / 1000 if vcodec == "none" else None,
-                "audio_channels": f.get("audioChannels"),
-                "format_note": f.get("qualityLabel") or "",
-                "language_preference": (10 if track.get("audioIsDefault") else -1) if track else None,
-            }
-        )
+    formats = _deciphered(raw, solve)
+    if live_adaptive:
+        # live, its adaptive formats only (the TV's clients signed in): each one's segments,
+        # one after another, from ytlive's server on this box (mpv reads them as one MP4)
+        from couchbox.services import ytlive
+
+        formats = [f for f in formats if not str(f["format_id"]).endswith("-drc")]
+        seconds = next((float(f["targetDurationSec"]) for f in raw if f.get("targetDurationSec")), 5.0)
+        local = ytlive.PROXY.group({f["format_id"]: f["url"] for f in formats}, seconds)
+        for f in formats:
+            f["url"] = local[f["format_id"]]
+            f["protocol"] = "http"  # (to 127.0.0.1)
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": formats,
+            "subtitles": {},
+            "automatic_captions": {},
+        }
     duration = float(vd.get("lengthSeconds") or 0)
     subs: dict[str, list] = {}
     auto: dict[str, list] = {}

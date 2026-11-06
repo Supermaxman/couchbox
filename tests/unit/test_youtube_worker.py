@@ -126,11 +126,12 @@ def test_our_own_player_answer_deciphered():
     assert out["protocol"] == "dash" and out["url"].startswith("edl://") and not out["wait"]
     sb = ytstream.storyboard(info["formats"])
     assert sb["cols"] == 10 and sb["sheets"][0]["url"] == "https://i.example/sb/1/M0.jpg?x=1&sigh=rs$B"
-    # a live stream, or one YouTube won't play: the usual way instead
+    # a live stream with only its adaptive formats: their segments through ytlive (on this box)
+    live = ytstream.from_player(dict(pr, videoDetails={"isLive": True}), solve)
+    assert live["is_live"] and all(f["url"].startswith("http://127.0.0.1:") for f in live["formats"])
+    # one YouTube won't play: the usual way instead
     import pytest
 
-    with pytest.raises(ytstream.Unavailable):
-        ytstream.from_player(dict(pr, videoDetails={"isLive": True}), solve)
     with pytest.raises(ytstream.Unavailable):
         ytstream.from_player(dict(pr, playabilityStatus={"status": "LOGIN_REQUIRED", "reason": "Sign in"}), solve)
 

@@ -223,7 +223,7 @@ class Backend(QObject):
         body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
                 "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}}
         keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
-        dash_live = None
+        dash_live = adaptive_live = None
         live_seen = False
         for name in self.SIGNED_CLIENTS + self.LIVE_CLIENTS:
             if name in self.LIVE_CLIENTS and not live_seen:
@@ -251,6 +251,8 @@ class Backend(QObject):
                     return {k: resp.get(k) for k in keep}
                 if ok and sd.get("dashManifestUrl") and dash_live is None:
                     dash_live = {k: resp.get(k) for k in keep}
+                if ok and sd.get("adaptiveFormats") and adaptive_live is None and name in self.SIGNED_CLIENTS:
+                    adaptive_live = {k: resp.get(k) for k in keep}   # (the last resort: its segments, by ytlive)
                 continue
             if name in self.LIVE_CLIENTS:
                 continue                             # (those only for live streams)
@@ -258,7 +260,10 @@ class Backend(QObject):
                 return None                          # ads planned (not Premium): its DASH waits them out; a guest's way
             if ok and sd.get("adaptiveFormats"):
                 return {k: resp.get(k) for k in keep}
-        return dash_live                             # a live stream with only DASH: its manifest, to mpv
+        if live_seen and not dash_live and adaptive_live:
+            print(f"yt {vid}: live, from {len(adaptive_live['streamingData'].get('adaptiveFormats') or [])} adaptive formats "
+                  "(their segments, through this box's ytlive server)", flush=True)
+        return dash_live or adaptive_live            # a live stream without HLS: its DASH manifest, else its segments
 
     def signed_key(self, vid):
         prof = self.yt.profile.get("id", "") if self.yt.profile else ""
