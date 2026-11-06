@@ -19,7 +19,7 @@ FocusScope {
     onActiveFocusChanged: if (activeFocus && !feed.activeFocus) feed.forceActiveFocus()
     Feed {
         id: feed
-        y: 71 * Y.u
+        y: 78 * Y.u                            // the tiles' tops at 90, as YouTube's
         width: parent.width
         height: parent.height - y
         onOpen: it => Y.open(it)

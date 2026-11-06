@@ -7,10 +7,20 @@ FocusScope {
     property var tiles: []
     property real indent: Y.left
     width: parent ? parent.width : 0
-    height: 168 * Y.u
+    height: 213 * Y.u                         // the tiles (168) and room under them, as YouTube's
+    Item {                                    // cut at the guide's rail (x 130): tiles scrolled left don't show under it
+        id: cut
+        x: tiles.indent - 26 * Y.u
+        y: -2 * Y.ring
+        width: tiles.width - x
+        height: 168 * Y.u + 4 * Y.ring
+        clip: true
     ListView {
         id: list
-        anchors.fill: parent
+        x: -cut.x
+        y: 2 * Y.ring
+        width: tiles.width
+        height: 168 * Y.u
         orientation: ListView.Horizontal
         spacing: 36 * Y.u
         focus: true
@@ -53,5 +63,6 @@ FocusScope {
                 border.color: Y.text; border.width: Y.ring
             }
         }
+    }
     }
 }
