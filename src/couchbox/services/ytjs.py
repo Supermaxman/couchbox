@@ -1,13 +1,19 @@
 """YouTube's JavaScript challenges (the "n" and signature functions in its player JS) solved in one
-node process that stays up, as YouTube's own TV app keeps its player loaded: the player is read
-once per player version and its solver functions kept, so each video's challenges are a function
-call (milliseconds) instead of a new node reading the whole player again (1.7 s on the Pi).
+JavaScript process that stays up, as YouTube's own TV app keeps its player loaded: the player is
+read once per player version and its solver functions kept, so each video's challenges are a
+function call (milliseconds) instead of a new process reading the whole player again (1.7 s on
+the Pi with node).
+
+The runtime: QuickJS (qjs, the quickjs package) when it's there, else node. QuickJS holds the
+solver in a few tens of MB where node took ~95. Reading a new player version takes it ~4 s
+here (node ~0.4), once: that reading is kept (a file per version) and loads in ~0.5 s.
 
 It's a yt-dlp challenge provider (yt-dlp's JCP plugin interface) built on yt-dlp's own EJS
-scripts: the same solver code as yt-dlp's node provider, which stays registered as the fallback
+scripts: the same solver code as yt-dlp's providers, which stay registered as the fallback
 (chosen when this one can't run or errors). register() adds it, after yt-dlp is imported (the
-stream worker, ytworker, does). The node process runs with --permission: no files, no network,
-only its stdin and stdout.
+stream worker, ytworker, does). node runs with --permission (no files, no network: only its
+stdin and stdout); QuickJS has its std and os modules (as yt-dlp runs it: the player is
+YouTube's own), which the bootstrap keeps from the global scope.
 """
 
 import json
@@ -23,6 +29,12 @@ from typing import Any
 BOOT_JS = (
     'const rl = require("node:readline").createInterface({input: process.stdin, terminal: false}); let h = null;'
     "rl.on('line', l => { if (!h) { h = (0, eval)(JSON.parse(l)); return; } h(l); });"
+)
+# QuickJS (qjs --std): the same, reading lines with std (kept in this function, out of the global
+# scope the player's code runs in)
+BOOT_QJS = (
+    "(() => { const IN = std.in, OUT = std.out, parse = JSON.parse; delete globalThis.std; delete globalThis.os;"
+    " let h = null, l; while ((l = IN.getline()) !== null) { if (!h) { h = (0, eval)(parse(l)); continue; } h(l); OUT.flush(); } })()"
 )
 # one request a line: {"id", "player_url", "player"?, "requests": [{type: "n"|"sig", challenges}]}
 HANDLER_JS = r"""
@@ -44,7 +56,7 @@ HANDLER_JS = r"""
         if (solvers.size > 1) solvers.delete(solvers.keys().next().value);
         solvers.set(req.player_url, s);
         if (!req.prepared) out.prepared = prepared;
-        if (global.gc) global.gc();          // the parse's garbage: node back to a small size
+        if (typeof gc === "function") gc();   // the parse's garbage: back to a small size (node --expose-gc)
       }
       out.responses = req.requests.map(r => {
         const f = s[r.type];
@@ -63,16 +75,29 @@ class SolverError(RuntimeError):
     pass
 
 
+def _reap(proc) -> None:
+    try:
+        proc.wait(timeout=2)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
+def _is_qjs(path: str) -> bool:
+    return os.path.basename(path).startswith(("qjs", "quickjs"))
+
+
 class Node:
-    """The node process (one, shared): started on first use, again if it died, and stopped after
-    IDLE seconds unused (~95 MB; a new one starts from the kept reading of the player: ~0.5 s,
-    usually while a card has the focus, before OK)."""
+    """The solver process (one, shared; node or QuickJS by its path): started on first use, again
+    if it died, and stopped after IDLE seconds unused (node ~95 MB: 30 s; QuickJS, small and
+    slower to start: 10 min). A new one starts from the kept reading of the player, usually while
+    a card has the focus, before OK."""
 
     lock = threading.Lock()
     proc: subprocess.Popen | None = None
+    path = ""
     n = 0
     used = 0.0
-    IDLE = 30
+    IDLE = {"node": 30, "quickjs": 600}
     watcher: threading.Thread | None = None
 
     @classmethod
@@ -80,11 +105,22 @@ class Node:
         import time
 
         while True:
-            time.sleep(30)
+            time.sleep(15)
             with cls.lock:
-                if cls.proc is not None and cls.proc.poll() is None and time.monotonic() - cls.used > cls.IDLE:
+                idle = cls.IDLE["quickjs" if _is_qjs(cls.path) else "node"]
+                if cls.proc is not None and cls.proc.poll() is None and time.monotonic() - cls.used > idle:
                     cls.proc.kill()
+                    _reap(cls.proc)
                     cls.proc = None
+
+    @classmethod
+    def recycle(cls) -> None:
+        """Stop it (the next ask starts a fresh one)."""
+        with cls.lock:
+            if cls.proc is not None:
+                cls.proc.kill()
+                _reap(cls.proc)
+                cls.proc = None
 
     @classmethod
     def ask(cls, path: str, script: str, req: dict[str, Any]) -> dict[str, Any]:
@@ -95,15 +131,25 @@ class Node:
             if cls.watcher is None:
                 cls.watcher = threading.Thread(target=cls._watch, daemon=True)
                 cls.watcher.start()
+            if cls.proc is not None and cls.path != path:  # (another runtime asked: one at a time)
+                cls.proc.kill()
+                _reap(cls.proc)
+                cls.proc = None
             if cls.proc is None or cls.proc.poll() is not None:
+                cmd = (
+                    [path, "--std", "-e", BOOT_QJS]
+                    if _is_qjs(path)
+                    else [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS]
+                )
                 cls.proc = subprocess.Popen(  # noqa: S603
-                    [path, "--permission", "--expose-gc", "--max-old-space-size=192", "-e", BOOT_JS],
+                    cmd,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     text=True,
                     bufsize=1,
                 )
+                cls.path = path
                 cls.proc.stdin.write(json.dumps(script) + "\n")
             cls.n += 1
             req = dict(req, id=cls.n)
@@ -119,6 +165,7 @@ class Node:
                         return out
             except (OSError, ValueError) as err:
                 cls.proc.kill()
+                _reap(cls.proc)
                 cls.proc = None
                 raise SolverError(f"the challenge solver failed: {err}") from err
 
@@ -145,7 +192,14 @@ def ask_with_player(path: str, script: str, body: dict[str, Any], player_text) -
             return out
     except OSError:
         pass
-    out = Node.ask(path, script, dict(body, player=player_text()))
+    # reading a new version: node does it in ~0.4 s (QuickJS ~4 s here, ~3x that on the Pi), when
+    # it's there; then QuickJS goes on from the copy
+    reader = path
+    if _is_qjs(path):
+        from couchbox.services import ytstream
+
+        reader = (ytstream.js_runtimes().get("node") or {}).get("path") or path
+    out = Node.ask(reader, script, dict(body, player=player_text()))
     prepared = out.pop("prepared", None)
     if prepared:
         try:
@@ -155,6 +209,7 @@ def ask_with_player(path: str, script: str, body: dict[str, Any], player_text) -
             tmp = f.with_suffix(".tmp")
             tmp.write_text(prepared)
             tmp.replace(f)
+            Node.recycle()  # reading the whole player left it big (QuickJS 198 MB): from the copy it's 44
         except OSError:
             pass
     return out
@@ -172,11 +227,13 @@ _player: dict[str, Any] = {}  # {"ver", "sts", "js", "until"}
 
 
 def node_path() -> str:
+    """The runtime for the app's own solving: QuickJS first (small), else node."""
     from couchbox.services import ytstream
 
-    rt = ytstream.js_runtimes().get("node")
+    rts = ytstream.js_runtimes()
+    rt = rts.get("quickjs") or rts.get("node")
     if not rt:
-        raise SolverError("no node on this box")
+        raise SolverError("no QuickJS or node on this box")
     return rt["path"]
 
 
@@ -283,6 +340,7 @@ def register() -> bool:
         return True
     try:
         from yt_dlp.extractor.youtube.jsc._builtin.node import NodeJCP
+        from yt_dlp.extractor.youtube.jsc._builtin.quickjs import QuickJSJCP
         from yt_dlp.extractor.youtube.jsc.provider import (
             JsChallengeProviderError,
             JsChallengeProviderResponse,
@@ -296,9 +354,8 @@ def register() -> bool:
     except ImportError:
         return False
 
-    @register_provider
-    class CouchboxNodeJCP(NodeJCP):
-        PROVIDER_NAME = "couchbox-node"
+    class Kept:
+        """The provider's solving, on the process kept running (either runtime)."""
 
         def _script(self) -> str:
             if not hasattr(self, "_server"):
@@ -311,7 +368,7 @@ def register() -> bool:
                 grouped.setdefault(r.input.player_url, []).append(r)
             for player_url, group in grouped.items():
                 body = {"player_url": player_url, "requests": [{"type": r.type.value, "challenges": r.input.challenges} for r in group]}
-                self.logger.info("Solving JS challenges using node (kept running)")
+                self.logger.info(f"Solving JS challenges using {self.JS_RUNTIME_NAME} (kept running)")
                 try:
                     vid = next((r.video_id for r in group), None)
                     out = ask_with_player(self.runtime_info.path, self._script(), body, lambda: self._get_player(vid, player_url))
@@ -326,9 +383,22 @@ def register() -> bool:
                         result = NChallengeOutput(data["data"]) if r.type is JsChallengeType.N else SigChallengeOutput(data["data"])
                         yield JsChallengeProviderResponse(r, JsChallengeResponse(r.type, result))
 
+    @register_provider
+    class CouchboxQuickJSJCP(Kept, QuickJSJCP):
+        PROVIDER_NAME = "couchbox-quickjs"
+
+    @register_provider
+    class CouchboxNodeJCP(Kept, NodeJCP):
+        PROVIDER_NAME = "couchbox-node"
+
+    # (yt-dlp adds up every preference that applies, its own classes' too: node 900, QuickJS 850)
+    @register_preference(CouchboxQuickJSJCP)
+    def _preference_qjs(provider, requests) -> int:
+        return 2000  # first: small
+
     @register_preference(CouchboxNodeJCP)
-    def _preference(provider, requests) -> int:
-        return 1000  # before yt-dlp's own node provider (900)
+    def _preference_node(provider, requests) -> int:
+        return 1000
 
     _registered = True
     return True
