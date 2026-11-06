@@ -209,29 +209,43 @@ class Backend(QObject):
     # opens at once (a guest's waits ~3-6 s). The worker deciphers the addresses (the kept node)
     # and keeps them per profile; on any trouble, a guest's way (yt-dlp).
     SIGNED_CLIENTS = ("tv_samsung", "tv_downgraded")
+    LIVE_CLIENTS = ("visionos", "ios")                # a live stream's HLS when the TV client gives none
     KEEP_SIGNED = 3 * 3600
 
     def signed_player(self, vid):
         import time
         if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept a week: no yt-dlp needed for them)
-            self.clients = self.kept_json("clients.json", lambda: self.worker.call("clients", timeout=60))
+            self.clients = self.kept_json("clients-2.json", lambda: self.worker.call("clients", timeout=60))
         if getattr(self, "player_js", (0, None))[0] < time.time():
             self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
         sts = self.player_js[1].get("sts") or 0
         body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
                 "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}}
-        for name in self.SIGNED_CLIENTS:
+        keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
+        dash_live = None
+        for name in self.SIGNED_CLIENTS + self.LIVE_CLIENTS:
             c = self.clients.get(name)
             if not c:
                 continue
             resp = self.yt.call("player", body, cache=False, as_client=c)
             sd = resp.get("streamingData") or {}
-            live = bool((resp.get("videoDetails") or {}).get("isLive")) and bool(sd.get("hlsManifestUrl"))
-            if not live and (resp.get("adPlacements") or resp.get("playerAds")):
+            ok = (resp.get("playabilityStatus") or {}).get("status") == "OK"
+            is_live = bool((resp.get("videoDetails") or {}).get("isLive"))
+            if is_live:  # a live stream: its HLS from whichever client gives it (said in the log: what each gave)
+                print(f"yt {vid}: live, {name}: {(resp.get('playabilityStatus') or {}).get('status')}, HLS {bool(sd.get('hlsManifestUrl'))}, "
+                      f"DASH {bool(sd.get('dashManifestUrl'))}, formats {len(sd.get('adaptiveFormats') or [])}", flush=True)
+                if ok and sd.get("hlsManifestUrl"):
+                    return {k: resp.get(k) for k in keep}
+                if ok and sd.get("dashManifestUrl") and dash_live is None:
+                    dash_live = {k: resp.get(k) for k in keep}
+                continue
+            if name in self.LIVE_CLIENTS:
+                continue                             # (those only for live streams)
+            if resp.get("adPlacements") or resp.get("playerAds"):
                 return None                          # ads planned (not Premium): its DASH waits them out; a guest's way
-            if (resp.get("playabilityStatus") or {}).get("status") == "OK" and (sd.get("adaptiveFormats") or live):
-                return {k: resp.get(k) for k in ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")}
-        return None
+            if ok and sd.get("adaptiveFormats"):
+                return {k: resp.get(k) for k in keep}
+        return dash_live                             # a live stream with only DASH: its manifest, to mpv
 
     def signed_key(self, vid):
         prof = self.yt.profile.get("id", "") if self.yt.profile else ""

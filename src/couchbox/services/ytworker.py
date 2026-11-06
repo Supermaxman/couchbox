@@ -311,7 +311,7 @@ class Worker:
                     n,
                     result={
                         k: {x: v for x, v in INNERTUBE_CLIENTS[k]["INNERTUBE_CONTEXT"]["client"].items() if x in keep}
-                        for k in ("tv", "tv_samsung", "tv_downgraded")
+                        for k in ("tv", "tv_samsung", "tv_downgraded", "visionos", "ios")
                         if k in INNERTUBE_CLIENTS
                     },
                 )

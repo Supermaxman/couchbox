@@ -902,7 +902,17 @@ FocusScope {
             }
         }
 
+        Rectangle {                            // why it won't play: a card over the picture, not bare text
+            visible: !!player.message
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.66, whyText.paintedWidth + 120 * Y.u)
+            height: whyText.paintedHeight + 90 * Y.u
+            radius: 24 * Y.u
+            color: "#e6121212"
+            border.color: "#33ffffff"; border.width: 2 * Y.u
+        }
         Text {                                 // loading, or why it won't play
+            id: whyText
             visible: !player.s || !!player.message || player.waitLeft > 0
             anchors.centerIn: parent
             width: parent.width * 0.6

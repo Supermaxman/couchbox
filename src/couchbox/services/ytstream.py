@@ -556,6 +556,29 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
             "subtitles": {},
             "automatic_captions": {},
         }
+    if vd.get("isLive") and sd.get("dashManifestUrl"):  # live, only as DASH: the manifest, to mpv (ffmpeg reads it)
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": [
+                {
+                    "format_id": "dash-live",
+                    "url": sd["dashManifestUrl"],
+                    "vcodec": "avc1",
+                    "acodec": "mp4a.40.2",
+                    "height": 1080,
+                    "fps": 30,
+                    "protocol": "https",
+                }
+            ],
+            "subtitles": {},
+            "automatic_captions": {},
+        }
     if vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw:
         raise Unavailable("not a plain video (live): the usual way")
     pending = []
