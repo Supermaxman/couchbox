@@ -351,7 +351,6 @@ ApplicationWindow {
                 if (guide.keyAt(guide.cur) === "shorts") { win.shortsFromGuide = true; Y.open({type: "shorts", id: "-"}); }
                 else win.focusPage();
             }
-            pinned: win.section === "settings" && !stack.depth && !win.picking
             onOpenChanged: Y.pushed = open
             onActiveFocusChanged: Y.dimmed = activeFocus
         }

@@ -448,10 +448,10 @@ def settings_to(item, row=None):
 
 
 def settings_walk(r):
-    """Settings beside the open guide; Extras' Hide Shorts flipped and flipped back (this TV's own
-    setting, not the account's); About."""
+    """Settings (the guide folded to its rail once the focus is in the list); Extras' Hide Shorts
+    flipped and flipped back (this TV's own setting, not the account's); About."""
     to_entry("settings")
-    r.step("settings", lambda f: (f.get("section") == "settings" and "settings" in f["focus"] and f.get("guideOpen"),
+    r.step("settings", lambda f: (f.get("section") == "settings" and "settings" in f["focus"] and not f.get("guideOpen"),
                                   f"guide open {f.get('guideOpen')}, on {d(f).get('item')}"), settle=2)
     settings_to("extras", "hide_shorts")  # by the focus report's ids (groups come and go: Link TV & phone)
     f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)

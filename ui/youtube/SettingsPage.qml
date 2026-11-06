@@ -1,5 +1,5 @@
-// Settings, as YouTube's TV app lays it out: the guide stays open beside it (Settings marked), a
-// list of categories under grey capital headers, a divider, and the chosen one's details on the
+// Settings, as YouTube's TV app lays it out: the guide open beside it while it has the focus (it
+// folds to its rail when the focus comes into the list, as on every page), a list of categories under grey capital headers, a divider, and the chosen one's details on the
 // right: VacuumTube's options as rows with a switch (SponsorBlock and its kinds of segment,
 // DeArrow, Return YouTube Dislike, Hide Shorts, H.264 only), Who's watching, and About (what
 // plays the videos, for checking the box's setup).
@@ -48,11 +48,11 @@ FocusScope {
         if (item.key === "video")
             return {title: "Video", body: "Choose the quality while a video plays: the player's settings, then Quality.", facts: [],
                     rows: [{key: "h264", label: "H.264 only", on: !!st.h264,
-                            desc: "The Pi decodes H.264 in hardware (up to 1080p60). Off: VP9 and AV1 too, decoded in software (they may stutter)."},
+                            desc: "The kind of video this TV plays most smoothly, up to 1080p. Turn it off for other kinds, which may stutter."},
                            {key: "unlock_resolution", label: "Unlock resolution", on: !!st.unlock_resolution,
-                            desc: "Past 1080p, up to 4K (with H.264 only off: YouTube's H.264 stops at 1080p)"},
+                            desc: "Sharper than 1080p, up to 4K, when H.264 only is off"},
                            {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres,
-                            desc: "Leave out the copies YouTube upscaled with AI"}]};
+                            desc: "Skip the versions YouTube sharpened with AI"}]};
         if (item.key === "player")
             return {title: "Player", body: "Keys on a keyboard: P and D faster and slower, A normal speed, C captions, M sound.", facts: [], rows: [
                 {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length"},
@@ -80,14 +80,14 @@ FocusScope {
                            ["interaction", "Interaction reminder", "Asking you to like, subscribe or follow"], ["intro", "Intro", "Intervals and opening animations"],
                            ["outro", "Endcards and credits", "The end, after the video's content"], ["preview", "Preview or recap", "What's coming, or what happened before"],
                            ["hook", "Hook", "A teaser at the start"], ["filler", "Filler", "Tangents and jokes not needed for the video"]];
-            return {title: "SponsorBlock", body: "Skips the parts of a video its viewers marked (sponsor.ajay.app). The bar shows them in colour; OK undoes a skip.",
-                    facts: [], rows: [{key: "sponsorblock", label: "SponsorBlock", on: !!st.sponsorblock, desc: "Look up each video's marked parts"}]
+            return {title: "SponsorBlock", body: "Skips sponsor reads and other parts of videos that viewers have marked. The progress bar shows them in colour.",
+                    facts: [], rows: [{key: "sponsorblock", label: "Skip marked parts", on: !!st.sponsorblock, desc: "On for every video; choose which kinds below"}]
                         .concat(kinds.map(k => ({key: "skip." + k[0], label: "Skip: " + k[1], on: !!sk[k[0]], desc: k[2], off: !st.sponsorblock})))};
         }
         if (item.key === "extras")
             return {title: "DeArrow and more", body: "", facts: [], rows: [
-                {key: "dearrow", label: "DeArrow", on: !!st.dearrow, desc: "Titles and pictures its viewers wrote in place of clickbait (dearrow.ajay.app)"},
-                {key: "dislikes", label: "Return YouTube Dislike", on: !!st.dislikes, desc: "The dislike count, in a video's Description (returnyoutubedislike.com)"},
+                {key: "dearrow", label: "DeArrow", on: !!st.dearrow, desc: "Clearer titles and pictures, written by viewers, in place of clickbait"},
+                {key: "dislikes", label: "Return YouTube Dislike", on: !!st.dislikes, desc: "How many people disliked a video, shown in its Description"},
                 {key: "hide_shorts", label: "Hide Shorts", on: !!st.hide_shorts, desc: "Leave Shorts out of Home, the tabs, search and channels"}]};
         return {title: "About", body: "", rows: [],
                 facts: [["yt-dlp", a.ytdlp ? a.ytdlp + (a.ytdlpPath ? "  (" + a.ytdlpPath + ")" : "") : "missing: run  sudo couchbox-yt-dlp"],
@@ -111,17 +111,34 @@ FocusScope {
     Keys.onEnterPressed: { if (area === "list") enterRows(); else press(); }
     Keys.onEscapePressed: e => { if (area === "rows") area = "list"; else e.accepted = false; }
 
-    // the page sits right of the open guide (the pages move 378 right with it): the list from x 525
-    readonly property real shift: Y.guideOpen - Y.left
-    readonly property real listX: 525 * Y.u - shift
+    // laid out with the guide folded (the list's names at x 165); the open guide pushes it all 378
+    // right, as on every page (the list's names at 543, the pane's title centred at 1638)
+    readonly property real listX: 147 * Y.u
     Text {                                    // the page's name, as YouTube's
-        x: 550 * Y.u - page.shift; y: 80 * Y.u
+        x: 172 * Y.u; y: 80 * Y.u
         height: 48 * Y.u; verticalAlignment: Text.AlignVCenter
         text: "Settings"
         color: Y.text; font.family: Y.font; font.pixelSize: 46 * Y.u; font.weight: Font.Bold
     }
+    Flickable {                               // the categories, scrolled so the chosen one is always whole
+        id: cats
+        x: page.listX; y: 192 * Y.u
+        width: 420 * Y.u
+        height: page.height - y
+        clip: true
+        interactive: false
+        contentHeight: catCol.height + 40 * Y.u
+        property real selY: 0                 // the chosen row's place in the list
+        onSelYChanged: follow()
+        onHeightChanged: follow()
+        function follow() {                   // its group's header in view above it, room below it
+            const top = catCol.y + selY - 46 * Y.u, bottom = catCol.y + selY + 78 * Y.u + 40 * Y.u;
+            contentY = Math.max(0, Math.min(contentHeight - height, Math.max(Math.min(contentY, top), bottom - height)));
+        }
+        Behavior on contentY { NumberAnimation { duration: 140 } }
     Column {
-        x: page.listX; y: 212 * Y.u
+        id: catCol
+        y: 20 * Y.u
         width: 420 * Y.u
         Repeater {
             model: page.groups
@@ -144,6 +161,8 @@ FocusScope {
                         required property var modelData
                         readonly property bool sel: page.item.key === modelData.key
                         readonly property bool on: page.activeFocus && sel && page.area === "list"
+                        onSelChanged: if (sel) cats.selY = mapToItem(catCol, 0, 0).y
+                        Component.onCompleted: if (sel) cats.selY = mapToItem(catCol, 0, 0).y
                         width: grp.width; height: 78 * Y.u
                         radius: 16 * Y.u
                         color: on ? Y.text : sel ? Y.raised : "transparent"
@@ -160,6 +179,7 @@ FocusScope {
             }
         }
     }
+    }
     Rectangle {                               // the divider
         x: page.listX + 442 * Y.u; y: 192 * Y.u
         width: 2 * Y.u; height: parent.height - y
@@ -170,7 +190,7 @@ FocusScope {
     Flickable {
         id: pane
         x: page.listX + 470 * Y.u; y: 192 * Y.u
-        width: page.width - x - 60 * Y.u - page.shift
+        width: page.width - x - 16 * Y.u
         height: page.height - y - 30 * Y.u
         clip: true
         interactive: false
@@ -243,14 +263,8 @@ FocusScope {
                     id: rowsHead
                     width: parent.width
                     height: 40 * Y.u
-                    Text {
-                        width: parent.width / 2
-                        text: (page.detail.title || "").toUpperCase()
-                        color: Y.dim; font.family: Y.font; font.pixelSize: 20 * Y.u; font.weight: Font.Bold
-                        font.letterSpacing: 2 * Y.u
-                    }
-                    Text {
-                        width: parent.width / 2
+                    Text {                    // (no second heading: the title above says it)
+                        width: parent.width
                         horizontalAlignment: Text.AlignRight
                         text: page.rows.length + (page.rows.length === 1 ? " option" : " options")
                         color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u
