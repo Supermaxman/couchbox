@@ -291,6 +291,9 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     if target.get("type") == "browse":
         out["type"], out["params"] = "browse", target.get("params", "")
     out["channelId"] = _menu_channel(t.get("onLongPressCommand"))
+    fb = menu_feedback(t.get("onLongPressCommand"))
+    if fb:
+        out["feedback"] = fb
     out["lines"] = split_channel(out["lines"])
     return out if out["id"] and out["title"] else None
 
@@ -318,6 +321,33 @@ def tile_shape(style: str, thumbnail: Any) -> str:
     if 0.85 < w / h < 1.2:
         return "square"
     return "wide"
+
+
+# a card's menu (hold OK): its feedback options, by the menu item's icon or, failing that, its words
+FEEDBACK_KINDS = (
+    ("remove_history", ("DELETE",), ("watch history",)),
+    ("no_channel", ("REMOVE",), ("recommend channel",)),
+    ("not_interested", ("NOT_INTERESTED",), ("not interested",)),
+)
+
+
+def menu_feedback(cmd: Any) -> list[dict[str, str]]:
+    """The feedback options of a card's menu (Not interested, Don't recommend channel, Remove from
+    watch history): [{kind, label, token}] (its feedback token, for the feedback endpoint)."""
+    out: list[dict[str, str]] = []
+    for m in _find(cmd or {}, "menuServiceItemRenderer"):
+        if not isinstance(m, dict):
+            continue
+        tok = next((f.get("feedbackToken") for f in _find(m.get("serviceEndpoint") or {}, "feedbackEndpoint") if isinstance(f, dict)), "")
+        if not tok:
+            continue
+        label, icon = text(m.get("text")), dig(m, "icon", "iconType") or ""
+        kind = next((k for k, icons, words in FEEDBACK_KINDS if icon in icons), "") or next(
+            (k for k, _i, words in FEEDBACK_KINDS if any(w in label.lower() for w in words)), ""
+        )
+        if kind and not any(o["kind"] == kind for o in out):
+            out.append({"kind": kind, "label": label, "token": tok})
+    return out
 
 
 def _menu_channel(cmd):
@@ -1330,6 +1360,20 @@ class YouTube:
         self.changed()
         return bool(dig(resp, "feedbackResponses", 0, "isProcessed"))
 
+    def feedback(self, token: str) -> dict[str, Any]:
+        """A card menu's Not interested, Don't recommend channel or Remove from watch history."""
+        self.need_profile("tell YouTube what you'd rather not see")
+        return {"ok": self.remove_from_history(token)}
+
+    def create_playlist(self, title: str, video_id: str) -> dict[str, Any]:
+        """A new private playlist with this video in it."""
+        self.need_profile("make playlists")
+        resp = self.call(
+            "playlist/create", {"title": title, "videoIds": [video_id] if video_id else [], "privacyStatus": "PRIVATE"}, cache=False
+        )
+        self.changed()
+        return {"id": resp.get("playlistId", ""), "title": title}
+
     def premium_probe(self) -> dict[str, Any]:
         """How this profile's answers mark Premium (where they say "premium"): its accounts list
         and a Home and History page."""
@@ -1588,6 +1632,11 @@ class Demo(YouTube):
             live=kind == "live",
             channelId=cid,
         )
+        if self.profile:  # the menu's feedback options (made up: the demo's feedback does nothing)
+            it["feedback"] = [
+                {"kind": "not_interested", "label": "Not interested", "token": "demo"},
+                {"kind": "no_channel", "label": "Don't recommend channel", "token": "demo"},
+            ]
         if kind == "live":
             it["lines"][1] = f"{(n * 11) % 90 + 3}K watching"
         return it
@@ -1620,6 +1669,11 @@ class Demo(YouTube):
             title = {"FEhistory": "History", "VLWL": "Watch later", "FEplaylist_aggregation": "Playlists", "VLLM": "Liked music"}[browse_id]
             shelf = self._shelf(title, 3, n=11)
             shelf["grid"] = True
+            if browse_id == "FEhistory":
+                for it in shelf["items"]:
+                    it.setdefault("feedback", []).insert(
+                        0, {"kind": "remove_history", "label": "Remove from watch history", "token": "demo"}
+                    )
             return {"shelves": [shelf], "more": "", "nudge": None, "header": None}
         label = next((g[1] for g in GUIDE if g[2] == browse_id), "Videos")
         n = sum(map(ord, browse_id)) % 20
@@ -1883,6 +1937,15 @@ class Demo(YouTube):
         got = self.state["saved"].setdefault(playlist_id, set())
         (got.add if add else got.discard)(video_id)
         return {"saved": add}
+
+    def feedback(self, token):
+        self.need_profile("tell YouTube what you'd rather not see")
+        return {"ok": True}
+
+    def create_playlist(self, title, video_id):
+        self.need_profile("make playlists")
+        self.state["saved"].setdefault("PLdemonew", set()).add(video_id)
+        return {"id": "PLdemonew", "title": title}
 
     def report(self, video_id, cpn, event, position, duration):
         return {"ok": bool(self.profile)}

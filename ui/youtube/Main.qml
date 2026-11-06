@@ -383,10 +383,7 @@ ApplicationWindow {
         onPicked: (k, it) => {
             if (k === "next") { Y.queue = [it].concat(Y.queue); toast.show("Plays next: " + it.title); }
             else if (k === "queue") { Y.queue = Y.queue.concat([it]); toast.show("Added to the queue (" + Y.queue.length + ")"); }
-            else if (k === "later") {
-                if (!Y.signedIn) toast.show("Sign in to save videos: the guide's picture, then Add account.");
-                else Y.call("save", {id: it.id, playlist: "WL", add: true}, () => toast.show("Saved to Watch later"));
-            } else if (k === "channel") win.push(channelC, {channelId: it.channelId});
+            else if (k === "channel") win.push(channelC, {channelId: it.channelId});   // (the rest: the menu itself)
         }
     }
     Component {
@@ -471,7 +468,8 @@ ApplicationWindow {
                     toast: toast.opacity > 0 ? toastText.text : "", queue: Y.queue.length,
                     signedIn: Y.signedIn, profile: Y.profile ? Y.profile.id : "", card: focusedCard(it),
                     guideAt: guide.activeFocus ? (guide.cur < 0 ? "who" : guide.keyAt(guide.cur)) : ""};
-        if (picking) st.detail = profilesPage.focusDetail();
+        if (cardMenu.visible) st.detail = cardMenu.focusDetail();
+        else if (picking) st.detail = profilesPage.focusDetail();
         else if (cur && cur.focusDetail) st.detail = cur.focusDetail();
         else if (!cur && page(section).focusDetail) st.detail = page(section).focusDetail();
         return st;

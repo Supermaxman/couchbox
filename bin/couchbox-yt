@@ -312,6 +312,15 @@ class Backend(QObject):
         except (OSError, ValueError):
             return {}
 
+    def share(self, vid):
+        """A video's link and its QR code (a phone's camera opens it), for a card menu's Share."""
+        import re
+        import tempfile
+
+        url = f"https://youtu.be/{vid}"
+        path = os.path.join(tempfile.gettempdir(), f"couchbox-yt-share-{os.getuid()}.png")
+        return {"url": url, "qr": qr_png(url, path) if re.fullmatch(r"[\w-]{1,20}", vid or "") else ""}
+
     def captions(self, url):
         """A caption track (WebVTT) as a local file for mpv: fetched here, again after 1 and 3 s when
         YouTube says 429 (too many requests), kept for the session."""
@@ -449,6 +458,9 @@ class Backend(QObject):
             "notify": lambda: y.notify(a["params"], a.get("level", "")),
             "saveOptions": lambda: y.save_options(a["id"]),
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
+            "feedback": lambda: y.feedback(a["token"]),
+            "createPlaylist": lambda: y.create_playlist(a.get("title") or "New playlist", a.get("id", "")),
+            "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
             "home": self.home,

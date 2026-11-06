@@ -613,6 +613,46 @@ def search_walk(r, want):
     r.step("search-back-to-account", lambda f: (f.get("signedIn") and f.get("profile") == want, f"profile {f.get('profile')}"), settle=4)
 
 
+def menu_test(r, want):
+    """The card menu's one write, undone: a Home video saved to Watch later through the hold-OK
+    menu (Save to playlist, Watch later), checked, then taken out the same way and checked. A
+    video already in Watch later is left alone. Only with the owner's OK (--menu-test)."""
+    from couchbox import appctl
+
+    def in_wl(vid):
+        r_ = appctl.call("yt", {"op": "call", "fn": "saveOptions", "args": {"id": vid}}, timeout=30)
+        return next((bool(p.get("saved")) for p in r_.get("playlists") or [] if p.get("id") == "WL"), None)
+
+    f = r.step("menu-home", lambda f: (f.get("page") == "home" and f.get("signedIn") and (f.get("card") or {}).get("type") == "video",
+                                       f"signed in {f.get('signedIn')}, on {(f.get('card') or {}).get('id')}"), settle=6)
+    vid = (f.get("card") or {}).get("id", "")
+    if not vid or not f.get("signedIn"):
+        print("ABORT: no video in focus on Home, signed in; nothing saved", flush=True)
+        return
+    if in_wl(vid):
+        print(f"(menu test: {vid} is in Watch later already: left alone, nothing tested)", flush=True)
+        return
+    remote("ok@1.2")  # hold OK: the card's menu
+    r.step("menu-open", lambda f: ("playlist" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
+    for _ in range(10):
+        if d(focus()).get("at") == "playlist":
+            break
+        remote("down", gap=0.3)
+    remote("ok")
+    r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists", f"mode {d(f).get('mode')}, on {d(f).get('at')}"), settle=2)
+    remote("ok")  # the first: Watch later
+    time.sleep(3)
+    saved = in_wl(vid)
+    r.step("menu-saved", lambda f: (saved is True, f"{vid} in Watch later: {saved}"), settle=0)
+    remote("ok")  # again: out of it
+    time.sleep(3)
+    gone = in_wl(vid)
+    r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in Watch later: {gone}"), settle=0)
+    if gone is not False:
+        print(f"WARNING: {vid} may still be in Watch later: take it out by hand", flush=True)
+    remote("back", "back")
+
+
 def history_before(r):
     """Today's History before the run plays anything (for --clean-history: not to take those out)."""
     from couchbox import appctl
@@ -1205,6 +1245,7 @@ def main():
     ap.add_argument("--clean-history", metavar="RUNDIR", help="remove from the profile's History (today's entries) the videos a run played")
     ap.add_argument("--dry-run", action="store_true", help="with --clean-history: only list what would be removed")
     ap.add_argument("--ids", help="with --clean-history: these videos (comma-separated) instead of the run's, History before it or not")
+    ap.add_argument("--menu-test", action="store_true", help="signed in: save a Home video to Watch later through the card menu, then remove it (a write: only with the owner's OK)")
     ap.add_argument("--perf", action="store_true", help="time the app instead (COUCHBOX_YT_TIMING): start, 3 videos, Search, Home's rows")
     a = ap.parse_args()
     if a.profile == "auto":  # signed in when there's an account: YouTube bot-checks a TV's many guest streams
@@ -1234,7 +1275,7 @@ def main():
             "--",
             APP,
             "--profile",
-            (want or a.profile) if a.perf else "pick" if want else a.profile,
+            (want or a.profile) if a.perf or a.menu_test else "pick" if want else a.profile,
         ],
         check=True,
     )
@@ -1246,7 +1287,12 @@ def main():
     else:
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 
-    if a.perf:
+    if a.menu_test:
+        if want:
+            menu_test(r, want)
+        else:
+            print("ABORT: --menu-test needs an account (--profile)", flush=True)
+    elif a.perf:
         perf(r, started, signed=want)
     elif want:
         account(r, want)

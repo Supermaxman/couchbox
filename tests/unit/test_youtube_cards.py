@@ -90,3 +90,32 @@ def test_subscriptions_rail_all_first_and_a_heading_not_a_row():
     chans = Y.parse_subscriptions(resp)["channels"]
     assert [c["title"] for c in chans] == ["All", "Orbit Lab", "Kettle & Crumb"]
     assert chans[0].get("all") and chans[2]["section"] == "A-Z" and not chans[1]["section"]
+
+
+def test_card_menu_feedback_options():
+    def opt(label, icon, token):
+        return {
+            "menuServiceItemRenderer": {
+                "text": {"runs": [{"text": label}]},
+                "icon": {"iconType": icon},
+                "serviceEndpoint": {"feedbackEndpoint": {"feedbackToken": token}},
+            }
+        }
+
+    cmd = {
+        "showMenuCommand": {
+            "menu": {
+                "menuRenderer": {
+                    "items": [
+                        opt("Not interested", "NOT_INTERESTED", "t1"),
+                        opt("Don't recommend channel", "REMOVE", "t2"),
+                        opt("Remove from watch history", "", "t3"),
+                        {"menuServiceItemRenderer": {"text": {"simpleText": "Save"}, "serviceEndpoint": {"playlistEditEndpoint": {}}}},
+                    ]
+                }
+            }
+        }
+    }
+    got = Y.menu_feedback(cmd)
+    assert [(o["kind"], o["token"]) for o in got] == [("not_interested", "t1"), ("no_channel", "t2"), ("remove_history", "t3")]
+    assert Y.menu_feedback(None) == []
