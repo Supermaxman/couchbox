@@ -36,6 +36,7 @@ ApplicationWindow {
     readonly property var guestTiles: [{title: "Movies & TV", id: "FEstorefront", colors: ["#7a5600", "#d6a10a"]},
                                        {title: "Podcasts", id: "FEtopics_podcasts", colors: ["#6a0f6a", "#b0209a"]}]
     property bool pickedAtStart: false         // ... as the app started (Back there leaves the app)
+    property string pendingOpen: ""            // asked for (control socket) before the app was ready
 
     Component.onCompleted: {
         Y.u = u;
@@ -45,7 +46,7 @@ ApplicationWindow {
             guide.entries = r.guide;
             if (r.settings) Y.settings = r.settings;
             ready = true;
-            const o = arg("--open");
+            const o = pendingOpen || arg("--open");
             const want = args.indexOf("--profile") >= 0 ? arg("--profile") : null;
             const profiles = r.profiles || [];
             const cur = profiles.find(p => p.id === r.current);
@@ -208,7 +209,12 @@ ApplicationWindow {
     // --open / a second launch / the voice assistant: video:ID[@SECONDS], search:TEXT, channel:ID,
     // browse:ID, home, and typing:TEXT (Search's keys with that typed: screenshots)
     function openTarget(o) {
-        if (!ready) return;
+        if (!ready) { pendingOpen = o; return; }   // (still starting: once it's ready)
+        if (picking) {                             // Who's watching is up: as the last profile watching
+            pickedAtStart = false;
+            Y.call("profiles", {}, r => win.use((r.profiles || []).some(p => p.id === r.last) ? r.last : "", o), () => win.use("", o));
+            return;
+        }
         const i = o.indexOf(":"), k = i < 0 ? o : o.slice(0, i), rest = i < 0 ? "" : o.slice(i + 1);
         if (k === "video") {
             const m = rest.match(/^([\w-]{1,20})(?:@(\d+(?:\.\d+)?))?$/);
