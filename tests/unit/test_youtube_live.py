@@ -75,4 +75,19 @@ def test_live_without_hls_plays_its_adaptive_formats_through_the_box():
     info = ytstream.from_player(pr, lambda n, s: ({}, {}))
     assert info["is_live"] and all(f["url"].startswith("http://127.0.0.1:") for f in info["formats"])
     p = ytstream.playable(info)
-    assert p["live"] and p["itags"] == ["299", "140"] and p["url"].endswith("/299") and "/140," in p["opts"] and p["opts"].endswith("force-seekable=yes")
+    assert (
+        p["live"]
+        and p["itags"] == ["299", "140"]
+        and p["url"].endswith("/299")
+        and "/140," in p["opts"]
+        and p["opts"].endswith("force-seekable=yes")
+    )
+
+
+def test_a_group_can_start_back_in_the_dvr_window():
+    p = ytlive.Proxy(session=Session())
+    p.start = lambda: None
+    p.group({"140": "https://v.example/videoplayback?id=2"}, seconds=2.0, behind=10.0, window=3600.0)
+    assert p.start_of("g1", "https://v.example/videoplayback?id=2") == 12 - ytlive.BEHIND - 5
+    p.group({"140": "https://v.example/videoplayback?id=3"}, seconds=2.0, behind=99999.0, window=10.0)
+    assert p.start_of("g2", "https://v.example/videoplayback?id=3") == 12 - ytlive.BEHIND - 2  # (the window's start at most)

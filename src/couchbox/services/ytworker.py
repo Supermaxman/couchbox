@@ -37,6 +37,8 @@ MAX_CACHED = 16
 # what's kept of yt-dlp's information per video (the rest is thumbnails, heat maps, every
 # language's caption formats...: megabytes once parsed)
 INFO_KEYS = (
+    "dvr",
+    "behind",
     "id",
     "title",
     "channel",
@@ -228,22 +230,24 @@ class Worker:
         and the cache "key", one per profile), else yt-dlp's."""
         from couchbox.services import ytjs, ytstream
 
+        behind = a.get("live_behind")  # back into a live stream's DVR window: never kept (a moment's)
         key = a.get("key") or a["id"]
-        info = self.cache.get(key)
+        info = self.cache.get(key) if behind is None else None
         if info is not None:
             return info, True
         if a.get("player"):
             t = time.monotonic()
             import requests
 
-            info = ytstream.from_player(a["player"], ytjs.solve, requests.get)
+            info = ytstream.from_player(a["player"], ytjs.solve, requests.get, live_behind=None if behind is None else float(behind))
             del t
             if phases is not None:
                 phases.marks.append((0, "decipher"))
         else:
             info = ytstream.extract(a["id"], phases, a.get("visitor") or "")
         info = slim(info)
-        self.cache.put(key, info)
+        if behind is None:
+            self.cache.put(key, info)
         return info, False
 
     def resolve(self, a: dict[str, Any]) -> dict[str, Any]:

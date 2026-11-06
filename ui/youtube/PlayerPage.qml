@@ -130,7 +130,7 @@ FocusScope {
         videoId = id;
         startAt = at || 0;
         s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
-        related.rows = []; related.index = 0; cancelScrub();   // (not the last video's row while this one's comes: it was, for a live one)
+        related.rows = []; related.index = 0; cancelScrub(); dvrBehind = -1; liveTarget = -1; liveGo.stop();   // (not the last video's row while this one's comes: it was, for a live one)
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
@@ -254,7 +254,16 @@ FocusScope {
         target: video
         function onPausedChanged() { player.mprisUpdate(); if (video.paused) player.showControls(); }
         function onEndedChanged() { if (video.ended && !player.live) player.showEnd(); }
-        function onErrorChanged() { if (video.error) player.message = video.error; }
+        function onErrorChanged() {
+            if (video.error && player.dvrBehind >= 0) {   // back in the DVR window didn't open: the live stream again
+                player.dvrBehind = -1;
+                Y.toast("Can't go back that far: live again");
+                const id = player.videoId;
+                Y.call("stream", {id: id}, r => { if (player && player.videoId === id) { player.s = r; video.loadWith(r.url, 0, r.opts || ""); } }, e => { player.message = e; });
+                return;
+            }
+            if (video.error) player.message = video.error;
+        }
     }
 
     // ------------------------------------------------------------------ history (signed in)
@@ -430,6 +439,40 @@ FocusScope {
         hide.restart();
     }
     Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending && !player.panel) player.mode = "hidden" }
+    // a live stream: Left / Right 10 s back and on. Near the edge mpv goes back into what it has
+    // read; further back the stream comes from its segments, that far back in its DVR window
+    // (ytlive), a moment after the last press; back near the edge, the live stream again
+    property real dvrBehind: -1                // playing from the segments, this far behind live (-1: the live stream)
+    property real liveTarget: -1               // where Left / Right are taking it (-1: nowhere)
+    readonly property real behindLive: dvrBehind >= 0 ? dvrBehind : Math.max(0, duration - pos)
+    Timer { id: liveGo; interval: 1200; onTriggered: player.liveApply() }
+    function liveSkip(d) {
+        if (!s) return;
+        const base = liveTarget >= 0 ? liveTarget : behindLive;
+        const t = Math.max(0, base - d);
+        if (dvrBehind < 0 && liveTarget < 0 && t <= 25) { skip(d); return; }   // within what mpv has: at once
+        liveTarget = (s.dvr > 0 ? Math.min(s.dvr - 30, t) : t);
+        Y.toast(liveTarget > 15 ? Y.clock(liveTarget) + " behind live" : "Live");
+        if (mode === "hidden") mode = "bar";
+        hide.restart();
+        liveGo.restart();
+    }
+    function liveApply() {
+        const id = videoId, t = liveTarget;
+        liveTarget = -1;
+        if (t < 0) return;
+        if (t <= 15) {                         // back to the live stream (its HLS, as it began)
+            if (dvrBehind < 0) return;
+            Y.call("stream", {id: id}, r => { if (player && player.videoId === id) { s = r; dvrBehind = -1; video.loadWith(r.url, 0, r.opts || ""); } }, e => Y.toast(e));
+            return;
+        }
+        Y.call("liveBehind", {id: id, behind: t}, r => {
+            if (!player || player.videoId !== id) return;
+            s = Object.assign({}, s, {url: r.url, opts: r.opts, dvr: r.dvr});
+            dvrBehind = t;
+            video.loadWith(r.url, 0, r.opts || "");
+        }, e => Y.toast(e));
+    }
     function skip(d) {
         if (!s) return;
         video.seek(d);                         // a live stream too: back into its DVR window and forward again
@@ -516,14 +559,14 @@ FocusScope {
         } else if (mode === "hidden") {
             if ((k === Qt.Key_Return || k === Qt.Key_Enter) && skipNotice) undoSkip();       // the notice's undo
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
-            else if (k === Qt.Key_Left) { if (live) skip(-10); else scrubBy(-10); }
-            else if (k === Qt.Key_Right) { if (live) skip(10); else scrubBy(10); }
+            else if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
             else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
             else if (k === Qt.Key_Down) { mode = "controls"; button = 4; hide.restart(); }
             else return;
         } else if (mode === "bar") {
-            if (k === Qt.Key_Left) { if (live) skip(-10); else scrubBy(-10); }
-            else if (k === Qt.Key_Right) { if (live) skip(10); else scrubBy(10); }
+            if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
             else if ((k === Qt.Key_Return || k === Qt.Key_Enter) && scrub >= 0) { commitScrub(); mode = "hidden"; }   // there, playing
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.togglePause(); hide.restart(); }
             else if (k === Qt.Key_Down) { commitScrub(); mode = "controls"; hide.restart(); }
@@ -698,7 +741,8 @@ FocusScope {
                     visible: !player.seeking
                     x: player.live ? liveBar.implicitWidth + 34 * Y.u : 0      // (beside the LIVE badge)
                     y: 5 * Y.u
-                    text: player.live ? (player.duration - player.pos > 8 ? Y.clock(player.duration - player.pos) + " behind live" : "")
+                    text: player.live ? ((player.liveTarget >= 0 ? player.liveTarget : player.behindLive) > 8
+                                         ? Y.clock(player.liveTarget >= 0 ? player.liveTarget : player.behindLive) + " behind live" : "")
                                       : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium

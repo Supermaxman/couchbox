@@ -455,6 +455,8 @@ def resolve(
             "likes": info.get("like_count") or 0,
             "timestamp": info.get("timestamp") or info.get("release_timestamp") or 0,
             "portrait": bool(out["height"] and out["width"] and out["height"] > out["width"]),
+            "dvr": float(info.get("dvr") or 0),  # a live stream's DVR window (seconds), when it's played from its segments
+            "behind": float(info.get("behind") or 0),
             "captions": captions(info),
             "storyboard": storyboard(info.get("formats") or []),
             "heights": [h for h in heights(info.get("formats") or [], h264) if h <= max(max_height, MAX_HEIGHT)],
@@ -610,7 +612,7 @@ def _deciphered(raw: list[dict[str, Any]], solve: Any) -> list[dict[str, Any]]:
     return formats
 
 
-def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, Any]:
+def from_player(pr: dict[str, Any], solve: Any, get: Any = None, live_behind: float | None = None) -> dict[str, Any]:
     """yt-dlp's information, as extract() gives it, from an InnerTube /player response (the TV
     client, signed in: no ads, so DASH opens at once): every format's address deciphered (its
     signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). A live stream: its HLS,
@@ -622,7 +624,7 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
     vd = pr.get("videoDetails") or {}
     sd = pr.get("streamingData") or {}
     raw = (sd.get("adaptiveFormats") or []) + (sd.get("formats") or [])
-    if (vd.get("isLive") or not raw) and sd.get("hlsManifestUrl") and get is not None:
+    if (vd.get("isLive") or not raw) and sd.get("hlsManifestUrl") and get is not None and live_behind is None:
         # live: its HLS master playlist, the variants and the sound read from it (no challenges)
         r = get(sd["hlsManifestUrl"], timeout=(8, 20))
         formats = hls_formats(getattr(r, "text", "") or "")
@@ -640,7 +642,7 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
             "subtitles": {},
             "automatic_captions": {},
         }
-    if vd.get("isLive") and sd.get("dashManifestUrl"):  # live, only as DASH: the manifest, to mpv (ffmpeg reads it)
+    if vd.get("isLive") and sd.get("dashManifestUrl") and live_behind is None:  # live, only as DASH: the manifest, to mpv
         return {
             "id": vd.get("videoId") or "",
             "title": vd.get("title") or "",
@@ -663,7 +665,11 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
             "subtitles": {},
             "automatic_captions": {},
         }
-    live_adaptive = bool(vd.get("isLive") and raw and not sd.get("hlsManifestUrl") and not sd.get("dashManifestUrl"))
+    # live from its adaptive formats: when it has nothing else, or to go back into its DVR window
+    # (live_behind seconds behind the newest segment: mpv can't seek back far in the HLS)
+    live_adaptive = bool(
+        vd.get("isLive") and raw and (live_behind is not None or (not sd.get("hlsManifestUrl") and not sd.get("dashManifestUrl")))
+    )
     if not live_adaptive and (vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw):
         raise Unavailable("not a plain video (live): the usual way")
     formats = _deciphered(raw, solve)
@@ -674,7 +680,8 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
 
         formats = [f for f in formats if not str(f["format_id"]).endswith("-drc")]
         seconds = next((float(f["targetDurationSec"]) for f in raw if f.get("targetDurationSec")), 5.0)
-        local = ytlive.PROXY.group({f["format_id"]: f["url"] for f in formats}, seconds)
+        window = next((float(f["maxDvrDurationSec"]) for f in raw if f.get("maxDvrDurationSec")), 0.0)
+        local = ytlive.PROXY.group({f["format_id"]: f["url"] for f in formats}, seconds, behind=live_behind or 0.0, window=window)
         for f in formats:
             f["url"] = local[f["format_id"]]
             f["protocol"] = "http"  # (to 127.0.0.1)
@@ -689,6 +696,8 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
             "formats": formats,
             "subtitles": {},
             "automatic_captions": {},
+            "dvr": window,
+            "behind": live_behind or 0.0,
         }
     duration = float(vd.get("lengthSeconds") or 0)
     subs: dict[str, list] = {}

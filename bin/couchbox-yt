@@ -240,6 +240,31 @@ class Backend(QObject):
     LIVE_CLIENTS = ("visionos", "ios")   # a live stream's HLS (visionOS gives it to a guest)
     KEEP_SIGNED = 3 * 3600
 
+    def live_dvr(self, vid, behind):
+        """A live stream from behind seconds back in its DVR window (Left, past what mpv has read):
+        the TV client's answer (its adaptive formats), through ytlive from that far back."""
+        import time
+        kept = getattr(self, "_dvr", {}).get(vid)
+        if not kept or kept[0] < time.time():
+            if not getattr(self, "clients", None):
+                self.clients = self.kept_json("clients-3.json", lambda: self.worker.call("clients", timeout=60))
+            if getattr(self, "player_js", (0, None))[0] < time.time():
+                self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
+            body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
+                    "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": self.player_js[1].get("sts") or 0,
+                                                                   "html5Preference": "HTML5_PREF_WANTS"}}}
+            c = self.clients.get("tv_samsung") or self.clients.get("tv")
+            resp = self.yt.call("player", body, cache=False, as_client=c) if self.yt.profile else self.yt._post("player", body, as_client=c)
+            sd = resp.get("streamingData") or {}
+            if not (resp.get("videoDetails") or {}).get("isLive") or not sd.get("adaptiveFormats"):
+                raise ValueError("This live stream can't go back that far here.")
+            keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
+            kept = (time.time() + 1800, {k: resp.get(k) for k in keep})
+            self._dvr = {vid: kept}                    # (one live stream at a time)
+        out = self.worker.call("resolve", id=vid, player=kept[1], live_behind=float(behind), **self.stream_args())
+        print(f"yt {vid}: live, {behind:.0f} s behind, from its segments (DVR window {out.get('dvr', 0) / 60:.0f} min)", flush=True)
+        return out
+
     def signed_player(self, vid):
         import time
         if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept a week: no yt-dlp needed for them)
@@ -511,6 +536,7 @@ class Backend(QObject):
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "feedback": lambda: y.feedback(a["token"]),
             "cardStats": lambda: self.card_stats(a["id"]),
+            "liveBehind": lambda: self.live_dvr(a["id"], float(a.get("behind") or 0)),
             "deletePlaylist": lambda: y.delete_playlist(a["id"]),
             "editPlaylist": lambda: y.edit_playlist(a["edit"], bool(a.get("add", True))),
             "menuProbe": lambda: y.menu_probe(),           # measuring: a Home card's menu and lines, as this profile gets them

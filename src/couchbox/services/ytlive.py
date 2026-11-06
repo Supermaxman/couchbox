@@ -62,13 +62,23 @@ class Proxy:
         self._session = session
 
     # ------------------------------------------------------------------ the formats
-    def group(self, urls: dict[str, str], seconds: float = 5.0) -> dict[str, str]:
+    def group(self, urls: dict[str, str], seconds: float = 5.0, behind: float = 0.0, window: float = 0.0) -> dict[str, str]:
         """Register one live stream's formats ({itag: its YouTube address}; seconds: a segment's
-        length): {itag: the address for mpv}. Starts the server the first time."""
+        length; behind: how far behind the newest segment to start, for going back into the
+        stream's DVR window of window seconds): {itag: the address for mpv}. Starts the server
+        the first time."""
         self.start()
         gid = f"g{next(self.ids)}"
         with self.lock:
-            self.groups[gid] = {"urls": dict(urls), "start": None, "t0": 0.0, "seconds": max(1.0, seconds or 5.0), "at": time.time()}
+            self.groups[gid] = {
+                "urls": dict(urls),
+                "start": None,
+                "t0": 0.0,
+                "seconds": max(1.0, seconds or 5.0),
+                "at": time.time(),
+                "behind": max(0.0, behind),
+                "window": window,
+            }
             for old in sorted(self.groups, key=lambda g: self.groups[g]["at"])[:-GROUPS]:
                 del self.groups[old]
         return {itag: f"http://127.0.0.1:{self.port}/live/{gid}/{itag}" for itag in urls}
@@ -95,7 +105,10 @@ class Proxy:
                 raise KeyError(gid)
             if g["start"] is not None:  # (as far on as the stream has gone since)
                 return g["start"] + int((time.monotonic() - g["t0"]) / g["seconds"])
-        sq = max(0, self.head(url) - BEHIND)
+        back = int(g["behind"] / g["seconds"])
+        if g["window"]:
+            back = min(back, int(g["window"] / g["seconds"]) - BEHIND - 1)
+        sq = max(0, self.head(url) - BEHIND - max(0, back))
         with self.lock:
             if g["start"] is None:
                 g["start"], g["t0"] = sq, time.monotonic()
