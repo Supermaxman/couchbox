@@ -819,22 +819,65 @@ def chapter_markers(resp: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _token_in(o: Any) -> str:
+    """The first continuation token in o (a continuationCommand's, or an older continuation's)."""
+    for c in _find(o, "continuationCommand"):
+        if isinstance(c, dict) and c.get("token"):
+            return c["token"]
+    for k in ("nextContinuationData", "reloadContinuationData"):
+        for c in _find(o, k):
+            if isinstance(c, dict) and c.get("continuation"):
+                return c["continuation"]
+    return ""
+
+
+def _comment(c: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "author": text(c.get("authorText")),
+        "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
+        "text": text(c.get("contentText")),
+        "time": text(c.get("publishedTimeText")),
+        "likes": text(c.get("voteCount")),
+        "replies": int(c.get("replyCount") or 0),
+        "pinned": "pinnedCommentBadge" in c,
+    }
+
+
 def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
-    """A page of comments (a next continuation): [{author, photo, text, time, likes, replies, pinned}], more."""
+    """A page of comments (a next continuation): [{author, photo, text, time, likes, replies,
+    pinned, repliesToken}], more. A thread's repliesToken opens its replies (a page of comments
+    like this one, its own more for their next page)."""
     items, more = [], ""
-    for c in _find(resp, "commentRenderer"):
-        items.append(
-            {
-                "author": text(c.get("authorText")),
-                "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
-                "text": text(c.get("contentText")),
-                "time": text(c.get("publishedTimeText")),
-                "likes": text(c.get("voteCount")),
-                "replies": int(c.get("replyCount") or 0),
-                "pinned": "pinnedCommentBadge" in c,
-            }
-        )
-    for x in _find(resp, "continuationItemRenderer"):
+    threads = [t for t in _find(resp, "commentThreadRenderer") if isinstance(t, dict)]
+    if threads:
+        for t in threads:
+            c = next((x for x in _find(t.get("comment") or {k: v for k, v in t.items() if k != "replies"}, "commentRenderer")), None)
+            if not isinstance(c, dict):
+                continue
+            it = _comment(c)
+            tok = _token_in(t.get("replies") or {})
+            if tok:
+                it["repliesToken"] = tok
+            items.append(it)
+
+        def outside(o):  # the page's own continuation, not one inside a thread (its replies)
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if k == "commentThreadRenderer":
+                        continue
+                    if k == "continuationItemRenderer":
+                        yield v
+                    else:
+                        yield from outside(v)
+            elif isinstance(o, list):
+                for v in o:
+                    yield from outside(v)
+
+        conts = list(outside(resp))
+    else:  # a thread's replies (or comments without threads)
+        items = [_comment(c) for c in _find(resp, "commentRenderer") if isinstance(c, dict)]
+        conts = list(_find(resp, "continuationItemRenderer"))
+    for x in conts:
         more = (
             dig(x, "continuationEndpoint", "continuationCommand", "token")
             or dig(x, "button", "buttonRenderer", "command", "continuationCommand", "token")
@@ -2012,10 +2055,12 @@ class Demo(YouTube):
                     "text": t,
                     "time": f"{k + 1} days ago",
                     "likes": f"{(k + 3) * 41}",
-                    "replies": k % 3,
-                    "pinned": k == 0,
+                    "replies": 0 if token.startswith("demo-replies") else k % 3,
+                    "pinned": k == 0 and not token.startswith("demo-replies"),
+                    **({"repliesToken": f"demo-replies-{k}"} if k % 3 and not token.startswith("demo-replies") else {}),
                 }
                 for k, (a, t) in enumerate(zip(names, texts, strict=True))
+                if not token.startswith("demo-replies") or k < 3
             ],
             "more": "",
         }

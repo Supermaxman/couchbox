@@ -228,3 +228,55 @@ def test_ytdlp_errors_in_plain_words():
     )
     assert S.friendly("ERROR: [youtube] abc: Private video. Sign in if you've been granted access") == "This video is private."
     assert S.friendly("ERROR: [youtube] abc: Something new happened\nmore") == "abc: Something new happened"
+
+
+def test_comment_threads_and_their_replies():
+    thread = {
+        "commentThreadRenderer": {
+            "comment": {"commentRenderer": {"authorText": {"simpleText": "@a"}, "contentText": {"simpleText": "Hi"}, "replyCount": 2}},
+            "replies": {
+                "commentRepliesRenderer": {
+                    "contents": [{"continuationItemRenderer": {"continuationEndpoint": {"continuationCommand": {"token": "tok-replies"}}}}]
+                }
+            },
+        }
+    }
+    page = {
+        "continuationContents": {
+            "itemSectionContinuation": {
+                "contents": [
+                    thread,
+                    {
+                        "commentThreadRenderer": {
+                            "comment": {
+                                "commentRenderer": {"authorText": {"simpleText": "@b"}, "contentText": {"simpleText": "No replies"}}
+                            }
+                        }
+                    },
+                    {"continuationItemRenderer": {"continuationEndpoint": {"continuationCommand": {"token": "tok-page2"}}}},
+                ]
+            }
+        }
+    }
+    c = Y.parse_comments(page)
+    assert [x["author"] for x in c["items"]] == ["@a", "@b"]
+    assert c["items"][0]["repliesToken"] == "tok-replies" and "repliesToken" not in c["items"][1]
+    assert c["more"] == "tok-page2"  # the page's, not the first thread's replies
+    replies = {
+        "onResponseReceivedEndpoints": [
+            {
+                "appendContinuationItemsAction": {
+                    "continuationItems": [
+                        {"commentRenderer": {"authorText": {"simpleText": "@c"}, "contentText": {"simpleText": "A reply"}}},
+                        {
+                            "continuationItemRenderer": {
+                                "button": {"buttonRenderer": {"command": {"continuationCommand": {"token": "tok-more-replies"}}}}
+                            }
+                        },
+                    ]
+                }
+            }
+        ]
+    }
+    r = Y.parse_comments(replies)
+    assert [x["text"] for x in r["items"]] == ["A reply"] and r["more"] == "tok-more-replies"

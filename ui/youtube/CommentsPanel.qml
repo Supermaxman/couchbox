@@ -1,5 +1,7 @@
 // The comments beside the video: who, when, the text, its likes and replies; more load as the
-// list nears its end. Up and Down move; Back closes.
+// list nears its end. Up and Down move; OK on a comment with replies opens them (the comment
+// first, then its replies, more of them as the list nears its end); Back goes back to the
+// comments on the same one, or closes.
 import QtQuick
 
 FocusScope {
@@ -10,37 +12,60 @@ FocusScope {
     property string more: ""
     property bool loading: false
     property string problem: ""
+    property var thread: null                 // a comment's replies open: {comment, items, more, index} (the comments, to go back to)
+    function focusDetail() { return {comments: items.length, thread: !!thread, at: list.currentIndex, replies: thread ? items.length - 1 : 0,
+                                     withReplies: items.findIndex(c => !!c.repliesToken)}; }
     signal closed()
     x: 1254 * Y.u
     width: 612 * Y.u
     height: parent ? parent.height : 0
     function load() {
-        items = []; more = ""; problem = "";
+        items = []; more = ""; problem = ""; thread = null;
         if (!token) { problem = "Comments are turned off for this video."; return; }
         fetch(token);
     }
     function fetch(t) {
         loading = true;
+        const th = thread;                     // (replies that come after Back aren't the comments')
         Y.call("comments", {token: t}, r => {
-            if (!panel) return;                // (the player closed meanwhile)
+            if (!panel || panel.thread !== th) return;   // (the player closed meanwhile, or Back)
             loading = false;
             items = items.concat(r.items || []);
             more = r.more || "";
             if (!items.length) problem = "No comments yet.";
+            else if (thread && items.length === 1) problem = "No replies to show.";
         }, e => { if (panel) { panel.loading = false; panel.problem = e; } });
     }
     Keys.onUpPressed: list.decrementCurrentIndex()
     Keys.onDownPressed: { list.incrementCurrentIndex(); if (list.currentIndex >= items.length - 3 && more && !loading) fetch(more); }
-    Keys.onEscapePressed: closed()
-    Keys.onBackPressed: closed()
+    function openReplies() {
+        const c = items[list.currentIndex];
+        if (!c || !c.repliesToken || thread) return;
+        thread = {comment: c, items: items, more: more, index: list.currentIndex};
+        items = [Object.assign({}, c, {parent: true})]; more = ""; problem = "";
+        list.currentIndex = 0;
+        fetch(c.repliesToken);
+    }
+    function back() {
+        if (!thread) { closed(); return; }
+        const t = thread;
+        thread = null; problem = ""; loading = false;
+        items = t.items; more = t.more;
+        list.currentIndex = t.index;
+        list.positionViewAtIndex(t.index, ListView.Contain);
+    }
+    Keys.onReturnPressed: openReplies()
+    Keys.onEnterPressed: openReplies()
+    Keys.onEscapePressed: back()
+    Keys.onBackPressed: back()
     Keys.onLeftPressed: {}
     Keys.onRightPressed: {}
 
     Row {
         y: 40 * Y.u
         spacing: 14 * Y.u
-        Text { text: "Comments"; color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold }
-        Text { text: panel.count; color: Y.dim; font.family: Y.font; font.pixelSize: 32 * Y.u; anchors.baseline: parent.children[0].baseline }
+        Text { text: panel.thread ? "Replies" : "Comments"; color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold }
+        Text { text: panel.thread ? String(panel.thread.comment.replies || "") : panel.count; color: Y.dim; font.family: Y.font; font.pixelSize: 32 * Y.u; anchors.baseline: parent.children[0].baseline }
     }
     ListView {
         id: list
@@ -60,7 +85,9 @@ FocusScope {
             required property var modelData
             required property int index
             readonly property bool on: ListView.isCurrentItem && panel.activeFocus
-            width: list.width
+            readonly property bool reply: !!panel.thread && !c.modelData.parent
+            x: reply ? 40 * Y.u : 0                // replies indented under their comment
+            width: list.width - x
             height: body.height + 48 * Y.u
             radius: 16 * Y.u
             color: on ? Y.text : Y.raised
@@ -92,7 +119,7 @@ FocusScope {
                         Icon { name: "like"; size: 26 * Y.u; color: c.on ? Y.ink : Y.dim }
                         Text { text: c.modelData.likes || ""; color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
                     }
-                    Text { visible: c.modelData.replies > 0; text: c.modelData.replies + (c.modelData.replies === 1 ? " reply" : " replies"); color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
+                    Text { visible: c.modelData.replies > 0; text: c.modelData.replies + (c.modelData.replies === 1 ? " reply" : " replies") + (c.on && c.modelData.repliesToken && !panel.thread ? "  ·  OK to read" : ""); color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
                 }
             }
         }
