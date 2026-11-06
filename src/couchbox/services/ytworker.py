@@ -34,6 +34,21 @@ EXPIRY_MARGIN = 900  # an address this close to its expiry is asked for again
 PREFETCH_STALE = 8.0
 MAX_RSS_MB = 400
 MAX_CACHED = 60
+DASH_LEAD = 1.0  # seconds: DASH that opens within this is waited for (trying it meanwhile), else HLS now
+
+
+def wait_until_open(url: str, until: float) -> None:
+    """Until YouTube serves url (a one-byte range), or the time it gave (and a little more)."""
+    import requests
+
+    s = requests.Session()
+    while time.time() < until + 1:
+        try:
+            if s.get(url, headers={"Range": "bytes=0-0"}, timeout=3).status_code in (200, 206):
+                return
+        except requests.RequestException:
+            pass
+        time.sleep(0.2)
 
 
 # ------------------------------------------------------------------ in the worker
@@ -96,26 +111,41 @@ class Worker:
             heapq.heappush(self.queue, (*key, req))
             self.cv.notify()
 
+    def info(self, a: dict[str, Any], phases: Any = None) -> tuple[dict[str, Any], bool]:
+        from couchbox.services import ytstream
+
+        info = self.cache.get(a["id"])
+        if info is not None:
+            return info, True
+        info = ytstream.extract(a["id"], phases, a.get("visitor") or "")
+        self.cache.put(a["id"], info)
+        return info, False
+
     def resolve(self, a: dict[str, Any]) -> dict[str, Any]:
+        """The stream to play now. DASH (opens in ~0.1 s; HLS takes over a second) opens a few
+        seconds after it's worked out (YouTube's gap for the ads we don't show): when that's
+        within DASH_LEAD it's waited for, trying its address meanwhile (it often opens before the
+        time it's given), else HLS plays now."""
         from couchbox.services import ytstream, yttiming
 
-        vid = a["id"]
-        info = self.cache.get(vid)
-        cached = info is not None
         t = time.monotonic()
         phases = yttiming.Phases()
-        if info is None:
-            info = ytstream.extract(vid, phases)
-            self.cache.put(vid, info)
+        info, cached = self.info(a, phases)
         took = yttiming.ms(t)
         out = ytstream.resolve(
-            vid,
+            a["id"],
             h264=a.get("h264", True),
             max_height=int(a.get("max_height") or ytstream.MAX_HEIGHT),
             superres=a.get("superres", True),
             info=info,
+            lead=DASH_LEAD,
         )
-        out["timing"].update(phases.spans(took), extract=took, cached=cached)
+        waited = 0
+        if out.get("probe"):
+            w = time.monotonic()
+            wait_until_open(out.pop("probe"), out.pop("until"))
+            waited, out["wait"] = yttiming.ms(w), 0
+        out["timing"].update(phases.spans(took), extract=took, cached=cached, dash_wait=waited)
         return out
 
     def run_one(self, req: dict[str, Any], asked: float) -> None:
@@ -126,7 +156,7 @@ class Worker:
             if op == "prefetch":
                 if time.monotonic() - asked > PREFETCH_STALE or self.cache.get(a["id"]) is not None:
                     return self.answer(n, result={"ok": True, "skipped": True})
-                self.resolve(a)
+                self.info(a)
                 return self.answer(n, result={"ok": True})
             if op == "resolve":
                 return self.answer(n, result=self.resolve(a))

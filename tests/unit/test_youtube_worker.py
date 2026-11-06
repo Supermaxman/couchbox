@@ -35,7 +35,7 @@ def test_kept_until_the_addresses_expire():
 def test_resolve_first_then_prefetches_newest_first(monkeypatch):
     asked = []
 
-    def extract(vid, phases=None):
+    def extract(vid, phases=None, visitor=""):
         asked.append(vid)
         return info(vid, int(time.time()) + 6 * 3600)
 
@@ -58,7 +58,7 @@ def test_resolve_first_then_prefetches_newest_first(monkeypatch):
 
 
 def test_an_unplayable_video_says_why(monkeypatch):
-    def extract(vid, phases=None):
+    def extract(vid, phases=None, visitor=""):
         raise ytstream.Unavailable("This video is private.")
 
     monkeypatch.setattr(ytstream, "extract", extract)

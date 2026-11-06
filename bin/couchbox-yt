@@ -97,6 +97,11 @@ class Backend(QObject):
 
     def warm(self):
         try:
+            if not self.yt.visitor:                  # the TV's visitor data (a guest's first page brings it)
+                self.yt._post("browse", {"browseId": "FEtopics_music"})
+        except Exception:  # noqa: BLE001 (offline for now: yt-dlp's usual way meanwhile)
+            pass
+        try:
             self.yt.set_client(self.worker.call("client", timeout=60))
         except Exception as err:  # noqa: BLE001 (no yt-dlp yet: ours)
             print(f"stream worker: {err}", flush=True)
@@ -104,7 +109,8 @@ class Backend(QObject):
     def stream_args(self, max_height=None):
         st = self.settings.get()
         cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
-        return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"]}
+        return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"],
+                "visitor": self.yt.visitor}         # the TV's visitor data: the quick way (no watch webpage)
 
     def prefetch(self, vid):
         """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""

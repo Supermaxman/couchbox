@@ -98,33 +98,62 @@ def about() -> dict[str, Any]:
     }
 
 
-def _downloader():
+# The quick way, as a TV app asks: the TV and visionOS clients' /player calls only, with the TV's
+# visitor data, without the watch webpage, the client configs or the /next call (the app has
+# its own) that yt-dlp otherwise fetches first (~1 s of the ~1.3): ~0.2-0.5 s a video. The JS
+# challenges are solved in node kept running (ytjs). yt-dlp's usual way is the fallback.
+FAST_CLIENTS = ["tv_samsung", "visionos"]
+_fast: dict[str, Any] = {}
+
+
+def _downloader(visitor: str = ""):
     global _ydl
-    if _ydl is None:
-        m = module()
-        if not m:
-            raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
-        _ydl = m.YoutubeDL(
-            {
-                "quiet": True,
-                "no_warnings": True,
-                "skip_download": True,
-                "noplaylist": True,
-                "js_runtimes": js_runtimes(),
-                "extractor_args": {"youtube": {"skip": ["translated_subs"]}},
+    m = module()
+    if not m:
+        raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
+    from couchbox.services import ytjs
+
+    ytjs.register()
+    base = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "js_runtimes": js_runtimes()}
+    if visitor:
+        if visitor not in _fast:
+            _fast.clear()
+            args = {
+                "skip": ["translated_subs"],
+                "player_client": FAST_CLIENTS,
+                "player_skip": ["webpage", "configs", "initial_data"],
+                "visitor_data": [visitor],
             }
-        )
+            _fast[visitor] = m.YoutubeDL(dict(base, extractor_args={"youtube": args}))
+        return _fast[visitor]
+    if _ydl is None:
+        _ydl = m.YoutubeDL(dict(base, extractor_args={"youtube": {"skip": ["translated_subs"]}}))
     return _ydl
 
 
-def extract(video_id: str, phases: Any = None) -> dict[str, Any]:
-    """yt-dlp's information about a video (formats not chosen yet). phases (yttiming.Phases)
-    hears yt-dlp's progress messages: when each step began."""
+def extract(video_id: str, phases: Any = None, visitor: str = "") -> dict[str, Any]:
+    """yt-dlp's information about a video (formats not chosen yet): the quick way with the TV's
+    visitor data, else (or when that finds nothing to play) yt-dlp's usual way. phases
+    (yttiming.Phases) hears yt-dlp's progress messages: when each step began."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
     with _lock:
+        if visitor:
+            ydl = _downloader(visitor)
+            ydl.params["logger"] = phases
+            try:
+                info = ydl.extract_info(url, download=False, process=False)
+                if info.get("formats"):
+                    return info
+            except Exception:  # noqa: BLE001 - the usual way says why, if it fails too
+                pass
+            finally:
+                ydl.params["logger"] = None
+            if phases is not None:
+                phases.marks.append((phases.marks[-1][0] if phases.marks else 0, "fallback"))
         ydl = _downloader()
         ydl.params["logger"] = phases
         try:
-            return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False, process=False)
+            return ydl.extract_info(url, download=False, process=False)
         except Exception as err:  # yt-dlp's DownloadError, ExtractorError, ...
             raise Unavailable(friendly(str(err))) from err
         finally:
@@ -168,7 +197,9 @@ def _lines(f):
 
 
 def _hls(f):
-    return (f.get("protocol") or "").startswith("m3u8")
+    # (unprocessed information has no "protocol" yet: the address says)
+    url = f.get("url") or ""
+    return (f.get("protocol") or "").startswith("m3u8") or "/hls_" in url or ".m3u8" in url
 
 
 def ready(f: dict[str, Any], now: float | None = None) -> bool:
@@ -236,14 +267,19 @@ def edl(*urls: str) -> str:
     return "edl://" + ";".join(parts)
 
 
-def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True) -> dict[str, Any]:
-    """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}."""
+def playable(
+    info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, lead: float = 0.0
+) -> dict[str, Any]:
+    """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}.
+    lead: formats that open within this many seconds count as ready (the caller waits for them:
+    "probe" is the address to try meanwhile)."""
     formats = info.get("formats") or []
     live = info.get("live_status") in ("is_live", "post_live") or bool(info.get("is_live"))
-    video, audio = pick(formats, h264, max_height, superres=superres)
+    video, audio = pick(formats, h264, max_height, now=time.time() + lead, superres=superres)
     if video is None:
         raise Unavailable("YouTube didn't offer a format this TV can play.")
     out = {
+        "protocol": "hls" if _hls(video) else "dash" if audio else "https",
         "live": live,
         "width": video.get("width") or 0,
         "height": video.get("height") or 0,
@@ -262,7 +298,10 @@ def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIG
     else:
         out["url"] = video["url"]
     # nothing that plays now: wait until it does (the player says so meanwhile)
-    out["wait"] = max(0, round(max((f.get("available_at") or 0) for f in (video, audio) if f) - time.time()))
+    out["wait"] = max(0, round(max((f.get("available_at") or 0) for f in (video, audio) if f) - time.time(), 1))
+    if out["wait"]:
+        out["probe"] = video["url"]
+        out["until"] = max((f.get("available_at") or 0) for f in (video, audio) if f)
     return out
 
 
@@ -342,7 +381,13 @@ def protocol(url: str) -> str:
 
 
 def resolve(
-    video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, info: dict[str, Any] | None = None
+    video_id: str,
+    h264: bool = True,
+    max_height: int = MAX_HEIGHT,
+    superres: bool = True,
+    info: dict[str, Any] | None = None,
+    lead: float = 0.0,
+    visitor: str = "",
 ) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts). info: yt-dlp's, from
@@ -352,9 +397,9 @@ def resolve(
     t = time.monotonic()
     phases = yttiming.Phases()
     if info is None:
-        info = extract(video_id, phases)
+        info = extract(video_id, phases, visitor)
     took = yttiming.ms(t)
-    out = playable(info, h264, max_height, superres)
+    out = playable(info, h264, max_height, superres, lead)
     out.update(
         {
             "id": info.get("id") or video_id,
@@ -375,5 +420,5 @@ def resolve(
         }
     )
     spans = phases.spans(took)
-    out["timing"] = dict(spans, extract=took, protocol=protocol(out["url"]))
+    out["timing"] = dict(spans, extract=took, protocol=out["protocol"])
     return out
