@@ -472,7 +472,8 @@ class Backend(QObject):
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "feedback": lambda: y.feedback(a["token"]),
             "editPlaylist": lambda: y.edit_playlist(a["edit"], bool(a.get("add", True))),
-            "menuProbe": lambda: y.menu_probe(),                 # measuring: a Home card's menu, as this profile gets it
+            "menuProbe": lambda: y.menu_probe(),
+            "commentsProbe": lambda: y.comments_probe(a["id"]),   # measuring: a comment with replies, its shape                 # measuring: a Home card's menu, as this profile gets it
             "createPlaylist": lambda: y.create_playlist(a.get("title") or "New playlist", a.get("id", "")),
             "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),

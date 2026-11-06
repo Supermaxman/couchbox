@@ -280,3 +280,44 @@ def test_comment_threads_and_their_replies():
     }
     r = Y.parse_comments(replies)
     assert [x["text"] for x in r["items"]] == ["A reply"] and r["more"] == "tok-more-replies"
+
+
+def test_tv_comment_replies_come_from_its_detail_view():
+    """The TV's threads carry their replies' continuation in the comment's detailViewEndpoint
+    (an engagement panel), not under "replies"."""
+    page = {
+        "contents": [
+            {
+                "commentThreadRenderer": {
+                    "comment": {
+                        "commentRenderer": {
+                            "authorText": {"simpleText": "@a"},
+                            "contentText": {"simpleText": "Hi"},
+                            "replyCount": 27,
+                            "detailViewEndpoint": {
+                                "showEngagementPanelEndpoint": {
+                                    "engagementPanel": {
+                                        "engagementPanelSectionListRenderer": {
+                                            "content": {
+                                                "sectionListRenderer": {
+                                                    "contents": [
+                                                        {
+                                                            "itemSectionRenderer": {
+                                                                "continuations": [{"nextContinuationData": {"continuation": "tok-replies"}}]
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        ]
+    }
+    c = Y.parse_comments(page)
+    assert c["items"][0]["repliesToken"] == "tok-replies"

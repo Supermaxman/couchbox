@@ -424,7 +424,7 @@ FocusScope {
     function skip(d) {
         if (!s) return;
         video.seek(d);                         // a live stream too: back into its DVR window and forward again
-        if (live && duration > 0) Y.toast(duration - pos - d > 15 ? Y.clock(duration - pos - d) + " behind live" : "Live");
+        if (live && duration > 0) Y.toast(duration - pos - d > 8 ? Y.clock(duration - pos - d) + " behind live" : "Live");   // (the edge itself is a few seconds behind)
         if (mode === "hidden") mode = "bar";
         hide.restart();
     }

@@ -348,17 +348,19 @@ def player_walk(r):
     remote("right")
     r.step("scrub", lambda f: (d(f).get("mode") == "bar" and "controls" in f["focus"], f"mode {d(f).get('mode')}, to {d(f).get('scrub')}"), settle=0.6)
     # Up while scrubbing: the chapters when the video has some, else back to the video, the scrub
-    # undone (YouTube's: only OK, or a moment's pause, goes there)
-    remote("up")
+    # undone (YouTube's: only OK, or a moment's pause, goes there). Right and Up together: a
+    # scrub goes there by itself 2 s after the last press (the step above took longer)
+    time.sleep(2.5)
+    p0 = d(focus()).get("position", 0)
+    remote("right", "up", gap=0.4)
     f = r.step("scrub-up", lambda f: (d(f).get("mode") == "chapters"
                                       or (d(f).get("mode") == "hidden" and d(f).get("scrub", -1) < 0 and abs(d(f).get("position", 0) - p0) < 8),
                                       f"mode {d(f).get('mode')}, position {p0} -> {d(f).get('position')}, scrub {d(f).get('scrub')}"), settle=1)
     if d(f).get("mode") == "chapters":
         remote("back")  # the chapters: back to the bar
     else:
-        remote("right")  # scrubbing again
         p1 = d(focus()).get("position", 0)
-        remote("back")  # Back: undone too
+        remote("right", "back", gap=0.4)  # scrubbing again, Back: undone too
         r.step("scrub-back", lambda f: (d(f).get("mode") == "hidden" and d(f).get("scrub", -1) < 0 and abs(d(f).get("position", 0) - p1) < 8,
                                         f"mode {d(f).get('mode')}, position {p1} -> {d(f).get('position')}"), settle=1)
         remote("right")
@@ -397,7 +399,7 @@ def player_walk(r):
             r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
             time.sleep(3)
             r.step("captions-stay-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=0)
-            if ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+            if press_button("cc"):  # (the controls hid meanwhile: up again, to CC)
                 r.step("captions-on", lambda f: (bool(d(f).get("captions")), f"captions {d(f).get('captions')!r}"), settle=2)
                 if ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
                     r.step("captions-off-again", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
@@ -413,7 +415,7 @@ def player_walk(r):
         # a comment's replies (read): down to the first with replies, OK, they load; Back: the
         # comments again, on the same one
         at = (d(f).get("comments") or {}).get("withReplies", -1)
-        if 0 <= at <= 12:
+        if 0 <= at <= 20:
             remote(*["down"] * at, gap=0.35)
             time.sleep(0.6)
             if ok_on(lambda f: (d(f).get("comments") or {}).get("at") == at, "a comment with replies"):
@@ -605,6 +607,9 @@ def guide_to(key):
             if step == "up" and at == "who":
                 break
             remote(step, gap=0.3)
+            end = time.monotonic() + 1.5  # the press lands a moment later (the page behind loads): wait for it
+            while time.monotonic() < end and focus().get("guideAt") == at:
+                time.sleep(0.15)
     return focus().get("guideAt") == key
 
 

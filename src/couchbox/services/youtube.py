@@ -361,6 +361,28 @@ def menu_entries(cmd: Any) -> list[dict[str, Any]]:
                 out.append(
                     {"label": text(inner.get("text") or inner.get("title")), "icon": dig(inner, "icon", "iconType") or "", "entry": inner}
                 )
+    if out:
+        return out
+    # the signed-in TV's Home cards: their menu is an engagement panel (showEngagementPanelEndpoint)
+    # of buttons or links; an entry is anything with words and something it does
+    acts = ("serviceEndpoint", "navigationEndpoint", "command", "onSelectCommand", "onTap", "endpoint")
+
+    def walk(o, depth=0):
+        if depth > 14:
+            return
+        if isinstance(o, dict):
+            label = text(o.get("text") or o.get("title") or o.get("label")) if any(k in o for k in ("text", "title", "label")) else ""
+            if label and any(k in o for k in acts):
+                icon = dig(o, "icon", "iconType") or dig(o, "leadingImage", "sources", 0, "clientResource", "imageName") or ""
+                out.append({"label": label, "icon": icon, "entry": o})
+                return
+            for v in o.values():
+                walk(v, depth + 1)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v, depth + 1)
+
+    walk(dig(cmd or {}, "showEngagementPanelEndpoint") or {})
     return out
 
 
@@ -372,6 +394,25 @@ def menu_watch_later(cmd: Any) -> dict[str, Any] | None:
             if isinstance(ep, dict) and ep.get("playlistId") == "WL":
                 return {k: ep[k] for k in ("playlistId", "actions", "params") if k in ep}
     return None
+
+
+def outline_words(o: Any, depth: int = 0) -> Any:
+    """outline(), keeping short words and icon names (a menu's labels), never tokens or addresses."""
+    if depth > 12:
+        return "..."
+    if isinstance(o, dict):
+        out = {}
+        for k, v in o.items():
+            if k in ("trackingParams", "clickTrackingParams"):
+                continue
+            if isinstance(v, str) and (k in ("simpleText", "text", "label", "iconType", "imageName") or k.endswith("Type")) and len(v) < 60:
+                out[k] = v
+            else:
+                out[k] = outline_words(v, depth + 1)
+        return out
+    if isinstance(o, list):
+        return [outline_words(x, depth + 1) for x in o[:12]]
+    return type(o).__name__
 
 
 def menu_feedback(cmd: Any) -> list[dict[str, str]]:
@@ -702,7 +743,10 @@ def parse_header(h: dict[str, Any]) -> dict[str, Any] | None:
         "avatar": avatar(thumb(c.get("avatar"), 72)),
         "banner": thumb(c.get("backgroundImage"), 1280),
         "lines": lines,
-        "description": text(c.get("description")) or text(c.get("descriptionText")),
+        "description": text(c.get("description"))
+        or text(c.get("descriptionText"))
+        # the TV's channelHeaderRenderer: its selectable description's short form
+        or " ".join(text(dig(c, "selectableDescription", "selectableTextRenderer", "compactDescription")).split()),
     }
 
 
@@ -855,7 +899,8 @@ def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(c, dict):
                 continue
             it = _comment(c)
-            tok = _token_in(t.get("replies") or {})
+            # its replies' continuation: under "replies", else anywhere in the thread (the TV's)
+            tok = _token_in(t.get("replies") or {}) or (_token_in(t) if it["replies"] else "")
             if tok:
                 it["repliesToken"] = tok
             items.append(it)
@@ -874,8 +919,15 @@ def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
                     yield from outside(v)
 
         conts = list(outside(resp))
-    else:  # a thread's replies (or comments without threads)
-        items = [_comment(c) for c in _find(resp, "commentRenderer") if isinstance(c, dict)]
+    else:  # a thread's replies (or comments without threads: a comment with replies keeps their continuation)
+        for c in _find(resp, "commentRenderer"):
+            if not isinstance(c, dict):
+                continue
+            it = _comment(c)
+            tok = _token_in(c) if it["replies"] else ""
+            if tok:
+                it["repliesToken"] = tok
+            items.append(it)
         conts = list(_find(resp, "continuationItemRenderer"))
     for x in conts:
         more = (
@@ -1257,6 +1309,10 @@ class YouTube:
             except ValueError:
                 why = ""
             print(f"yt {ep}: {r.status_code} {str(why)[:200]}", flush=True)
+            if "playlist size" in str(why).lower():  # (Watch later holds 5,000 at most)
+                raise YouTubeError(
+                    "That playlist is full: YouTube keeps 5,000 videos at most. Remove some in the YouTube app.", r.status_code
+                )
             raise YouTubeError(f"YouTube said {r.status_code} ({ep})", r.status_code)
         data = r.json()
         vd = dig(data, "responseContext", "visitorData")
@@ -1499,7 +1555,13 @@ class YouTube:
                         {k for k in json.dumps(e["entry"]).replace('"', " ").split() if k.endswith("Endpoint") or k.endswith("Command")}
                     )
                     entries.append({"label": e["label"], "icon": e["icon"], "keys": sorted(e["entry"]), "endpoints": found})
-                return {"top": sorted(cmd), "menu": sorted(cmd.get("showMenuCommand") or {}), "entries": entries, "partWatchedLines": lines}
+                return {
+                    "top": sorted(cmd),
+                    "menu": sorted(cmd.get("showMenuCommand") or {}),
+                    "entries": entries,
+                    "partWatchedLines": lines,
+                    "panel": outline_words(cmd.get("showEngagementPanelEndpoint") or {}),
+                }
         return {"entries": [], "note": "no video tile on Home"}
 
     def feedback(self, token: str) -> dict[str, Any]:
@@ -1617,6 +1679,19 @@ class YouTube:
 
     def comments(self, token: str) -> dict[str, Any]:
         return parse_comments(self.call("next", {"continuation": token}))
+
+    def comments_probe(self, video_id: str) -> dict[str, Any]:
+        """A video's first comment with replies, its shape as this profile gets it (keys, short
+        words and icon names: no tokens), for wiring its replies."""
+        token = (self.watch(video_id).get("details") or {}).get("commentsToken") or ""
+        if not token:
+            return {"note": "no comments token"}
+        resp = self.call("next", {"continuation": token}, cache=False)
+        for key in ("commentThreadRenderer", "commentRenderer"):
+            for t in _find(resp, key):
+                if isinstance(t, dict) and '"replyCount"' in json.dumps(t) and next(_find(t, "replyCount"), 0):
+                    return {"kind": key, "outline": outline_words(t), "parsed": parse_comments(resp)["items"][:3]}
+        return {"note": "no comment with replies on the first page", "top": sorted(resp)}
 
     def shorts(self, params: str = "", token: str = "") -> dict[str, Any]:
         """The Shorts to play: a sequence (the guide's Shorts, or after one), then its continuation."""
