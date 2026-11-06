@@ -17,7 +17,7 @@ FocusScope {
     property int row: 0
     readonly property var groups: [
         {header: "Account", items: [{key: "accounts", label: "Accounts"}]},
-        {header: "Playback", items: [{key: "video", label: "Video"}, {key: "player", label: "Player"}, {key: "ads", label: "Ads"}]},
+        {header: "Playback", items: [{key: "video", label: "Video"}, {key: "player", label: "Player"}, {key: "captions", label: "Captions"}, {key: "ads", label: "Ads"}]},
         {header: "Appearance", items: [{key: "guide", label: "Guide tabs"}]},
         {header: "Link TV & phone", items: [{key: "wifi", label: "Link with Wi-Fi"}, {key: "tvcode", label: "Link with TV code"}]},
         {header: "Extras", items: [{key: "sponsorblock", label: "SponsorBlock"}, {key: "extras", label: "DeArrow and more"}]},
@@ -62,6 +62,10 @@ FocusScope {
                 {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front", group: "Playback"},
                 {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue, group: "Playback",
                  desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
+        if (item.key === "captions")
+            return {title: "Captions", body: "CC on the player turns them on or off for the video playing.", facts: [], rows: [
+                {key: "captions_always", label: "Always show captions", on: st.captions_always !== false, group: "Every video",
+                 desc: "In English when there are any (the video's own, then automatic, then translated), else in the video's language. Turned off with CC, they stay off for that video."}]};
         if (item.key === "wifi")
             return {title: "Link with Wi-Fi", facts: [], rows: [{key: "cast", label: "Cast from phones", on: st.cast !== false,
                     desc: "Phones on this Wi-Fi see the TV in the YouTube app's cast list, as “Couchbox YouTube (beta)”"}],

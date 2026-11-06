@@ -382,16 +382,31 @@ def player_walk(r):
                 remote("back")
         remote("back")
         r.step("player-settings-back", lambda f: (not d(f).get("panel") and "controls" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=1.5)
-    # captions: CC on (when the video has any: else the TV says so) and off again
-    if press_button("cc"):
-        f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
-        if d(f).get("captions"):  # their words on the screen (mpv's sub-text) within 10 s
-            end = time.monotonic() + 10
-            while time.monotonic() < end and not d(focus()).get("subText"):
-                time.sleep(0.5)
-            r.step("captions-text", lambda f: (bool(d(f).get("subText")), f"on screen: {(d(f).get('subText') or '')[:40]!r}"), settle=0)
-        if d(f).get("captions") and ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+    # captions: on by themselves (Settings → Captions, Always show captions: on), their words on
+    # the screen within 10 s; CC turns them off (and they stay off for the video), CC on again
+    def words(r_, name):
+        end = time.monotonic() + 10
+        while time.monotonic() < end and not d(focus()).get("subText"):
+            time.sleep(0.5)
+        r_.step(name, lambda f: (bool(d(f).get("subText")), f"on screen: {(d(f).get('subText') or '')[:40]!r}"), settle=0)
+
+    f = r.step("captions-auto", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has none, or the setting's off)"), settle=0)
+    if d(f).get("captions"):
+        words(r, "captions-text")
+        if press_button("cc"):
             r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
+            time.sleep(3)
+            r.step("captions-stay-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=0)
+            if ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+                r.step("captions-on", lambda f: (bool(d(f).get("captions")), f"captions {d(f).get('captions')!r}"), settle=2)
+                if ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+                    r.step("captions-off-again", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
+    elif press_button("cc"):
+        f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
+        if d(f).get("captions"):
+            words(r, "captions-text")
+            if ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+                r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
     # the comments (read)
     if press_button("comments"):
         f = r.step("comments", lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r}"), settle=3)

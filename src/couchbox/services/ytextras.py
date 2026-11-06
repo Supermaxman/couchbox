@@ -55,6 +55,7 @@ DEFAULTS: dict[str, Any] = {
     "unlock_resolution": False,  # past 1080p (VP9/AV1, with H.264 only off)
     "pause_on_blur": False,  # pause when another window comes in front
     "remaining_time": False,  # the time left instead of the length
+    "captions_always": True,  # captions on for every video, English first (VacuumTube's keep_captions)
     # the TV's refresh rate to the video's: off | film (24 and 25 fps films only) | always
     "match_rate": "film",
     "cast": True,  # the TV as a cast target for the YouTube phone app (couchbox-yt-cast, DIAL and the Lounge)

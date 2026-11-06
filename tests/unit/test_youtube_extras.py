@@ -4,6 +4,8 @@ Made-up answers in the services' shapes; no network."""
 
 import hashlib
 
+import pytest
+
 from couchbox.services import ytextras as X
 
 
@@ -75,3 +77,12 @@ def test_hide_shorts():
     out = X.hide_shorts(page)
     assert [s["title"] for s in out["shelves"]] == ["Mixed"] and [i["id"] for i in out["shelves"][0]["items"]] == ["v1"]
     assert X.hide_shorts({"items": [{"type": "short"}, {"type": "video"}]}) == {"items": [{"type": "video"}]}
+
+
+def test_captions_always_and_frame_rate_matching_settings(tmp_path):
+    s = X.Settings(str(tmp_path))
+    assert s.get()["captions_always"] is True and s.get()["match_rate"] == "film"
+    assert s.set("captions_always", False)["captions_always"] is False
+    assert s.set("match_rate", "always")["match_rate"] == "always"
+    with pytest.raises(ValueError):
+        s.set("match_rate", "sometimes")

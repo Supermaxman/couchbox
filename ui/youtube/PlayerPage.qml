@@ -131,7 +131,7 @@ FocusScope {
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
-        mode = "controls"; button = 4; ending = false; captionsOn = "";
+        mode = "controls"; button = 4; ending = false; captionsOn = ""; captionsOffHere = false; autoCaptionsDone = false;
         // the next video (Up next's countdown, a card): the controls take the focus back from the
         // end screen, which hides (focus left on it went nowhere: the box check's steps 26-27)
         if (player.activeFocus && !ctl.activeFocus) ctl.forceActiveFocus();
@@ -170,6 +170,7 @@ FocusScope {
     function begin() {
         if (s.url.indexOf("demo://") === 0) video.load(s.url, startAt);
         else video.loadWith(s.url, startAt, s.opts || "");
+        autoCaptionsLater.restart();
         begin2();
     }
     property int waitLeft: 0
@@ -349,6 +350,26 @@ FocusScope {
         Y.call("captions", {url: c.url}, r => { if (player && player.videoId === id && r.path) video.addSubtitleTrack(r.path, c.name); },
                e => { if (player && player.videoId === id) { Y.toast("Captions aren't available right now."); if (captionsOn === c.name) captionsOn = ""; } });
     }
+    // captions, as Settings → Captions has them: English first (the video's own, automatic, then
+    // translated), else the video's language; turned off with CC, off for the rest of the video
+    property bool captionsOffHere: false
+    property bool autoCaptionsDone: false
+    function preferredCaptions(list) {
+        const en = c => String(c.lang || "").split("-")[0] === "en";
+        return list.find(c => en(c) && !c.auto) || list.find(c => en(c) && c.auto && !c.translated) || list.find(c => en(c) && c.translated)
+            || list.find(c => !c.auto) || list.find(c => c.auto && !c.translated) || null;
+    }
+    function autoCaptions() {
+        if (autoCaptionsDone || !s || s.live || captionsOn || captionsOffHere || Y.settings.captions_always === false) return;
+        autoCaptionsDone = true;
+        const c = preferredCaptions(s.captions || []);
+        if (c) setCaptions(c);
+    }
+    Connections {                              // once the video has opened (mpv takes a caption file then)
+        target: video
+        function onDurationChanged() { if (video.duration > 0) player.autoCaptions(); }
+    }
+    Timer { id: autoCaptionsLater; interval: 1500; onTriggered: if (video.duration > 0) player.autoCaptions() }   // (a preloaded one: opened already)
     function setCaptions(c) {
         if (!c) { video.setSubtitle(0); captionsOn = ""; return; }
         const have = video.subtitles.find(t => t.title === c.name);
@@ -356,11 +377,12 @@ FocusScope {
         captionsOn = c.name;
     }
     function toggleCaptions() {
-        if (captionsOn) return setCaptions(null);
-        const c = (s && s.captions) || [];
-        if (!c.length) return Y.toast("No captions for this video.");
-        setCaptions(c[0]);
-        Y.toast("Captions: " + c[0].name);
+        if (captionsOn) { captionsOffHere = true; return setCaptions(null); }
+        const c = preferredCaptions((s && s.captions) || []);
+        if (!c) return Y.toast("No captions for this video.");
+        captionsOffHere = false;
+        setCaptions(c);
+        Y.toast("Captions: " + c.name);
     }
     function panelPick(i) {
         const o = panelOptions[i];
@@ -381,6 +403,7 @@ FocusScope {
         } else if (panel === "speed") {
             speed = o.x; video.setSpeed(o.x); panel = "";
         } else if (panel === "captions") {
+            captionsOffHere = !o.c;
             setCaptions(o.c || null); panel = "";
         } else if (panel === "save") {
             const add = !o.checked;
