@@ -15,7 +15,7 @@ FocusScope {
     readonly property bool onAdd: index === profiles.length
     readonly property var focused: onAdd ? null : profiles[index]
     function focusDetail() { return {count: profiles.length, brands: profiles.filter(p => !!p.pageId).length, index: index, area: area,
-                                      id: onAdd ? "add" : (focused ? focused.id : "")}; }
+                                      id: onAdd ? "add" : (focused ? focused.id : ""), ids: profiles.map(p => p.id)}; }
     signal chosen(var profile)                // null: watch as a guest
     signal addAccount()
     signal signOut(var profile)
@@ -29,14 +29,17 @@ FocusScope {
             page.profiles = k > 0 ? [all[k]].concat(all.slice(0, k), all.slice(k + 1)) : all;
             const i = page.profiles.findIndex(p => p.id === (focusId || last));
             page.index = Math.max(0, i);
+            page.loaded = true;
             page.area = "row";
             list.currentIndex = page.index;
             list.positionViewAtIndex(page.index, ListView.Beginning);
         });
     }
 
+    property bool loaded: false               // (until the profiles come, OK would be on Add account: nothing)
     Keys.onPressed: e => {
         const k = e.key;
+        if (!loaded && k !== Qt.Key_Escape && k !== Qt.Key_Back) { e.accepted = true; return; }
         if (k === Qt.Key_Escape || k === Qt.Key_Back) {
             if (area === "menu") area = "gear"; else closed();
         } else if (area === "menu") {

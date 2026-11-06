@@ -687,20 +687,31 @@ def account_core(r, want):
     from History resuming where YouTube says, the channel and notification panels, Settings → Accounts."""
     f = r.step("profiles", lambda f: (f.get("page") == "profiles" and d(f).get("count", 0) >= 1,
                                       f"{d(f).get('count')} profiles, {d(f).get('brands')} brand channels"), settle=4)
-    count = d(f).get("count", 0)
-    remote(*["left"] * count, gap=0.3)  # the first, then each in turn, to the one wanted
-    seen = []
-    for _ in range(count + 1):
-        g = focus()
-        if d(g).get("area") != "row":
-            break
-        seen.append(d(g).get("id"))
-        if d(g).get("id") == want:
-            break
-        remote("right", gap=0.4)
+    # it opens on the profile last watched as (first in the row), never on Add account
+    r.step("profiles-last-first", lambda f: (d(f).get("index") == 0 and d(f).get("id") not in ("", "add"),
+                                             f"on {d(f).get('id')} (index {d(f).get('index')}) of {d(f).get('ids')}"), settle=0)
+    ids = d(f).get("ids") or []
+    if want not in ids:
+        print(f"ABORT: {want} isn't among Who's watching's profiles {ids}; pressing nothing", flush=True)
+        return False
+
+    def settled(check, wait=3.0):  # the remote's presses reach the app a moment later: wait for them
+        end = time.monotonic() + wait
+        while time.monotonic() < end:
+            if check(focus()):
+                return True
+            time.sleep(0.25)
+        return check(focus())
+
+    remote(*["left"] * (len(ids) + 1), gap=0.3)  # to the first, then right to the one wanted (by its place)
+    settled(lambda g: d(g).get("index") == 0)
+    remote(*["right"] * ids.index(want), gap=0.4)
+    settled(lambda g: d(g).get("id") == want)
     r.step("profiles-account", lambda f: (d(f).get("id") == want and d(f).get("area") == "row",
-                                          f"on the account after {len(seen)} ({len(set(seen))} different)"), settle=0.5)
-    if not ok_on(lambda f: d(f).get("id") == want and d(f).get("area") == "row", "the account"):
+                                          f"on {d(f).get('id')}, the account at {ids.index(want)} of {len(ids)}"), settle=0.5)
+    if not settled(lambda g: d(g).get("id") == want and d(g).get("area") == "row", 1.0) or not ok_on(
+        lambda f: d(f).get("id") == want and d(f).get("area") == "row", "the account"
+    ):
         print("ABORT: the account isn't on Who's watching; pressing nothing more", flush=True)
         return False
     r.step("home-signed-in", lambda f: (f.get("page") == "home" and f.get("signedIn") and f.get("profile") == want and d(f).get("rows", 0) > 0,
