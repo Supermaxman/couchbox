@@ -231,7 +231,9 @@ class Worker:
             return info, True
         if a.get("player"):
             t = time.monotonic()
-            info = ytstream.from_player(a["player"], ytjs.solve)
+            import requests
+
+            info = ytstream.from_player(a["player"], ytjs.solve, requests.get)
             del t
             if phases is not None:
                 phases.marks.append((0, "decipher"))

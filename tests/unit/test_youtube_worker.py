@@ -175,3 +175,39 @@ def test_sixty_frames_win_at_the_same_height():
     assert ytstream.pick(fs, max_height=720)[0]["format_id"] == "298"
     out = ytstream.playable({"formats": fs})
     assert out["itags"] == ["299", "140"] and out["fps"] == 60
+
+
+MASTER = """#EXTM3U
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-STREAM-INF:BANDWIDTH=1500000,CODECS="avc1.4d401f,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=30
+https://manifest.example/720.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,CODECS="avc1.64002a,mp4a.40.2",RESOLUTION=1920x1080,FRAME-RATE=60
+https://manifest.example/1080p60.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x1080,FRAME-RATE=30
+https://manifest.example/1080p30.m3u8
+"""
+
+
+def test_a_live_stream_signed_in_from_its_hls_master():
+    pr = {
+        "playabilityStatus": {"status": "OK"},
+        "videoDetails": {"videoId": "live0000001", "isLive": True, "title": "Live"},
+        "streamingData": {"hlsManifestUrl": "https://manifest.example/master.m3u8"},
+    }
+
+    class R:
+        text = MASTER
+
+    info = ytstream.from_player(pr, lambda n, sig: ({}, {}), lambda url, timeout=None: R())
+    out = ytstream.playable(info)
+    assert out["live"] and out["url"] == "https://manifest.example/1080p60.m3u8" and out["fps"] == 60 and out["protocol"] == "hls"
+
+
+def test_hls_sound_renditions_go_with_video_only_variants():
+    master = """#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="234",NAME="Default",DEFAULT=YES,URI="https://manifest.example/audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,CODECS="avc1.64002a",RESOLUTION=1920x1080,FRAME-RATE=30,AUDIO="234"
+https://manifest.example/video.m3u8
+"""
+    out = ytstream.playable({"live_status": "is_live", "formats": ytstream.hls_formats(master)})
+    assert out["url"] == "https://manifest.example/video.m3u8" and "audio-file=" in out["opts"] and "audio.m3u8" in out["opts"]

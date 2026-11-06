@@ -477,7 +477,55 @@ def _storyboard_formats(pr: dict[str, Any], duration: float) -> list[dict[str, A
     return out
 
 
-def from_player(pr: dict[str, Any], solve: Any) -> dict[str, Any]:
+def hls_formats(master: str) -> list[dict[str, Any]]:
+    """A live stream's HLS master playlist as yt-dlp's formats: each variant (its resolution, frame
+    rate, codecs: with sound of its own or not) and each sound rendition."""
+    import re
+
+    def attrs(line: str) -> dict[str, str]:
+        return {k: v.strip('"') for k, v in re.findall(r'([A-Z0-9-]+)=("[^"]*"|[^,]*)', line.split(":", 1)[1])}
+
+    out, lines = [], [ln.strip() for ln in master.splitlines()]
+    for i, ln in enumerate(lines):
+        if ln.startswith("#EXT-X-MEDIA:"):
+            a = attrs(ln)
+            if a.get("TYPE") == "AUDIO" and a.get("URI"):
+                note = ("Default, " if a.get("DEFAULT") == "YES" else "") + (a.get("NAME") or "")
+                out.append(
+                    {
+                        "format_id": f"hls-audio-{a.get('GROUP-ID', '')}",
+                        "url": a["URI"],
+                        "vcodec": "none",
+                        "acodec": "mp4a.40.2",
+                        "protocol": "m3u8_native",
+                        "format_note": note,
+                        "language_preference": 10 if a.get("DEFAULT") == "YES" else -1,
+                    }
+                )
+        elif ln.startswith("#EXT-X-STREAM-INF:") and i + 1 < len(lines) and lines[i + 1].startswith("http"):
+            a = attrs(ln)
+            codecs = [c.strip() for c in a.get("CODECS", "").split(",") if c.strip()]
+            w, _, h = a.get("RESOLUTION", "").partition("x")
+            fps = float(a.get("FRAME-RATE") or 0)
+            v = next((c for c in codecs if not c.startswith("mp4a")), "none")
+            muxed = any(c.startswith("mp4a") for c in codecs) and not a.get("AUDIO")
+            out.append(
+                {
+                    "format_id": f"hls-{h or '?'}p{round(fps) or ''}",
+                    "url": lines[i + 1],
+                    "vcodec": v,
+                    "acodec": next(c for c in codecs if c.startswith("mp4a")) if muxed else "none",
+                    "width": int(w) if w.isdigit() else None,
+                    "height": int(h) if h.isdigit() else None,
+                    "fps": fps or None,
+                    "tbr": int(a.get("BANDWIDTH") or 0) / 1000,
+                    "protocol": "m3u8_native",
+                }
+            )
+    return out
+
+
+def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, Any]:
     """yt-dlp's information, as extract() gives it, from an InnerTube /player response (the TV
     client, signed in: no ads, so DASH opens at once): every format's address deciphered (its
     signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). Unavailable when it has
@@ -490,6 +538,24 @@ def from_player(pr: dict[str, Any], solve: Any) -> dict[str, Any]:
     vd = pr.get("videoDetails") or {}
     sd = pr.get("streamingData") or {}
     raw = (sd.get("adaptiveFormats") or []) + (sd.get("formats") or [])
+    if (vd.get("isLive") or not raw) and sd.get("hlsManifestUrl") and get is not None:
+        # live: its HLS master playlist, the variants and the sound read from it (no challenges)
+        r = get(sd["hlsManifestUrl"], timeout=(8, 20))
+        formats = hls_formats(getattr(r, "text", "") or "")
+        if not formats:
+            raise Unavailable("no live variants: the usual way")
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": formats,
+            "subtitles": {},
+            "automatic_captions": {},
+        }
     if vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw:
         raise Unavailable("not a plain video (live): the usual way")
     pending = []

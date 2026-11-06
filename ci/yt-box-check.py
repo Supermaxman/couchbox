@@ -4,7 +4,7 @@ couchbox-input and the compositor), a screenshot after each step (couchbox-scree
 had the focus then (the app's control socket: {"op": "focus"}).
 
   sudo python3 ci/yt-box-check.py [--profile auto|guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep] [--perf]
-  sudo python3 ci/yt-box-check.py --clean-history RUNDIR [--profile ACCOUNT] [--dry-run]
+  sudo python3 ci/yt-box-check.py --clean-history RUNDIR [--profile ACCOUNT] [--ids ID,ID...] [--dry-run]
 
 It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running) and
 walks it with the remote. Each step prints PASS or FAIL with what it saw, and saves
@@ -27,7 +27,8 @@ Who's watching; and casting's control socket, DIAL and SSDP.
 
 --clean-history RUNDIR removes from the account's History the videos that run played (from
 RUNDIR/app.log) that weren't in it before (RUNDIR/history-before.json), only among today's
-entries, listing them first (--dry-run: only that).
+entries, listing them first (--dry-run: only that). --ids ID,ID... takes exactly those instead
+(RUNDIR is then just where it looks for nothing more), whether or not they were there before.
 
 --perf times the app instead (as the profile given): start until Home shows, a video at once and
 one after 5 s on its card (prefetched) from OK to its first picture, a resumed one, 10 more and the
@@ -329,7 +330,11 @@ def player_walk(r):
     remote("up", *(["left"] if at >= 12 else []))
     r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
     mid = picture(r, "paused-seek-mid-picture")
-    remote("left", "left", "left", "left")
+    for _ in range(12):  # back to 0:00 (a resumed video starts minutes in): Left, 4 at a time, until there
+        if d(focus()).get("position", 99) <= 1:
+            break
+        remote("left", "left", "left", "left", gap=0.3)
+        time.sleep(0.8)
     r.step("paused-seek-0", lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"), settle=2.5)
     picture(r, "paused-seek-0-picture", ref=mid)
     remote("right", "right", "right")
@@ -425,13 +430,30 @@ def tabs_walk(r, live=True):
     anchor("home")
 
 
+def settings_to(item, row=None):
+    """In Settings: Down the list to `item` (by its id), then Right and Down its rows to `row`."""
+    if d(focus()).get("area") == "rows":
+        remote("left")
+    for _ in range(14):
+        if d(focus()).get("item") == item:
+            break
+        remote("down", gap=0.3)
+    if row is None or d(focus()).get("item") != item:
+        return
+    remote("right")
+    for _ in range(14):
+        if d(focus()).get("row") == row:
+            return
+        remote("down", gap=0.3)
+
+
 def settings_walk(r):
     """Settings beside the open guide; Extras' Hide Shorts flipped and flipped back (this TV's own
     setting, not the account's); About."""
     to_entry("settings")
     r.step("settings", lambda f: (f.get("section") == "settings" and "settings" in f["focus"] and f.get("guideOpen"),
                                   f"guide open {f.get('guideOpen')}, on {d(f).get('item')}"), settle=2)
-    remote(*["down"] * 6, "right", "down", "down")  # Accounts, Video, Player, Ads, Guide tabs, SponsorBlock -> Extras
+    settings_to("extras", "hide_shorts")  # by the focus report's ids (groups come and go: Link TV & phone)
     f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)
     was = d(f).get("on")
     if d(f).get("row") == "hide_shorts":
@@ -439,7 +461,7 @@ def settings_walk(r):
         r.step("settings-flip", lambda f: (d(f).get("on") == (not was), f"Hide Shorts {was} -> {d(f).get('on')}"), settle=1.5)
         remote("ok")
         r.step("settings-flip-back", lambda f: (d(f).get("on") == was, f"Hide Shorts back to {d(f).get('on')}"), settle=1.5)
-    remote("left", "down")
+    settings_to("about")
     r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
 
 
@@ -1117,13 +1139,17 @@ def clean_history(a):
     want = a.profile if ":" in a.profile else a.profile + ":"
     if a.profile in ("guest", "pick"):
         sys.exit("--clean-history needs --profile ACCOUNT (the account the run played as)")
-    ids = played_in(a.clean_history)
-    print(f"the run in {a.clean_history} played {len(ids)} videos: {' '.join(ids)}", flush=True)
-    try:  # already in today's History before the run (the household's): left alone
-        with open(os.path.join(a.clean_history, "history-before.json")) as fh:
-            before = set(json.load(fh))
-    except (OSError, ValueError):
-        before = set()
+    if a.ids:  # given: exactly these (the earlier runs' plays the owner OK'd), today's entries only
+        ids, before = [v.strip() for v in a.ids.split(",") if v.strip()], set()
+        print(f"{len(ids)} videos given: {' '.join(ids)}", flush=True)
+    else:
+        ids = played_in(a.clean_history)
+        print(f"the run in {a.clean_history} played {len(ids)} videos: {' '.join(ids)}", flush=True)
+        try:  # already in today's History before the run (the household's): left alone
+            with open(os.path.join(a.clean_history, "history-before.json")) as fh:
+                before = set(json.load(fh))
+        except (OSError, ValueError):
+            before = set()
     kept = [v for v in ids if v in before]
     ids = [v for v in ids if v not in before]
     for vid in kept:
@@ -1158,6 +1184,7 @@ def main():
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--clean-history", metavar="RUNDIR", help="remove from the profile's History (today's entries) the videos a run played")
     ap.add_argument("--dry-run", action="store_true", help="with --clean-history: only list what would be removed")
+    ap.add_argument("--ids", help="with --clean-history: these videos (comma-separated) instead of the run's, History before it or not")
     ap.add_argument("--perf", action="store_true", help="time the app instead (COUCHBOX_YT_TIMING): start, 3 videos, Search, Home's rows")
     a = ap.parse_args()
     if a.profile == "auto":  # signed in when there's an account: YouTube bot-checks a TV's many guest streams
