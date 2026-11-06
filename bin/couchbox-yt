@@ -216,7 +216,7 @@ class Backend(QObject):
     def signed_player(self, vid):
         import time
         if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept a week: no yt-dlp needed for them)
-            self.clients = self.kept_json("clients-2.json", lambda: self.worker.call("clients", timeout=60))
+            self.clients = self.kept_json("clients-3.json", lambda: self.worker.call("clients", timeout=60))
         if getattr(self, "player_js", (0, None))[0] < time.time():
             self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
         sts = self.player_js[1].get("sts") or 0
@@ -224,14 +224,23 @@ class Backend(QObject):
                 "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}}
         keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
         dash_live = None
+        live_seen = False
         for name in self.SIGNED_CLIENTS + self.LIVE_CLIENTS:
+            if name in self.LIVE_CLIENTS and not live_seen:
+                break                                # (those only for live streams)
             c = self.clients.get(name)
             if not c:
+                print(f"yt {vid}: {name}: not among yt-dlp's clients here", flush=True)
                 continue
-            resp = self.yt.call("player", body, cache=False, as_client=c)
+            try:
+                resp = self.yt.call("player", body, cache=False, as_client=c)
+            except youtube.YouTubeError as err:
+                print(f"yt {vid}: {name}: {err.args[0] if err.args else err}", flush=True)
+                continue
             sd = resp.get("streamingData") or {}
             ok = (resp.get("playabilityStatus") or {}).get("status") == "OK"
-            is_live = bool((resp.get("videoDetails") or {}).get("isLive"))
+            is_live = bool((resp.get("videoDetails") or {}).get("isLive")) or (live_seen and name in self.LIVE_CLIENTS)
+            live_seen = live_seen or is_live
             if is_live:  # a live stream: its HLS from whichever client gives it (said in the log: what each gave)
                 print(f"yt {vid}: live, {name}: {(resp.get('playabilityStatus') or {}).get('status')}, HLS {bool(sd.get('hlsManifestUrl'))}, "
                       f"DASH {bool(sd.get('dashManifestUrl'))}, formats {len(sd.get('adaptiveFormats') or [])}", flush=True)

@@ -1070,7 +1070,7 @@ class YouTube:
 
     # ---------------------------------------------------------------- requests
     def _post(self, ep: str, body: dict[str, Any], token: str = "", page: str = "", as_client: dict | None = None) -> dict[str, Any]:
-        client = dict(self.client, **(as_client or {}))
+        client = dict(self.client, **{k: v for k, v in (as_client or {}).items() if k != "clientNameId"})
         if self.visitor:
             client["visitorData"] = self.visitor
         context: dict[str, Any] = {"client": client}
@@ -1079,8 +1079,12 @@ class YouTube:
         headers = {"X-Goog-Visitor-Id": self.visitor} if self.visitor else {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        if as_client:
-            headers.update({"User-Agent": client["userAgent"], "X-YouTube-Client-Version": client["clientVersion"]})
+        if as_client:  # another client's: its own name (number), version and user agent in the headers
+            headers.update({"X-YouTube-Client-Version": client.get("clientVersion", "")})
+            if client.get("userAgent"):
+                headers["User-Agent"] = client["userAgent"]
+            if as_client.get("clientNameId"):
+                headers["X-YouTube-Client-Name"] = as_client["clientNameId"]
         r = self.s.post(f"{API}/{ep}?prettyPrint=false", json={"context": context, **body}, headers=headers, timeout=TIMEOUT)
         if r.status_code >= 400:
             raise YouTubeError(f"YouTube said {r.status_code} ({ep})", r.status_code)
