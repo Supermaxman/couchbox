@@ -14,6 +14,7 @@ every second, so a recorder that died still leaves a file that plays.
       --cursor                       with the mouse pointer
       --preset P --crf Q             libx264's (default ultrafast and 23)
       --remote "wait:1 down ok"      press these buttons (couchbox-remote), then stop: a scripted clip
+      --tail S                       with --remote: keep recording S seconds after the last press (default 1)
   couchbox-record stop               finish the recording and print its file
   couchbox-record status             recording or not, the file, how long, how big, the encoder's CPU
   couchbox-record export FILE [OUT] [--mp4 | --webm | --gif] [--width W] [--fps F] [--from S] [--to S | --seconds N]
@@ -215,6 +216,7 @@ class Recorder:
         signal.signal(signal.SIGINT, self.on_stop)
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
         syslog.openlog("couchbox-record", syslog.LOG_PID)
+        pop_why()  # a stale one, from a stop that came too late
         try:
             self.begin()
         except Exception as err:  # Failed, or the helper or GStreamer couldn't run at all
@@ -271,7 +273,7 @@ class Recorder:
         o = self.o
         while True:
             if self.stop_asked:
-                return "stopped"
+                return pop_why() or "stopped"
             if self.gst.poll() is not None:
                 return f"GStreamer ended (exit {self.gst.returncode})"
             if self.helper.poll() is not None:
@@ -403,11 +405,26 @@ def recover(s):
     done(s["file"], "the recorder had stopped; saved what it wrote", time.time() - s.get("started", time.time()))
 
 
-def stop(_a):
+def pop_why():
+    """Why `stop` was asked (stop --why, from start --remote), once."""
+    path = os.path.join(state_dir(), "why")
+    try:
+        with open(path) as f:
+            why = f.read().strip()
+        os.remove(path)
+        return why
+    except OSError:
+        return ""
+
+
+def stop(a):
     s = read_state()
     if s.get("state") != "recording":
         sys.exit("couchbox-record: not recording" + (f" (the last: {s['file']})" if s.get("file") else ""))
     if recorder_running():
+        if a.why:
+            with open(os.path.join(state_dir(), "why"), "w") as f:
+                f.write(a.why)
         os.kill(s["pid"], signal.SIGTERM)
         deadline = time.monotonic() + STOP_WAIT + 15
         while recorder_running():
@@ -514,16 +531,19 @@ def export(a):
 
 
 def scripted(a, argv):
-    """start, press the buttons, stop: one command for a clip of exactly those presses."""
+    """start, press the buttons, keep recording --tail seconds (what the last press did), stop:
+    one command for a clip of exactly those presses."""
     me = [sys.executable, os.path.abspath(sys.argv[0])]
-    remote = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "couchbox-remote")
+    remote = os.environ.get("COUCHBOX_REMOTE") or os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "couchbox-remote")
     if subprocess.run([*me, *argv], check=False).returncode:
         sys.exit(1)
+    why = "the --remote script failed"
     try:
-        subprocess.run([sys.executable, remote, *shlex.split(a.remote)], check=False)
-        time.sleep(1)  # what the last press did, on screen
+        if subprocess.run([sys.executable, remote, *shlex.split(a.remote)], check=False).returncode == 0:
+            why = "the --remote script ended"
+            time.sleep(a.tail)
     finally:
-        rc = subprocess.run([*me, "stop"], check=False).returncode
+        rc = subprocess.run([*me, "stop", "--why", why], check=False).returncode
     sys.exit(rc)
 
 
@@ -560,7 +580,9 @@ def parser():
     s.add_argument("--crf", type=bounded(0, 51), default=CRF)
     s.add_argument("--max-mb", type=bounded(16, 32768), default=MAX_MB)
     s.add_argument("--remote", metavar="BUTTONS")
-    sub.add_parser("stop", help="finish the recording and print its file")
+    s.add_argument("--tail", type=bounded(0, 600, float), default=1.0, metavar="S")
+    st = sub.add_parser("stop", help="finish the recording and print its file")
+    st.add_argument("--why", help=argparse.SUPPRESS)
     sub.add_parser("status", help="recording or not, and how it's going")
     e = sub.add_parser("export", help="a small clip of a recording, for the README")
     e.add_argument("file")
@@ -591,7 +613,9 @@ def main():
         return export(a)
     if a.cmd == "start" and a.remote:
         return scripted(a, start_argv(a))
-    as_tv_user(start_argv(a) if a.cmd == "start" else [a.cmd])
+    if a.cmd == "start" and a.tail != 1.0 and not a.remote:
+        sys.exit("couchbox-record: --tail goes with --remote")
+    as_tv_user(start_argv(a) if a.cmd == "start" else [a.cmd] + (["--why", a.why] if a.cmd == "stop" and a.why else []))
     if a.cmd == "start":
         a.file = a.file and os.path.abspath(a.file)
         return start(a)

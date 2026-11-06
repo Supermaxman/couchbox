@@ -92,6 +92,11 @@ with open(out, "wb") as f:
 FFPROBE = """#!/bin/sh
 [ -s "$7" ] && echo 1.5
 """
+REMOTE = """#!/usr/bin/python3
+import os, sys
+open(os.path.join(os.path.dirname(__file__), "remote.args"), "w").write(" ".join(sys.argv[1:]))
+sys.exit(sys.argv[1:] == ["nope"])
+"""
 FFMPEG = """#!/bin/sh
 echo "$@" > "$(dirname "$0")/ffmpeg.args"
 for last; do :; done
@@ -103,7 +108,13 @@ head -c 2048 /dev/zero > "$last"
 def box(tmp_path, monkeypatch):
     bin_ = tmp_path / "bin"
     bin_.mkdir()
-    for name, body in (("couchbox-screencast", HELPER), ("gst-launch-1.0", GST), ("ffprobe", FFPROBE), ("ffmpeg", FFMPEG)):
+    for name, body in (
+        ("couchbox-screencast", HELPER),
+        ("gst-launch-1.0", GST),
+        ("ffprobe", FFPROBE),
+        ("ffmpeg", FFMPEG),
+        ("couchbox-remote", REMOTE),
+    ):
         (bin_ / name).write_text(body)
         (bin_ / name).chmod(0o755)
     run = tmp_path / "run"
@@ -111,6 +122,7 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
     monkeypatch.setenv("COUCHBOX_SCREENCAST", str(bin_ / "couchbox-screencast"))
     monkeypatch.setenv("COUCHBOX_TV_USER", pwd.getpwuid(os.getuid()).pw_name)  # no sudo
+    monkeypatch.setenv("COUCHBOX_REMOTE", str(bin_ / "couchbox-remote"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(run))
     monkeypatch.setenv("HOME", str(tmp_path))
     return tmp_path
@@ -181,3 +193,13 @@ def test_export(box):
     args = (box / "bin/ffmpeg.args").read_text().split()
     assert args[args.index("-ss") + 1] == "2" and args[args.index("-t") + 1] == "5.5"
     assert cli("export", str(src), "--from", "5", "--to", "3").returncode == 1
+
+
+def test_a_scripted_clip(box):
+    r = cli("start", str(box / "s.mp4"), "--remote", "wait:0.2 down ok", "--tail", "0.5")
+    assert r.returncode == 0, r.stderr
+    assert (box / "bin/remote.args").read_text().split() == ["wait:0.2", "down", "ok"]
+    assert state(box)["reason"] == "the --remote script ended" and "the --remote script ended" in cli("status").stdout
+    cli("start", str(box / "t.mp4"), "--remote", "nope")
+    assert state(box)["reason"] == "the --remote script failed"
+    assert "--tail goes with --remote" in cli("start", "--tail", "3").stderr
