@@ -169,7 +169,8 @@ couchbox/
 ├─ shell/                   Plasma Bigscreen home overrides + theme (GPL files live here)
 ├─ system/                  systemd units, udev rules, dracut module, sddm/kwin/logind snippets,
 │                           Chromium policy and web extension, desktop files, polkit (if needed)
-├─ packaging/debian/        couchbox (arch all) and couchbox-media (arm64)
+├─ helpers/                 couchbox-screencast.c (C: KWin's screen stream for couchbox-record)
+├─ packaging/debian/        couchbox (arm64: Python and data, plus that helper) and couchbox-media (arm64)
 ├─ image/                   build-image.sh, rootfs overlay, rpi-imager.json template
 ├─ media/                   rpi-ffmpeg and jellyfin-desktop build recipes
 ├─ installer/install.sh     for an existing Ubuntu Server 26.10 Pi 5

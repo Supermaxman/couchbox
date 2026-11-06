@@ -1,5 +1,9 @@
 #!/bin/sh
 set -e
+# made by the postinst (capture_python), not shipped
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+    rm -f /usr/lib/couchbox/libexec/couchbox-capture-python /usr/lib/couchbox/libexec/couchbox-capture-python.new
+fi
 if [ "$1" = purge ]; then
     rm -rf /etc/couchbox /var/lib/couchbox /usr/local/share/plasma/plasmoids/org.kde.bigscreen.homescreen
     rm -f /usr/local/share/applications/couchbox-web-*.desktop /etc/sudoers.d/90-couchbox-admin \

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Couchbox screen recorder
+Comment=Streams the TV screen to couchbox-record; lets this small helper ask KWin for it
+Exec=/usr/lib/couchbox/libexec/couchbox-screencast
+NoDisplay=true
+X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1

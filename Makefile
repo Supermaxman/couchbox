@@ -5,11 +5,34 @@ PY := $(DESTDIR)/usr/lib/python3/dist-packages
 SHARE := $(DESTDIR)/usr/share/couchbox
 LIBBIN := $(DESTDIR)/usr/lib/couchbox/bin
 SYSD := $(DESTDIR)/usr/lib/systemd
+LIBEXEC := $(DESTDIR)/usr/lib/couchbox/libexec
+# couchbox-screencast: KWin's screen stream for couchbox-record (wayland-client, KDE's protocol XML)
+PROTO := /usr/share/plasma-wayland-protocols/zkde-screencast-unstable-v1.xml
+CC ?= cc
+PKG_CONFIG ?= pkg-config
+HELPER := build/helpers/couchbox-screencast
 
-.PHONY: install stage test lint clean deb
+.PHONY: install stage test lint clean deb helpers
 
-install:
-	install -d $(PY) $(SHARE) $(LIBBIN) $(DESTDIR)/usr/bin
+helpers: $(HELPER)
+
+build/helpers/zkde-screencast-unstable-v1-client-protocol.h: $(PROTO)
+	install -d build/helpers
+	wayland-scanner client-header $< $@
+
+build/helpers/zkde-screencast-unstable-v1-protocol.c: $(PROTO)
+	install -d build/helpers
+	wayland-scanner private-code $< $@
+
+$(HELPER): helpers/couchbox-screencast.c build/helpers/zkde-screencast-unstable-v1-client-protocol.h build/helpers/zkde-screencast-unstable-v1-protocol.c
+	wl=$$($(PKG_CONFIG) --cflags --libs wayland-client) && \
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Wall -Wextra -Wno-unused-parameter -Ibuild/helpers -o $@ \
+	  helpers/couchbox-screencast.c build/helpers/zkde-screencast-unstable-v1-protocol.c \
+	  $(LDFLAGS) $$wl
+
+install: $(HELPER)
+	install -d $(PY) $(SHARE) $(LIBBIN) $(LIBEXEC) $(DESTDIR)/usr/bin
+	install -m 755 $(HELPER) $(LIBEXEC)/
 	cp -r src/couchbox $(PY)/
 	find $(PY)/couchbox -name __pycache__ -prune -exec rm -rf {} +
 	install -m 755 bin/couchbox-* $(LIBBIN)/

@@ -31,7 +31,7 @@ PRs merged to main ──► release-please keeps a "Release vX.Y.Z" PR updated 
 
 | Asset | What |
 |---|---|
-| `couchbox_X.Y.Z_all.deb` | Main package |
+| `couchbox_X.Y.Z_arm64.deb` | Main package |
 | `couchbox-media_X.Y.Z_arm64.deb` | FFmpeg fork and Jellyfin Desktop |
 | `couchbox-X.Y.Z-rpi5.img.xz` | Flashable image (+ `.sha256`) |
 | `install.sh` | Installer for existing Ubuntu |
@@ -52,7 +52,7 @@ PRs merged to main ──► release-please keeps a "Release vX.Y.Z" PR updated 
   "base": {"os": "ubuntu", "version": "26.10"},
   "min_from": "0.2.0",
   "assets": {
-    "couchbox_0.4.0_all.deb": {"sha256": "…", "size": 812345},
+    "couchbox_0.4.0_arm64.deb": {"sha256": "…", "size": 812345},
     "couchbox-media_0.4.0_arm64.deb": {"sha256": "…", "size": 40123456}
   },
   "notes_md": "…release notes…",
@@ -103,7 +103,7 @@ download (resumable, to /var/lib/couchbox/updates/X.Y.Z/) ─► verify signatur
 
 **Install:**
 1. Keep the current debs as the rollback set. Write `state/update.json` = `{from, to, started}`.
-2. `apt-get install --allow-downgrades ./couchbox_X.Y.Z_all.deb ./couchbox-media_…deb`. This pulls new Ubuntu dependencies; if that fails, nothing changes and the update fails without effect.
+2. `apt-get install --allow-downgrades ./couchbox_X.Y.Z_arm64.deb ./couchbox-media_…deb`. This pulls new Ubuntu dependencies; if that fails, nothing changes and the update fails without effect.
 3. Restart per `restart`. Reboot only if `reboot` is set **and** the TV is in standby (otherwise wait).
 
 **Health check** (`couchbox doctor --post-update`, at most 3 min):

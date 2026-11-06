@@ -1,1 +1,3 @@
 interest-noawait /usr/share/plasma/plasmoids/org.kde.bigscreen.homescreen
+# python3 upgraded: renew couchbox-screenshot's link to it (couchbox.postinst, capture_python)
+interest-noawait /usr/bin

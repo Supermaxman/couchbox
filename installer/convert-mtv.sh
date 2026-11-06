@@ -102,7 +102,7 @@ fetch_release() {  # -> $REL (a directory with the .debs and couchbox's Python p
     done < <(python3 -c 'import json,sys; [print(n, a["sha256"]) for n, a in json.load(open(sys.argv[1]))["assets"].items() if n.endswith(".deb")]' "$REL/release.json")
     ok "Couchbox $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$REL/release.json"), signature checked"
   fi
-  mkdir -p "$REL/x" && dpkg-deb -x "$REL"/couchbox_*_all.deb "$REL/x"
+  mkdir -p "$REL/x" && dpkg-deb -x "$REL"/couchbox_*.deb "$REL/x"
   PYLIB=$(dirname "$(find "$REL/x/usr/lib/python3" -type d -name couchbox -path '*/couchbox' | head -1)")
   [[ -d $PYLIB/couchbox ]] || { fail "no couchbox Python package in the .deb"; return 1; }
 }

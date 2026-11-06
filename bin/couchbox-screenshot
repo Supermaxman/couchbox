@@ -3,10 +3,10 @@
 
 Asks KWin for the whole screen (org.kde.KWin.ScreenShot2.CaptureWorkspace) as the TV user:
 everything shown, apps, the home screen and overlays (the voice indicator, the Frigate pop-up).
-KWin only answers programs whose .desktop file lists that interface;
-/usr/share/applications/couchbox-screenshot.desktop does, for /usr/bin/python3, which therefore
-covers any Python program in the TV session (as Spectacle's covers Spectacle); Flatpak apps
-can't reach KWin's D-Bus service.
+KWin only answers programs whose .desktop file lists that interface, matched by executable, and
+other .desktop files name /usr/bin/python3 too (KWin takes the first match). So this runs on its
+own link to Python, /usr/lib/couchbox/libexec/couchbox-capture-python (made and kept current by
+the package), which /usr/share/applications/couchbox-screenshot.desktop authorizes.
 
   couchbox-screenshot [FILE]          default /tmp/couchbox-screenshot.png
   couchbox-screenshot --width 960 F   scaled down (smaller to send around)
@@ -17,19 +17,26 @@ import pwd
 import sys
 
 TV_USER = os.environ.get("COUCHBOX_TV_USER", "tv")
+CAPTURE_PYTHON = "/usr/lib/couchbox/libexec/couchbox-capture-python"
+
+
+def interpreter():
+    """The Python KWin lets take screenshots (from a checkout without the package: this one)."""
+    return CAPTURE_PYTHON if os.access(CAPTURE_PYTHON, os.X_OK) else "/usr/bin/python3"
 
 
 def as_tv_user():
-    """Run again as the TV user, in its session (KWin and D-Bus are its)."""
+    """Run again as the TV user, in its session (KWin and D-Bus are its), on the authorized Python."""
     tv = pwd.getpwnam(TV_USER)
+    me = [interpreter(), os.path.abspath(sys.argv[0])] + sys.argv[1:]
     if os.geteuid() == tv.pw_uid:
         os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{tv.pw_uid}")
         os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{tv.pw_uid}/bus")
+        if me[0] == CAPTURE_PYTHON and os.readlink("/proc/self/exe") != CAPTURE_PYTHON:
+            os.execv(me[0], me)  # noqa: S606
         return
     run = f"/run/user/{tv.pw_uid}"
-    os.execvp("sudo", ["sudo", "-u", TV_USER, "env", f"XDG_RUNTIME_DIR={run}",
-                       f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", "/usr/bin/python3", os.path.abspath(sys.argv[0])]
-              + sys.argv[1:])
+    os.execvp("sudo", ["sudo", "-u", TV_USER, "env", f"XDG_RUNTIME_DIR={run}", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", *me])  # noqa: S606
 
 
 def capture():
