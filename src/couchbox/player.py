@@ -199,6 +199,8 @@ class MpvVideo(QQuickFramebufferObject):
             # local playlists (nebula.py writes one with the streams it picked) may
             # point at https segments
             demuxer_lavf_o="protocol_whitelist=[file,http,https,tcp,tls,crypto,data]",
+            # HTTP: an app's own options (COUCHBOX_MPV_HTTP, ffmpeg's: the YouTube app's ranged requests)
+            **({"stream_lavf_o": os.environ["COUCHBOX_MPV_HTTP"]} if os.environ.get("COUCHBOX_MPV_HTTP") else {}),
             keep_open="yes",
             idle="yes",
             osc="no",
@@ -227,6 +229,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
         self._t_loaded = 0.0
         self._t_start = 0
+        self._pos_pending = False  # a position update is due (they're passed on 10 times a second)
         self._pos = 0.0
         self._dur = 0.0
         self._paused = False
@@ -274,11 +277,20 @@ class MpvVideo(QQuickFramebufferObject):
         self._renderer = _Renderer(self)  # kept alive for Qt Quick (it owns it in C++)
         return self._renderer
 
+    @Slot()
+    def _emit_pos(self):
+        self._pos_pending = False
+        self.positionChanged.emit()
+
     @Slot(str, object)
     def _on_prop(self, name, value):
         if name == "time-pos":
+            # every frame's position, passed on at most every 100 ms (each one re-evaluates the
+            # player's clock, bar and SponsorBlock check: dozens a second while a start decodes)
             self._pos = float(value or 0)
-            self.positionChanged.emit()
+            if not self._pos_pending:
+                self._pos_pending = True
+                QTimer.singleShot(100, self._emit_pos)
             self._debug("time-pos")
         elif name == "duration":
             self._dur = float(value or 0)
