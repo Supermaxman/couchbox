@@ -461,3 +461,64 @@ def test_a_bare_account_id_is_its_own_channel(tmp_path):
     assert y.auth.last_profile() == f"{acct['id']}:"
     assert y.find_profile(f"{acct['id']}:page-9")["pageId"] == "page-9"
     assert y.find_profile("nobody") is None and y.find_profile("guest") is None
+
+
+def history_tile(vid, title, token):
+    menu = {
+        "menuRenderer": {
+            "items": [
+                {
+                    "menuServiceItemRenderer": {
+                        "text": {"runs": [{"text": "Remove from watch history"}]},
+                        "serviceEndpoint": {"feedbackEndpoint": {"feedbackToken": token}},
+                    }
+                }
+            ]
+        }
+    }
+    return {
+        "tileRenderer": {
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": vid,
+            "metadata": {"tileMetadataRenderer": {"title": {"simpleText": title}}},
+            "onSelectCommand": {"watchEndpoint": {"videoId": vid}},
+            "onLongPressCommand": {"showMenuCommand": {"menu": menu}},
+        }
+    }
+
+
+def test_the_check_removes_only_todays_entries_of_its_own_videos(tmp_path):
+    def shelf(title, tiles):
+        return {
+            "shelfRenderer": {
+                "headerRenderer": {"shelfHeaderRenderer": {"title": {"simpleText": title}}},
+                "content": {"horizontalListRenderer": {"items": tiles}},
+            }
+        }
+
+    history = {
+        "contents": {
+            "sectionListRenderer": {
+                "contents": [
+                    shelf(
+                        "Today",
+                        [
+                            history_tile("played00001", "Played by the check", "tok-1"),
+                            history_tile("family00001", "Watched by the family", "tok-2"),
+                        ],
+                    ),
+                    shelf("Yesterday", [history_tile("played00002", "Played yesterday", "tok-3")]),
+                ]
+            }
+        }
+    }
+    y, acct = client(tmp_path, {"browse": [history], "feedback": [{"feedbackResponses": [{"isProcessed": True}]}]})
+    y.use(acct["id"])
+    today = y.history_today()
+    assert [(e["id"], e["token"], e["label"]) for e in today] == [
+        ("played00001", "tok-1", "Remove from watch history"),
+        ("family00001", "tok-2", "Remove from watch history"),
+    ]
+    assert y.remove_from_history("tok-1")
+    _, body, headers = y.s.posts[-1]
+    assert body["feedbackTokens"] == ["tok-1"] and headers["Authorization"].startswith("Bearer ")

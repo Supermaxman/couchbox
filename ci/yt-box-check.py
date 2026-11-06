@@ -20,6 +20,10 @@ part-watched video from History (under a minute: it must start where YouTube say
 and notification panels opened and closed, and Settings → Accounts. Nothing is liked,
 subscribed, saved or changed; the guest's "Sign in" steps and casting aren't run.
 
+--clean-history RUNDIR --profile ACCOUNT [--dry-run] removes from the account's History the
+videos that run played (from RUNDIR/app.log), only their entries in today's History, listing
+them first (--dry-run: only that). Signed-in runs go into the household's History otherwise.
+
 --perf times the app instead (as the profile given, guest by default): start until Home shows,
 3 videos at once and 3 after 5 s on their card (prefetched) from OK to their first picture (the stream in yt-dlp's parts, mpv opening it,
 the first frame, a TV refresh switch), opening Search, 3 of Home's rows (keys, calls, late
@@ -994,13 +998,67 @@ def summary(p):
     p.rows["summary"] = out
 
 
+def played_in(rundir):
+    """The videos a run opened (its app.log: the timing's play lines, SponsorBlock's look-ups)."""
+    import re
+
+    ids = []
+    try:
+        with open(os.path.join(rundir, "app.log"), errors="replace") as fh:
+            for ln in fh:
+                m = re.search(r"yt-timing play id=([\w-]{11})\b", ln) or re.search(r"\byt ([\w-]{11}): SponsorBlock", ln)
+                if m and m.group(1) not in ids:
+                    ids.append(m.group(1))
+    except OSError as err:
+        sys.exit(f"no app.log in {rundir}: {err}")
+    return ids
+
+
+def clean_history(a):
+    """--clean-history RUNDIR [--dry-run] --profile ACCOUNT: today's History entries of the videos
+    that run played, removed from the account (listed first; --dry-run lists only). Run it the
+    day of the run: entries are matched in History's "Today", and only those videos'."""
+    from couchbox import appctl
+
+    want = a.profile if ":" in a.profile else a.profile + ":"
+    if a.profile in ("guest", "pick"):
+        sys.exit("--clean-history needs --profile ACCOUNT (the account the run played as)")
+    ids = played_in(a.clean_history)
+    print(f"the run in {a.clean_history} played {len(ids)} videos: {' '.join(ids)}", flush=True)
+    if not ids:
+        return 0
+    if not appctl.running("yt"):
+        subprocess.run([*tv_env(), "systemd-run", "--user", "--quiet", "--collect", f"--unit={UNIT}-clean-{int(time.time())}",
+                        "--setenv=COUCHBOX_MUTE=1", "--", APP, "--profile", want], check=True)
+        for _ in range(60):
+            if appctl.running("yt"):
+                break
+            time.sleep(1)
+    look = appctl.call("yt", {"op": "call", "fn": "historyRemove", "args": {"ids": ids, "dryRun": True, "profile": want}}, timeout=60)
+    for e in look["entries"]:
+        print(f"  {'would remove' if e['removable'] else 'CAN NOT remove'} {e['id']} ({e['shelf']}): {e['title']}", flush=True)
+    for vid in look["notToday"]:
+        print(f"  not in today's History: {vid}", flush=True)
+    if a.dry_run or not any(e["removable"] for e in look["entries"]):
+        print("dry run: nothing removed" if a.dry_run else "nothing to remove", flush=True)
+        return 0
+    done = appctl.call("yt", {"op": "call", "fn": "historyRemove", "args": {"ids": ids, "dryRun": False, "profile": want}}, timeout=120)
+    for e in done["entries"]:
+        print(f"  {'removed' if e['removed'] else 'NOT removed'} {e['id']}: {e['title']}", flush=True)
+    return 0 if all(e["removed"] for e in done["entries"] if e["removable"]) else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="guest")
     ap.add_argument("--out", default="/tmp/yt-check")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--clean-history", metavar="RUNDIR", help="remove from the profile's History (today's entries) the videos a run played")
+    ap.add_argument("--dry-run", action="store_true", help="with --clean-history: only list what would be removed")
     ap.add_argument("--perf", action="store_true", help="time the app instead (COUCHBOX_YT_TIMING): start, 3 videos, Search, Home's rows")
     a = ap.parse_args()
+    if a.clean_history:
+        sys.exit(clean_history(a))
     r = Run(a.out)
     # an account (its id, or account:page for a brand channel): the signed-in steps, read only
     want = "" if a.profile in ("guest", "pick") else a.profile if ":" in a.profile else a.profile + ":"

@@ -1222,6 +1222,54 @@ class YouTube:
         self._sts = (time.time() + 3600, sts)
         return sts
 
+    # ---------------------------------------------------------------- the box check's cleanup
+    def history_today(self, newest: int = 0) -> list[dict[str, Any]]:
+        """History's entries watched today, as YouTube's TV app lists them, with each one's "Remove
+        from watch history" (its feedback token, from the entry's own menu): [{id, title, shelf,
+        token, label}] (token "" when the entry carries no such option). A History without days
+        (one grid): its `newest` first entries instead."""
+        self.need_profile("see your history")
+        resp = self.call("browse", {"browseId": "FEhistory"}, cache=False)
+        out = []
+
+        def labels(o):
+            return " ".join(text(v) for k, v in o.items() if k in ("text", "title", "label") and isinstance(v, (dict, str)))
+
+        def removal(tile):
+            for f in _find(tile, "feedbackEndpoint"):
+                tok = (f or {}).get("feedbackToken")
+                if tok:
+                    return tok
+            return ""
+
+        def menu_label(tile):
+            for item in _find(tile, "menuServiceItemRenderer"):
+                if (json.dumps(item).find("feedbackEndpoint")) >= 0:
+                    return text(item.get("text"))
+            return ""
+
+        def entry(tile, where):
+            t = parse_tile(tile)
+            if t and t.get("type") in ("video", "live", "short"):
+                out.append({"id": t["id"], "title": t["title"], "shelf": where, "token": removal(tile), "label": menu_label(tile)})
+
+        shelves = list(_find(resp, "shelfRenderer"))
+        titles = [text(dig(s, "headerRenderer", "shelfHeaderRenderer", "title") or s.get("title")).strip() for s in shelves]
+        if any(t.lower() in ("today", "yesterday") for t in titles):
+            for shelf, title in zip(shelves, titles, strict=True):
+                if title.lower() == "today":
+                    for tile in _find(shelf, "tileRenderer"):
+                        entry(tile, title)
+        else:
+            for tile in list(_find(resp, "tileRenderer"))[:newest]:
+                entry(tile, f"the {newest} newest")
+        return out
+
+    def remove_from_history(self, token: str) -> bool:
+        resp = self.call("feedback", {"feedbackTokens": [token]}, cache=False)
+        self.changed()
+        return bool(dig(resp, "feedbackResponses", 0, "isProcessed"))
+
     def player_probe(self, video_id: str, clients: dict[str, dict] | None = None) -> dict[str, Any]:
         """player_one as the app's own client and as each of clients (yt-dlp's: name -> context)."""
         out = {"app": self.player_one(video_id)}

@@ -134,6 +134,25 @@ class Backend(QObject):
         return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"],
                 "visitor": self.yt.visitor}         # the TV's visitor data: the quick way (no watch webpage)
 
+    def history_remove(self, ids, dry_run=True, profile=None):
+        """The box check's cleanup (ci/yt-box-check.py --clean-history): today's History entries of
+        the videos it played (ids), removed (dry_run: only listed), as the profile watching or
+        `profile`. Nothing else is touched."""
+        y = self.yt
+        if profile and not self.demo:
+            y = youtube.YouTube(self.yt.dir, client=dict(self.yt.client))
+            y.profile = y.find_profile(profile) or {}
+            if not y.profile:
+                raise youtube.YouTubeError(f"No profile {profile} on this TV.")
+        want = set(ids)
+        found = [e for e in y.history_today(newest=len(want) + 3) if e["id"] in want]
+        for e in found:
+            tok = e.pop("token")                     # (never in the answer)
+            e["removable"] = bool(tok)
+            e["removed"] = bool(tok) and not dry_run and y.remove_from_history(tok)
+        missing = sorted(want - {e["id"] for e in found})
+        return {"dryRun": dry_run, "entries": found, "notToday": missing}
+
     def probe(self, vid, profile=None):
         """playerProbe: as the profile watching, or as `profile` (an id) without switching the app's."""
         y = self.yt
@@ -339,6 +358,7 @@ class Backend(QObject):
             "prefetch": lambda: self.prefetch(a["id"]),
             "mark": lambda: (started(a.get("step", "")), {"ok": True})[1],
             "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
+            "historyRemove": lambda: self.history_remove(a.get("ids") or [], bool(a.get("dryRun", True)), a.get("profile")),
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),
