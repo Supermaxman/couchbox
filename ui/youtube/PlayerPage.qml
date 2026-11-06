@@ -24,7 +24,7 @@ FocusScope {
     // the controls' keys land here (the player handles them): the focus comes back to it, not
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
-    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), scrub: Math.round(scrub), paused: !!video.paused, row: related.index, rows: related.count,
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), scrub: Math.round(scrub), dvrBehind: Math.round(dvrBehind), liveTarget: Math.round(liveTarget), paused: !!video.paused, row: related.index, rows: related.count,
                                           captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),

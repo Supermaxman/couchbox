@@ -484,6 +484,21 @@ def tabs_walk(r, live=True):
         r.step("live-behind", lambda f: ("behind live" in (f.get("toast") or ""), f"toast {f.get('toast')!r}"), settle=1)
         remote("right", "right")
         r.step("live-forward", lambda f: (bool(f.get("toast")), f"toast {f.get('toast')!r}"), settle=1)
+        # a deep rewind: Left x6 (a minute back, past what mpv has read): a moment after the last
+        # press the stream comes from its segments that far back; it plays; Right back to live
+        time.sleep(2)
+        remote(*["left"] * 6, gap=0.3)
+        r.step("live-rewind-target", lambda f: ("behind live" in (f.get("toast") or ""), f"toast {f.get('toast')!r}, to {d(f).get('liveTarget')}"), settle=0.3)
+        time.sleep(1.5)  # (the 1.2 s commit)
+        f = r.step("live-rewound", lambda f: (d(f).get("dvrBehind", -1) > 25 and d(f).get("live"),
+                                              f"{d(f).get('dvrBehind')} s behind, from its segments; message {d(f).get('message')!r}"), settle=6)
+        p1 = d(f).get("position", 0)
+        r.step("live-rewound-plays", lambda f: (d(f).get("position", 0) > p1 and d(f).get("dvrBehind", -1) > 25, f"position {p1} -> {d(f).get('position')}"), settle=4)
+        picture(r, "live-rewound-picture")
+        remote(*["right"] * 8, gap=0.3)
+        r.step("live-edge-again", lambda f: (f.get("toast") == "Live" or d(f).get("dvrBehind", 0) < 0, f"toast {f.get('toast')!r}, dvr {d(f).get('dvrBehind')}"), settle=0.5)
+        time.sleep(1.5)
+        r.step("live-edge-plays", lambda f: (d(f).get("dvrBehind", 0) < 0 and d(f).get("live"), f"dvr {d(f).get('dvrBehind')}, message {d(f).get('message')!r}"), settle=5)
     anchor("home")
 
 
@@ -719,6 +734,36 @@ def menu_test(r, want):
     time.sleep(4)
     after = playlists(vid)
     new = [k for k, p in after.items() if k not in before and p.get("saved")]
+    if not new:  # YouTube won't make one from the TV: an existing playlist instead, the video out again straight after
+        print(f"(New playlist refused: {focus().get('toast')!r}; an existing playlist instead)", flush=True)
+        target = next((k for k, p in after.items() if k not in ("WL", "LL") and not p.get("saved")), "")
+        if not target:
+            print("ABORT: no playlist without the video to try", flush=True)
+            return
+        remote("ok@1.2")
+        to_row("playlist")
+        remote("ok")
+        time.sleep(2)
+        for _ in range(40):
+            if d(focus()).get("atId") == target:
+                break
+            remote("down", gap=0.3)
+        if d(focus()).get("atId") != target:
+            print(f"ABORT: couldn't reach the playlist {target} in the menu", flush=True)
+            remote("back", "back")
+            return
+        remote("ok")
+        time.sleep(3)
+        saved = playlists(vid).get(target, {}).get("saved")
+        r.step("menu-saved", lambda f: (saved is True, f"{vid} in {target}: {saved}; notice {f.get('toast')!r}"), settle=0)
+        remote("ok")  # the same row again: out of it
+        time.sleep(3)
+        gone = playlists(vid).get(target, {}).get("saved")
+        r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in {target}: {gone}"), settle=0)
+        if gone is not False:
+            print(f"WARNING: {vid} may still be in {target}: take it out by hand", flush=True)
+        remote("back", "back")
+        return
     r.step("menu-saved", lambda f: (len(new) == 1, f"new playlists with {vid}: {new}; notice {f.get('toast')!r}"), settle=0)
     for pid in new:
         try:

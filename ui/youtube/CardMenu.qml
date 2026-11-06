@@ -13,16 +13,18 @@ FocusScope {
     property var returnFocus: null
     property string mode: "main"              // main | playlists | share
     property var playlists: []                // Save to playlist's: [{id, title, saved}]
+    property bool canCreate: true             // YouTube makes playlists from this TV (it refused once: not offered)
     property var shared: ({})                 // Share's: {url, qr}
     readonly property bool video: !!item && (item.type === "video" || item.type === "live" || item.type === "short")
     function fb(kind) { return ((item && item.feedback) || []).find(f => f.kind === kind) || null; }
-    function focusDetail() { return {mode: mode, keys: options.map(o => o.key === "fb" ? o.fb.kind : o.key), at: (options[index] || {}).key || ""}; }
+    function focusDetail() { return {mode: mode, keys: options.map(o => o.key === "fb" ? o.fb.kind : o.key), at: (options[index] || {}).key || "",
+                                     atId: ((options[index] || {}).pl || {}).id || ""}; }
     readonly property var options: {
         const o = [];
         if (!item) return o;
         if (mode === "playlists") {
             for (const p of playlists) o.push({key: "pl", label: p.title, icon: p.id === "WL" ? "history" : "list", checked: p.saved, pl: p});
-            o.push({key: "newpl", label: "New playlist", icon: "plus"});   // (named "New playlist": the remote has no keyboard)
+            if (canCreate) o.push({key: "newpl", label: "New playlist", icon: "plus"});   // (named "New playlist": the remote has no keyboard)
             return o;
         }
         if (mode === "share") return o;
@@ -80,7 +82,7 @@ FocusScope {
             if (needAccount("save videos")) return;
             Y.call("saveOptions", {id: it.id}, r => {
                 if (menu.item !== it || !menu.visible) return;
-                menu.playlists = r.playlists || []; menu.mode = "playlists"; menu.index = 0;
+                menu.playlists = r.playlists || []; menu.canCreate = r.canCreate !== false; menu.mode = "playlists"; menu.index = 0;
             }, e => { Y.toast(e); close(); });
         } else if (o.key === "pl") {
             const add = !o.pl.saved;
