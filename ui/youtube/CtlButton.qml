@@ -7,7 +7,7 @@ Rectangle {
     property bool on: false
     property bool big: false
     property bool plain: false
-    property real weight: 2.5                // the icon's stroke (Shorts' column: lighter outlines)
+    property real weight: 1.6                // the icon's stroke: YouTube's 2 px rounded outlines
     width: (big ? 96 : 72) * Y.u
     height: width
     radius: width / 2
@@ -17,6 +17,6 @@ Rectangle {
         name: parent.icon
         size: (parent.big ? 44 : 38) * Y.u
         color: parent.on ? Y.ink : Y.text
-        weight: parent.weight                // as heavy as the TV app's (about 4 px at this size)
+        weight: parent.weight
     }
 }

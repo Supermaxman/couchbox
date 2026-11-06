@@ -210,7 +210,6 @@ FocusScope {
                     required property int index
                     icon: modelData
                     plain: true
-                    weight: 1.9                // outlines, as YouTube's
                     on: page.area === "side" && page.side === index + 1 && page.activeFocus
                 }
             }

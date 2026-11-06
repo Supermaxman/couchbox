@@ -15,6 +15,7 @@
 // bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
 // profile left off, and reports what's watched (History, resume on every device).
 import QtQuick
+import QtQuick.Effects
 
 FocusScope {
     id: player
@@ -407,7 +408,7 @@ FocusScope {
     readonly property var controls: [
         {key: "channel"}, {key: "description", label: "Description"}, {key: "bell", icon: "bell"},
         {key: "prev", icon: "prev"}, {key: "play"}, {key: "next", icon: "next"},
-        {key: "like", icon: "like"}, {key: "dislike", icon: "dislike"}, {key: "comments", icon: "comments"},
+        {key: "like", icon: "like"}, {key: "dislike", icon: "dislike"}, {key: "comments", icon: "comments-round"},
         {key: "ask", icon: "sparkle"}, {key: "save", icon: "save"}, {key: "thanks", icon: "thanks"},
         {key: "cc", icon: "cc"}, {key: "settings", icon: "settings"}
     ]
@@ -675,8 +676,7 @@ FocusScope {
                                 width: Math.max(0, Math.min(parent.width, bar.frac * bar.width - parent.x))
                                 height: parent.height
                                 radius: height / 2
-                                color: Y.text
-                                gradient: player.mode === "bar" || player.mode === "chapters" ? Y.progress : null
+                                color: player.mode === "bar" || player.mode === "chapters" ? Y.red : Y.text   // (solid: YouTube's seek bar)
                             }
                         }
                     }
@@ -722,6 +722,8 @@ FocusScope {
                     x: frameAt.anchorX - frameAt.cardW / 2; y: 387 * Y.u
                     width: frameAt.cardW; height: 189 * Y.u
                     clip: true
+                    layer.enabled: visible             // its corners rounded (8 px), as YouTube's
+                    layer.effect: MultiEffect { maskEnabled: true; maskSource: frameMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
                     Image {
                         source: frameAt.sheet ? frameAt.sheet.url : ""
                         width: frameAt.sb ? frameAt.sb.cols * parent.width : 0
@@ -733,9 +735,15 @@ FocusScope {
                         smooth: true
                     }
                 }
+                Rectangle {
+                    id: frameMask
+                    width: frameAt.cardW; height: 189 * Y.u; radius: 8 * Y.u
+                    visible: false
+                    layer.enabled: true
+                }
                 Text {
                     x: frameAt.anchorX - width / 2
-                    y: (frameAt.sheet ? 612 : 648) * Y.u - height / 2
+                    y: 649 * Y.u - height / 2
                     text: Y.clock(player.pos)
                     color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
                     style: Text.Raised; styleColor: "#60000000"
@@ -891,7 +899,7 @@ FocusScope {
                         color: "#1fffffff"
                         Row {
                             id: tools
-                            CtlButton { icon: player.captionsOn ? "cc-filled" : "cc"; on: row.on(12); plain: true }
+                            CtlButton { icon: "cc"; on: row.on(12); plain: true }   // (outlined either way, as YouTube's)
                             CtlButton { icon: "settings"; on: row.on(13); plain: true }
                         }
                     }

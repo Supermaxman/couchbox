@@ -265,6 +265,8 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
             if "badge" in r:
                 b = dig(r, "badge", "metadataBadgeRenderer") or {}
                 label = b.get("label") or ""
+                if label.strip().lower() in ("continue watching", "resume"):
+                    continue  # the red bar says so: YouTube's TV app shows the card's usual lines
                 if label:
                     out["badges"].append(label)
                     if b.get("style") == "BADGE_STYLE_TYPE_YPC":  # paid (Try now, Buy, Rent): green
@@ -1429,6 +1431,22 @@ class YouTube:
         """The first Home video's menu as this profile gets it, for wiring the card menu: each
         entry's renderer, words, icon and the endpoints in it (their names, never tokens)."""
         resp = self.call("browse", {"browseId": "FEwhat_to_watch"}, cache=False)
+        lines = None  # a part-watched card's lines as YouTube sends them (each item: text or badge)
+        for t in _find(resp, "tileRenderer"):
+            if isinstance(t, dict) and lines is None and "thumbnailOverlayResumePlaybackRenderer" in json.dumps(t.get("header") or {}):
+                meta = dig(t, "metadata", "tileMetadataRenderer") or {}
+                lines = [
+                    [
+                        {"text": text((li.get("lineItemRenderer") or {}).get("text"))[:60]}
+                        if "text" in (li.get("lineItemRenderer") or {})
+                        else {
+                            "badge": dig(li, "lineItemRenderer", "badge", "metadataBadgeRenderer", "label") or "",
+                            "style": dig(li, "lineItemRenderer", "badge", "metadataBadgeRenderer", "style") or "",
+                        }
+                        for li in dig(line, "lineRenderer", "items") or []
+                    ]
+                    for line in meta.get("lines") or []
+                ]
         for t in _find(resp, "tileRenderer"):
             if isinstance(t, dict) and t.get("contentType") == "TILE_CONTENT_TYPE_VIDEO":
                 cmd = t.get("onLongPressCommand") or {}
@@ -1438,7 +1456,7 @@ class YouTube:
                         {k for k in json.dumps(e["entry"]).replace('"', " ").split() if k.endswith("Endpoint") or k.endswith("Command")}
                     )
                     entries.append({"label": e["label"], "icon": e["icon"], "keys": sorted(e["entry"]), "endpoints": found})
-                return {"top": sorted(cmd), "menu": sorted(cmd.get("showMenuCommand") or {}), "entries": entries}
+                return {"top": sorted(cmd), "menu": sorted(cmd.get("showMenuCommand") or {}), "entries": entries, "partWatchedLines": lines}
         return {"entries": [], "note": "no video tile on Home"}
 
     def feedback(self, token: str) -> dict[str, Any]:
