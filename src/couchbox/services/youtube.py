@@ -979,10 +979,28 @@ def parse_short_sequence(resp: dict[str, Any]) -> dict[str, Any]:
     return {"items": out, "more": resp.get("continuation") or ""}
 
 
+def entity_subscribed(resp: dict[str, Any], key: str) -> bool | None:
+    """A subscription's state from an answer's entity mutations (subscriptionStateEntity), or None."""
+    if not key:
+        return None
+    for m in _find(resp.get("frameworkUpdates") or {}, "mutations"):
+        for x in m if isinstance(m, list) else []:
+            if isinstance(x, dict) and x.get("entityKey") == key:
+                st = dig(x, "payload", "subscriptionStateEntity")
+                if isinstance(st, dict) and "subscribed" in st:
+                    return bool(st["subscribed"])
+    return None
+
+
 def parse_short(resp: dict[str, Any]) -> dict[str, Any]:
     """reel/reel_item_watch: a Short's title, channel and Subscribe (the right of the Shorts player)."""
     h = next(iter(_find(resp, "reelPlayerHeaderRenderer")), {}) or {}
     sub = next((b for b in _find(resp.get("overlay") or resp, "subscribeButtonRenderer") if isinstance(b, dict) and "subscribed" in b), {})
+    # the state itself is an entity the button points at (subscribedEntityKey), in the answer's
+    # frameworkUpdates: the button's own "subscribed" can say false for a subscribed channel
+    state = entity_subscribed(resp, sub.get("subscribedEntityKey", ""))
+    if state is not None:
+        sub = dict(sub, subscribed=state)
     out = {
         "title": text(h.get("reelTitleText")),
         "handle": text(h.get("channelTitleText")),
@@ -1425,6 +1443,12 @@ class YouTube:
             body["params"] = params
         resp = self.call("browse", body)
         page = parse_page(resp)
+        # a shelf of channels only ("Second Channel", "Main Channel") doesn't open the page: the
+        # channel's videos do, as YouTube's TV app has them (it came first, signed in)
+        sh = page["shelves"]
+        k = next((i for i, x in enumerate(sh) if any(it.get("type") != "channel" for it in x.get("items") or [])), 0)
+        if k > 0:
+            page["shelves"] = sh[k : k + 1] + sh[:k] + sh[k + 1 :]
         if not page["header"]:
             page["header"] = {"title": "", "avatar": "", "banner": "", "lines": [], "description": ""}
         if not page["header"].get("description"):  # the TV's header has none: the channel's metadata's
@@ -1608,9 +1632,13 @@ class YouTube:
     def create_playlist(self, title: str, video_id: str) -> dict[str, Any]:
         """A new private playlist with this video in it."""
         self.need_profile("make playlists")
-        resp = self.call(
-            "playlist/create", {"title": title, "videoIds": [video_id] if video_id else [], "privacyStatus": "PRIVATE"}, cache=False
-        )
+        body = {"title": title, "videoIds": [video_id] if video_id else [], "privacyStatus": "PRIVATE"}
+        if video_id:  # the add-to-playlist answer's own New playlist endpoint (its params: what the TV sends)
+            opts = self.call("playlist/get_add_to_playlist", {"videoIds": [video_id]}, cache=False)
+            ep = next((e for e in _find(opts, "createPlaylistServiceEndpoint") if isinstance(e, dict)), None)
+            if ep:
+                body.update({k: v for k, v in ep.items() if k in ("params", "videoIds")})
+        resp = self.call("playlist/create", body, cache=False)
         self.changed()
         return {"id": resp.get("playlistId", ""), "title": title}
 

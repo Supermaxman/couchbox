@@ -321,3 +321,18 @@ def test_tv_comment_replies_come_from_its_detail_view():
     }
     c = Y.parse_comments(page)
     assert c["items"][0]["repliesToken"] == "tok-replies"
+
+
+def test_a_shorts_subscription_comes_from_its_entity():
+    resp = {
+        "overlay": {
+            "reelPlayerOverlayRenderer": {"subscribeButtonRenderer": {"subscribed": False, "subscribedEntityKey": "k1", "channelId": "UCx"}}
+        },
+        "frameworkUpdates": {
+            "entityBatchUpdate": {
+                "mutations": [{"entityKey": "k1", "payload": {"subscriptionStateEntity": {"key": "k1", "subscribed": True}}}]
+            }
+        },
+    }
+    assert Y.parse_short(resp)["subscribed"] is True
+    assert Y.parse_short({"overlay": {"subscribeButtonRenderer": {"subscribed": False}}})["subscribed"] is False
