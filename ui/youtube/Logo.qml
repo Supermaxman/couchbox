@@ -21,39 +21,40 @@ Row {
     }
     Image {                                   // the name, as strokes (letters, below)
         readonly property var word: logo.word(logo.premium ? "Premium" : "YouTube")
-        height: logo.h * 0.92
+        height: logo.h * 0.86
         width: height * word.width / 20
         anchors.verticalCenter: parent.verticalCenter
         sourceSize: Y.sz(width, height)
         smooth: true
         source: "data:image/svg+xml;utf8," + encodeURIComponent(
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 " + word.width + " 20'>"
-            + "<g fill='none' stroke='" + Y.text + "' stroke-width='3.3' stroke-linecap='butt' stroke-linejoin='round'>" + word.strokes + "</g>"
+            + "<g fill='none' stroke='" + Y.text + "' stroke-width='2.6' stroke-linecap='butt' stroke-linejoin='round'>" + word.strokes + "</g>"
             + "<g fill='" + Y.text + "'>" + word.fills + "</g></svg>")
     }
 
-    // the letters, cap height 20, x-height 12.6 (from y 7.4): [advance, strokes, fills]
+    // the letters, cap height 20, x-height 12.6 (from y 7.4), strokes 2.6 wide: [advance, strokes,
+    // fills]. Capitals are filled shapes (square ends), the rounds slightly squared like YouTube's.
     readonly property var letters: ({
-        "Y": [9.4, "M1.4 1 L4.7 10.4 L8 1 M4.7 10.4 V20", ""],
-        "T": [9.2, "M0.2 2.6 H9 M4.6 2.6 V20", ""],
-        "o": [8.2, "M4.1 9.05 C2.4 9.05 1.65 10.2 1.65 12.4 V15.6 C1.65 17.8 2.4 18.35 4.1 18.35 C5.8 18.35 6.55 17.8 6.55 15.6 V12.4 C6.55 10.2 5.8 9.05 4.1 9.05 Z", ""],
-        "u": [8.2, "M1.65 7.4 V15.6 C1.65 17.6 2.4 18.35 3.9 18.35 C5.6 18.35 6.55 17.4 6.55 15.2 M6.55 7.4 V20", ""],
-        "b": [8.4, "M1.65 0 V20 M1.65 12 C1.65 10 2.6 9.05 4.2 9.05 C5.9 9.05 6.75 10.2 6.75 12.4 V15.6 C6.75 17.8 5.9 18.35 4.2 18.35 C2.6 18.35 1.65 17.4 1.65 15.6", ""],
-        "e": [8.2, "M1.65 13.4 H6.55 V12.4 C6.55 10.2 5.8 9.05 4.1 9.05 C2.4 9.05 1.65 10.2 1.65 12.4 V15.6 C1.65 17.8 2.4 18.35 4.1 18.35 C5.5 18.35 6.3 17.7 6.55 16.3", ""],
-        "P": [8.8, "M1.65 20 V2.6 H4.8 C6.6 2.6 7.3 3.7 7.3 6 V7.4 C7.3 9.7 6.6 10.8 4.8 10.8 H1.65", ""],
-        "r": [6.2, "M1.65 20 V7.4 M1.65 12 C1.65 9.9 2.8 9.05 5.4 9.05", ""],
-        "m": [12.4, "M1.65 20 V7.4 M1.65 11.6 C1.65 9.8 2.5 9.05 3.9 9.05 C5.4 9.05 6.2 9.8 6.2 11.6 V20 M6.2 11.6 C6.2 9.8 7.1 9.05 8.5 9.05 C10 9.05 10.75 9.8 10.75 11.6 V20", ""],
-        "i": [3.3, "M1.65 7.4 V20", "<circle cx='1.65' cy='3.2' r='1.85'/>"]
+        "Y": [9.4, "", "<path d='M0 0H2.9L4.7 6.2 6.5 0H9.4L6 11.3V20H3.4V11.3Z'/>"],
+        "T": [9.0, "", "<path d='M0 0H9V2.6H5.8V20H3.2V2.6H0Z'/>"],
+        "o": [8.0, "M4 8.7C1.9 8.7 1.3 9.7 1.3 11.8V15.6C1.3 17.7 1.9 18.7 4 18.7S6.7 17.7 6.7 15.6V11.8C6.7 9.7 6.1 8.7 4 8.7Z", ""],
+        "u": [8.0, "M1.3 7.4V15.6C1.3 17.7 2 18.7 3.6 18.7 5.4 18.7 6.7 17.5 6.7 15.4M6.7 7.4V20", ""],
+        "b": [8.0, "M1.3 11.8C1.3 9.8 2.6 8.7 4.4 8.7 6.1 8.7 6.7 9.7 6.7 11.8V15.6C6.7 17.7 6.1 18.7 4.4 18.7 2.6 18.7 1.3 17.6 1.3 15.6", "<path d='M0 0H2.6V20H0Z'/>"],
+        "e": [8.0, "M1.3 13.3H6.7V11.8C6.7 9.7 6.1 8.7 4 8.7S1.3 9.7 1.3 11.8V15.6C1.3 17.7 1.9 18.7 4 18.7 5.7 18.7 6.5 17.9 6.7 16.3", ""],
+        "P": [8.6, "M1.3 1.3H4.6C6.6 1.3 7.3 2.4 7.3 4.6V7.2C7.3 9.4 6.6 10.5 4.6 10.5H1.3", "<path d='M0 0H2.6V20H0Z'/>"],
+        "r": [6.0, "M1.3 12.2C1.3 9.8 2.6 8.7 5.6 8.7", "<path d='M0 7.4H2.6V20H0Z'/>"],
+        "m": [12.4, "M1.3 11.6C1.3 9.6 2.2 8.7 3.8 8.7S6.2 9.6 6.2 11.6V20M6.2 11.6C6.2 9.6 7.1 8.7 8.7 8.7S11.1 9.6 11.1 11.6V20", "<path d='M0 7.4H2.6V20H0Z'/>"],
+        "i": [2.6, "", "<path d='M0 7.4H2.6V20H0Z'/><circle cx='1.3' cy='3.3' r='1.65'/>"]
     })
     function word(text) {
         let x = 0, strokes = "", fills = "";
         for (const ch of text) {
             const g = letters[ch];
             if (!g) continue;
-            strokes += "<g transform='translate(" + x + " 0)'><path d='" + g[1] + "'/></g>";
+            if (g[1]) strokes += "<g transform='translate(" + x + " 0)'><path d='" + g[1] + "'/></g>";
             if (g[2]) fills += "<g transform='translate(" + x + " 0)'>" + g[2] + "</g>";
-            x += g[0] + 0.5;
+            x += g[0] + 0.8;
         }
-        return {width: Math.max(1, x - 0.5), strokes: strokes, fills: fills};
+        return {width: Math.max(1, x - 0.8), strokes: strokes, fills: fills};
     }
 }
