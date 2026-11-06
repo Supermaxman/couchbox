@@ -1,0 +1,582 @@
+#!/usr/bin/python3
+"""couchbox-record: record what's on the TV as an MP4, for tests, demos and release notes.
+
+KWin streams the screen only to programs its .desktop files allow: couchbox-screencast, a small
+helper (/usr/lib/couchbox/libexec), asks KWin for a PipeWire stream of the screen and holds it, and
+a GStreamer pipeline reads that stream and encodes it with libx264 (in software: the Pi 5 has no
+H.264 encoder), at nice 10 so the TV's own video keeps the CPU first. The MP4's index is rewritten
+every second, so a recorder that died still leaves a file that plays.
+
+  couchbox-record start [FILE]       in the background; default ~/Videos/couchbox/couchbox-DATE-TIME.mp4
+      --seconds N                    stop by itself after N seconds (default 600, at most 3600)
+      --width W --fps F              default 1920 (never wider than the screen) and 30
+      --audio                        with the TV's sound (PipeWire's monitor of the default output)
+      --cursor                       with the mouse pointer
+      --preset P --crf Q             libx264's (default ultrafast and 23)
+      --remote "wait:1 down ok"      press these buttons (couchbox-remote), then stop: a scripted clip
+  couchbox-record stop               finish the recording and print its file
+  couchbox-record status             recording or not, the file, how long, how big, the encoder's CPU
+  couchbox-record export FILE [OUT] [--gif | --webm | --mp4] [--width W] [--fps F] [--from S] [--seconds N]
+                                     a small clip for the README (default a GIF, 640 wide, 12 fps)
+One recording at a time. It stops by itself at its length, at --max-mb (default 2048), or when the
+disk has less than 1 GB left. Recordings are the TV user's (it runs as tv, like couchbox-screenshot);
+the log of the last one is $XDG_RUNTIME_DIR/couchbox-record/log.
+"""
+import argparse
+import fcntl
+import json
+import os
+import pwd
+import select
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import syslog
+import time
+
+TV_USER = os.environ.get("COUCHBOX_TV_USER", "tv")
+HELPER = os.environ.get("COUCHBOX_SCREENCAST", "/usr/lib/couchbox/libexec/couchbox-screencast")
+WIDTH, FPS, PRESET, CRF = 1920, 30, "ultrafast", 23
+SECONDS, MAX_SECONDS = 600, 3600
+MAX_MB = 2048
+MIN_FREE = 1 << 30  # stop when the disk has less than this left
+STOP_WAIT = 10  # seconds GStreamer gets to finish the file after end-of-stream
+# couchbox-screencast's exit status, when it gave no stream
+HELPER_ERRORS = {
+    2: "KWin doesn't let couchbox-screencast record (is /usr/share/applications/couchbox-screencast.desktop installed?)",
+    3: "KWin refused the screen stream",
+}
+
+
+class Failed(Exception):
+    pass
+
+
+def as_tv_user(argv):
+    """Run again as the TV user, in its session (KWin, PipeWire and D-Bus are its)."""
+    tv = pwd.getpwnam(TV_USER)
+    run = f"/run/user/{tv.pw_uid}"
+    if os.geteuid() == tv.pw_uid:
+        os.environ.setdefault("XDG_RUNTIME_DIR", run)
+        os.environ.setdefault("WAYLAND_DISPLAY", "wayland-0")
+        os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={run}/bus")
+        return
+    env = [f"XDG_RUNTIME_DIR={run}", "WAYLAND_DISPLAY=wayland-0", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus"]
+    os.execvp("sudo", ["sudo", "-u", TV_USER, "env", *env, "/usr/bin/python3", os.path.abspath(sys.argv[0]), *argv])  # noqa: S606
+
+
+# ------------------------------------------------------------------ state
+
+def state_dir():
+    d = os.path.join(os.environ["XDG_RUNTIME_DIR"], "couchbox-record")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
+
+
+def read_state():
+    try:
+        with open(os.path.join(state_dir(), "state.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(state):
+    path = os.path.join(state_dir(), "state.json")
+    with open(path + ".new", "w") as f:
+        json.dump(state, f)
+    os.replace(path + ".new", path)
+
+
+def take_lock():
+    """The recorder's lock (held for as long as it runs), or None while another one runs."""
+    fd = os.open(os.path.join(state_dir(), "lock"), os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def recorder_running():
+    fd = take_lock()
+    if fd is None:
+        return True
+    os.close(fd)
+    return False
+
+
+# ------------------------------------------------------------------ pipeline
+
+def parse_stream(line):
+    """couchbox-screencast's line -> {"node": 55, "serial": 61, "width": 1920, "height": 1080, "output": "HDMI-A-1"}"""
+    s = dict(kv.split("=", 1) for kv in line.split() if "=" in kv)
+    if "node" not in s:
+        raise Failed(f"couchbox-screencast said {line!r}")
+    return {k: (v if k == "output" else int(v)) for k, v in s.items()}
+
+
+def fit(screen_w, screen_h, width):
+    """The recording's size: at most WIDTH wide and never wider than the screen, the screen's shape, even."""
+    if not screen_w or not screen_h:
+        screen_w, screen_h = 1920, 1080
+    w = min(width, screen_w)
+    h = round(screen_h * w / screen_w)
+    return w - w % 2, h - h % 2
+
+
+def pipeline(stream, size, fps, audio, out, seconds, preset=PRESET, crf=CRF):
+    """gst-launch-1.0's command: the screen's PipeWire stream (and the sound's) to an H.264 MP4."""
+    # the serial is the stream's own (KWin 6.2+); the node id can be reused, but older KWin has only that
+    source = f"target-object={stream['serial']}" if stream.get("serial") else f"path={stream['node']}"
+    w, h = size
+    # KWin sends frames only when the screen changes: keepalive repeats the last one each second,
+    # videorate fills the gaps (from the first frame: not back to when the pipeline started). A
+    # full queue drops frames rather than holding up the stream.
+    video = (f"pipewiresrc {source} do-timestamp=true keepalive-time=1000 always-copy=true"
+             f" ! videorate skip-to-first=true ! video/x-raw,framerate={fps}/1 ! videoconvertscale n-threads=2"
+             f" ! video/x-raw,format=I420,width={w},height={h},pixel-aspect-ratio=1/1"
+             " ! queue leaky=downstream max-size-buffers=8 max-size-time=0 max-size-bytes=0"
+             f" ! x264enc speed-preset={preset} pass=qual quantizer={crf} key-int-max={2 * fps}"
+             " ! h264parse ! queue ! mux.")
+    sound = (" pulsesrc device=@DEFAULT_MONITOR@ ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2"
+             " ! avenc_aac bitrate=160000 ! queue ! mux.") if audio else ""
+    # "robust muxing": the index lives in room kept at the start of the file and is rewritten
+    # every second, so the file plays even if the recorder is killed (and needs no remux)
+    mux = f" mp4mux name=mux reserved-max-duration={(seconds + 60) * 10**9} reserved-moov-update-period={10**9} ! filesink"
+    # one argument per word: gst-launch escapes each, so the file's name needs no quoting
+    return ["gst-launch-1.0", "-e", *(video + sound + mux).split(), f"location={out}"]
+
+
+def read_line(f, timeout):
+    """The first line from a pipe, or "" if it closed or TIMEOUT passed first."""
+    buf, deadline = b"", time.monotonic() + timeout
+    while b"\n" not in buf:
+        left = deadline - time.monotonic()
+        if left <= 0 or not select.select([f], [], [], left)[0]:
+            return ""
+        chunk = os.read(f.fileno(), 4096)
+        if not chunk:
+            return ""
+        buf += chunk
+    return buf.split(b"\n", 1)[0].decode(errors="replace")
+
+
+def probe(path):
+    """The file's duration in seconds, or None if it doesn't play."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                       capture_output=True, text=True, check=False)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+def disk_free(path):
+    return shutil.disk_usage(os.path.dirname(path)).free
+
+
+def size_of(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def log_tail(n=2):
+    """The log's last lines, for an error message (not the recorder's own notes)."""
+    try:
+        with open(os.path.join(state_dir(), "log"), errors="replace") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.startswith(("stream:", "pipeline:"))]
+        return " / ".join(lines[-n:])
+    except OSError:
+        return ""
+
+
+# ------------------------------------------------------------------ the recorder (in the background)
+
+class Recorder:
+    """Runs one recording: the helper, the pipeline, the caps; reports to `start` once it's going."""
+
+    def __init__(self, opts, report):
+        self.o, self.report = opts, report
+        self.helper = self.gst = None
+        self.stop_asked = self.killed = False
+
+    def run(self):
+        signal.signal(signal.SIGTERM, self.on_stop)
+        signal.signal(signal.SIGINT, self.on_stop)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        syslog.openlog("couchbox-record", syslog.LOG_PID)
+        try:
+            self.begin()
+        except Exception as err:  # Failed, or the helper or GStreamer couldn't run at all
+            self.end_processes()
+            if os.path.exists(self.o["file"]) and size_of(self.o["file"]) == 0:
+                os.remove(self.o["file"])  # nothing recorded: the name stays free
+            write_state({"state": "failed", "file": self.o["file"], "error": str(err)})
+            self.tell(f"error {err}")
+            return 1
+        self.tell("ok")
+        reason = self.watch()
+        self.finish(reason)
+        return 0
+
+    def on_stop(self, *_):
+        self.stop_asked = True
+
+    def tell(self, msg):
+        os.write(self.report, (msg + "\n").encode())
+        os.close(self.report)
+
+    def begin(self):
+        o = self.o
+        self.helper = subprocess.Popen([HELPER] + (["--cursor"] if o["cursor"] else []),
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        line = read_line(self.helper.stdout, 15)
+        if not line:
+            try:
+                rc = self.helper.wait(5)
+            except subprocess.TimeoutExpired:
+                rc = None
+            raise Failed(HELPER_ERRORS.get(rc, f"couchbox-screencast gave no stream (exit {rc}): {log_tail()}"))
+        stream = parse_stream(line)
+        print(f"stream: {line}", flush=True)
+        o["size"] = fit(stream.get("width"), stream.get("height"), o["width"])
+        cmd = pipeline(stream, o["size"], o["fps"], o["audio"], o["file"], o["seconds"], o["preset"], o["crf"])
+        print("pipeline:", shlex.join(cmd), flush=True)
+        self.t0 = time.monotonic()  # the length counts from here: the file only grows after a second or two
+        self.gst = subprocess.Popen(["nice", "-n", "10", *cmd], stdin=subprocess.DEVNULL)
+        deadline = time.monotonic() + 15
+        while size_of(o["file"]) == 0:
+            if self.gst.poll() is not None:
+                raise Failed(f"GStreamer stopped (exit {self.gst.returncode}): {log_tail()}")
+            if time.monotonic() > deadline:
+                raise Failed(f"no video arrived in 15 s: {log_tail()}")
+            time.sleep(0.2)
+        self.started = time.time()
+        write_state({"state": "recording", "pid": os.getpid(), "gst": self.gst.pid, "helper": self.helper.pid,
+                     "started": self.started, "output": stream.get("output"), **o})
+        syslog.syslog(f"recording {o['file']} ({o['size'][0]}x{o['size'][1]} at {o['fps']} fps, up to {o['seconds']} s)")
+
+    def watch(self):
+        """Wait for a reason to stop."""
+        o = self.o
+        while True:
+            if self.stop_asked:
+                return "stopped"
+            if self.gst.poll() is not None:
+                return f"GStreamer ended (exit {self.gst.returncode})"
+            if self.helper.poll() is not None:
+                return "KWin ended the screen stream"
+            if time.monotonic() - self.t0 >= o["seconds"]:
+                return f"reached {o['seconds']} s"
+            if size_of(o["file"]) >= o["max_mb"] << 20:
+                return f"reached {o['max_mb']} MB"
+            if disk_free(o["file"]) < MIN_FREE:
+                return "the disk is nearly full"
+            time.sleep(0.5)
+
+    def end_processes(self):
+        """End-of-stream to GStreamer (it finishes the file), then let go of the screen stream."""
+        if self.gst and self.gst.poll() is None:
+            self.gst.send_signal(signal.SIGINT)
+            try:
+                self.gst.wait(STOP_WAIT)
+            except subprocess.TimeoutExpired:
+                print(f"GStreamer didn't finish in {STOP_WAIT} s: killed", flush=True)
+                self.killed = True
+                self.gst.kill()  # the file still plays, up to its last index (a second ago)
+                self.gst.wait()
+        if self.helper and self.helper.poll() is None:
+            self.helper.stdin.close()
+            try:
+                self.helper.wait(5)
+            except subprocess.TimeoutExpired:
+                self.helper.kill()
+                self.helper.wait()
+
+    def finish(self, reason):
+        print(f"{time.strftime('%H:%M:%S')} stopping: {reason}", flush=True)
+        self.end_processes()
+        if self.killed:
+            reason += f"; GStreamer didn't finish in {STOP_WAIT} s, so the file ends at its last index"
+        done(self.o["file"], reason, time.time() - self.started)
+
+
+def done(path, reason, elapsed):
+    duration = probe(path)
+    write_state({"state": "done", "file": path, "reason": reason, "duration": duration if duration is not None else elapsed,
+                 "plays": duration is not None, "size": size_of(path)})
+    syslog.syslog(f"recorded {path} ({reason})")
+
+
+# ------------------------------------------------------------------ commands
+
+def default_file():
+    d = os.path.join(os.path.expanduser("~"), "Videos", "couchbox")
+    return os.path.join(d, time.strftime("couchbox-%Y%m%d-%H%M%S.mp4"))
+
+
+def start(a):
+    out = a.file or default_file()
+    if os.path.isdir(out):
+        out = os.path.join(out, os.path.basename(default_file()))
+    try:
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+    except OSError as err:
+        sys.exit(f"couchbox-record: can't make {os.path.dirname(out)} ({err.strerror})")
+    if os.path.exists(out):
+        sys.exit(f"couchbox-record: {out} already exists")
+    if not os.access(os.path.dirname(out), os.W_OK):
+        sys.exit(f"couchbox-record: the TV user can't write to {os.path.dirname(out)}")
+    if not os.access(HELPER, os.X_OK):
+        sys.exit(f"couchbox-record: {HELPER} is missing")
+    if not shutil.which("gst-launch-1.0"):
+        sys.exit("couchbox-record: gst-launch-1.0 is missing (apt install gstreamer1.0-tools)")
+    if disk_free(out) < MIN_FREE + (256 << 20):
+        sys.exit(f"couchbox-record: less than {(MIN_FREE >> 20) + 256} MB left on the disk")
+    lock = take_lock()
+    if lock is None:
+        s = read_state()
+        sys.exit(f"couchbox-record: already recording {s.get('file', '')} (couchbox-record stop)")
+    opts = {"file": out, "seconds": a.seconds, "width": a.width, "fps": a.fps, "audio": a.audio, "cursor": a.cursor,
+            "preset": a.preset, "crf": a.crf, "max_mb": a.max_mb}
+    r, w = os.pipe()
+    if os.fork() == 0:  # the recorder: its own session, its output to the log; it keeps the lock
+        os.close(r)
+        code = 1
+        try:
+            os.setsid()
+            log = os.open(os.path.join(state_dir(), "log"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            null = os.open(os.devnull, os.O_RDONLY)
+            os.dup2(null, 0)
+            os.dup2(log, 1)
+            os.dup2(log, 2)
+            code = Recorder(opts, w).run()
+        except BaseException:
+            import traceback
+
+            traceback.print_exc()
+        finally:
+            os._exit(code)
+    os.close(w)
+    os.close(lock)
+    with os.fdopen(r, "rb") as f:
+        reply = read_line(f, 40)
+    if not reply.startswith("ok"):
+        sys.exit("couchbox-record: " + (reply.removeprefix("error ") or f"the recorder didn't start: {log_tail()}"))
+    s = read_state()
+    w_, h_ = s.get("size", ["?", "?"])
+    print(f"recording {out} ({w_}x{h_} at {a.fps} fps{', with sound' if a.audio else ''}, up to {clock(a.seconds)}); couchbox-record stop")
+
+
+def alive(pid, name):
+    """PID is still the process we started (not a reused number)."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return name.encode() in f.read()
+    except (OSError, TypeError):
+        return False
+
+
+def recover(s):
+    """The recorder died: end what it left running; the file plays up to its last index."""
+    if alive(s.get("gst"), "gst-launch"):
+        os.kill(s["gst"], signal.SIGINT)
+        for _ in range(STOP_WAIT * 5):
+            if not alive(s["gst"], "gst-launch"):
+                break
+            time.sleep(0.2)
+        else:
+            os.kill(s["gst"], signal.SIGKILL)
+    if alive(s.get("helper"), "couchbox-screencast"):
+        os.kill(s["helper"], signal.SIGTERM)
+    syslog.openlog("couchbox-record", syslog.LOG_PID)
+    done(s["file"], "the recorder had stopped; saved what it wrote", time.time() - s.get("started", time.time()))
+
+
+def stop(_a):
+    s = read_state()
+    if s.get("state") != "recording":
+        sys.exit("couchbox-record: not recording" + (f" (the last: {s['file']})" if s.get("file") else ""))
+    if recorder_running():
+        os.kill(s["pid"], signal.SIGTERM)
+        deadline = time.monotonic() + STOP_WAIT + 15
+        while recorder_running():
+            if time.monotonic() > deadline:
+                sys.exit(f"couchbox-record: the recorder didn't stop: {log_tail()}")
+            time.sleep(0.2)
+    else:
+        recover(s)
+    s = read_state()
+    print(f"{s['file']} ({clock(s.get('duration') or 0)}, {mb(s.get('size', 0))}; {s.get('reason')})")
+    if not s.get("plays"):
+        sys.exit(f"couchbox-record: {s['file']} doesn't play: {log_tail()}")
+
+
+def cpu_percent(pid):
+    """The process's average CPU since it started (100 = one core), or None."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            fields = f.read().rsplit(")", 1)[1].split()
+        with open("/proc/uptime") as f:
+            uptime = float(f.read().split()[0])
+    except (OSError, IndexError, ValueError):
+        return None
+    hz = os.sysconf("SC_CLK_TCK")
+    used = (int(fields[11]) + int(fields[12])) / hz  # utime, stime
+    ran = uptime - int(fields[19]) / hz  # starttime
+    return 100 * used / ran if ran > 0 else None
+
+
+def status(_a):
+    s = read_state()
+    if s.get("state") == "recording":
+        if not recorder_running():
+            print(f"the recorder stopped unexpectedly; couchbox-record stop saves {s['file']}")
+            return 1
+        cpu = cpu_percent(s["gst"])
+        w, h = s["size"]
+        print(f"recording {s['file']}\n  {clock(time.time() - s['started'])} of {clock(s['seconds'])}, {mb(size_of(s['file']))},"
+              f" {w}x{h} at {s['fps']} fps, {'with' if s['audio'] else 'no'} sound"
+              + (f", encoder CPU {cpu:.0f}% (100% = one core)" if cpu is not None else ""))
+        return 0
+    if s.get("state") == "failed":
+        print(f"not recording; the last one didn't start: {s.get('error')}")
+    elif s.get("file"):
+        print(f"not recording; the last: {s['file']} ({clock(s.get('duration') or 0)}, {mb(s.get('size', 0))}; {s.get('reason')})")
+    else:
+        print("not recording")
+    return 1
+
+
+def export_command(src, out, fmt, width, fps=0, start=0.0, seconds=0.0):
+    """ffmpeg's command for a small clip of SRC: a looping GIF, a VP9 WebM or a small H.264 MP4."""
+    trim = (["-ss", f"{start:g}"] if start else []) + (["-t", f"{seconds:g}"] if seconds else [])
+    scale = f"scale={width}:-2:flags=lanczos"
+    if fmt == "gif":
+        # one palette for the clip, made from what changes (diff), then dithered lightly
+        vf = (f"fps={fps or 12},{scale},split[a][b];[a]palettegen=stats_mode=diff[p];"
+              "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle")
+        codec = ["-an", "-loop", "0"]
+    elif fmt == "webm":
+        vf = scale + (f",fps={fps}" if fps else "")
+        codec = ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-deadline", "good", "-cpu-used", "4", "-row-mt", "1",
+                 "-c:a", "libopus", "-b:a", "96k"]
+    else:
+        vf = scale + (f",fps={fps}" if fps else "")
+        codec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                 "-c:a", "aac", "-b:a", "128k"]
+    return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *trim, "-i", src, "-vf", vf, *codec, out]
+
+
+def export(a):
+    fmt = "webm" if a.webm else "mp4" if a.mp4 else "gif"
+    src = os.path.abspath(a.file)
+    if not os.path.isfile(src):
+        sys.exit(f"couchbox-record: no file {src}")
+    out = a.out
+    if not out:
+        stem = os.path.splitext(src)[0]
+        out = stem + ("-small.mp4" if fmt == "mp4" else f".{fmt}")
+        if not os.access(os.path.dirname(out), os.W_OK):
+            out = os.path.basename(out)
+    out = os.path.abspath(out)
+    if out == src:
+        sys.exit("couchbox-record: the clip would overwrite its recording")
+    cmd = export_command(src, out, fmt, a.width, a.fps, a.start, a.seconds)
+    if subprocess.run(["nice", "-n", "10", *cmd], check=False).returncode:
+        sys.exit(f"couchbox-record: ffmpeg couldn't make {out}")
+    print(f"{out} ({mb(size_of(out))})")
+
+
+def scripted(a, argv):
+    """start, press the buttons, stop: one command for a clip of exactly those presses."""
+    me = [sys.executable, os.path.abspath(sys.argv[0])]
+    remote = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "couchbox-remote")
+    if subprocess.run([*me, *argv], check=False).returncode:
+        sys.exit(1)
+    try:
+        subprocess.run([sys.executable, remote, *shlex.split(a.remote)], check=False)
+        time.sleep(1)  # what the last press did, on screen
+    finally:
+        rc = subprocess.run([*me, "stop"], check=False).returncode
+    sys.exit(rc)
+
+
+def clock(seconds):
+    seconds = int(seconds)
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def mb(n):
+    return f"{n / (1 << 20):.1f} MB" if n >= 1 << 20 else f"{n >> 10} KB"
+
+
+def bounded(lo, hi, kind=int):
+    def check(v):
+        x = kind(v)
+        if not lo <= x <= hi:
+            raise argparse.ArgumentTypeError(f"{v} isn't between {lo} and {hi}")
+        return x
+
+    return check
+
+
+def parser():
+    p = argparse.ArgumentParser(prog="couchbox-record", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("start", help="start recording, in the background")
+    s.add_argument("file", nargs="?")
+    s.add_argument("--seconds", type=bounded(1, MAX_SECONDS), default=SECONDS)
+    s.add_argument("--width", type=bounded(160, 3840), default=WIDTH)
+    s.add_argument("--fps", type=bounded(1, 60), default=FPS)
+    s.add_argument("--audio", action="store_true")
+    s.add_argument("--cursor", action="store_true")
+    s.add_argument("--preset", default=PRESET, choices=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium"])
+    s.add_argument("--crf", type=bounded(0, 51), default=CRF)
+    s.add_argument("--max-mb", type=bounded(16, 32768), default=MAX_MB)
+    s.add_argument("--remote", metavar="BUTTONS")
+    sub.add_parser("stop", help="finish the recording and print its file")
+    sub.add_parser("status", help="recording or not, and how it's going")
+    e = sub.add_parser("export", help="a small clip of a recording, for the README")
+    e.add_argument("file")
+    e.add_argument("out", nargs="?")
+    kind = e.add_mutually_exclusive_group()
+    kind.add_argument("--gif", action="store_true")
+    kind.add_argument("--webm", action="store_true")
+    kind.add_argument("--mp4", action="store_true")
+    e.add_argument("--width", type=bounded(64, 3840), default=640)
+    e.add_argument("--fps", type=bounded(1, 60), default=0)
+    e.add_argument("--from", dest="start", type=float, default=0.0, metavar="S")
+    e.add_argument("--seconds", type=float, default=0.0)
+    return p
+
+
+def start_argv(a):
+    """`start`'s arguments again, with FILE absolute (for the TV user's run)."""
+    argv = ["start"] + ([os.path.abspath(a.file)] if a.file else [])
+    argv += ["--seconds", str(a.seconds), "--width", str(a.width), "--fps", str(a.fps), "--preset", a.preset,
+             "--crf", str(a.crf), "--max-mb", str(a.max_mb)]
+    return argv + (["--audio"] if a.audio else []) + (["--cursor"] if a.cursor else [])
+
+
+def main():
+    a = parser().parse_args()
+    if a.cmd == "export":
+        return export(a)
+    if a.cmd == "start" and a.remote:
+        return scripted(a, start_argv(a))
+    as_tv_user(start_argv(a) if a.cmd == "start" else [a.cmd])
+    if a.cmd == "start":
+        a.file = a.file and os.path.abspath(a.file)
+        return start(a)
+    sys.exit({"stop": stop, "status": status}[a.cmd](a))
+
+
+if __name__ == "__main__":
+    main()
