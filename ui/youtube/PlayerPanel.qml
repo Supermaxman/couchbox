@@ -47,7 +47,7 @@ FocusScope {
             horizontalAlignment: Text.AlignHCenter
             topPadding: 18 * Y.u
             text: panel.name
-            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Medium
+            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
             elide: Text.ElideRight
         }
         Text {

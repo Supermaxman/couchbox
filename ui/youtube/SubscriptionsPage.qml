@@ -127,7 +127,7 @@ FocusScope {
                     anchors { left: pic.right; leftMargin: 18 * Y.u; right: parent.right; rightMargin: 18 * Y.u; verticalCenter: parent.verticalCenter }
                     text: row.modelData.title || ""
                     color: row.on ? Y.ink : Y.text
-                    font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.DemiBold
+                    font.family: Y.font; font.pixelSize: 31 * Y.u; font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
             }

@@ -47,17 +47,17 @@ FocusScope {
                     facts: [["Watching as", Y.profile ? Y.profile.name : "a guest"]], rows: [{key: "who", label: "Who's watching", button: true}]};
         if (item.key === "video")
             return {title: "Video", body: "Choose the quality while a video plays: the player's settings, then Quality.", facts: [],
-                    rows: [{key: "h264", label: "H.264 only", on: !!st.h264,
+                    rows: [{key: "h264", label: "H.264 only", on: !!st.h264, group: "Formats",
                             desc: "The kind of video this TV plays most smoothly, up to 1080p. Turn it off for other kinds, which may stutter."},
-                           {key: "unlock_resolution", label: "Unlock resolution", on: !!st.unlock_resolution,
+                           {key: "unlock_resolution", label: "Unlock resolution", on: !!st.unlock_resolution, group: "Quality",
                             desc: "Sharper than 1080p, up to 4K, when H.264 only is off"},
-                           {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres,
+                           {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres, group: "Quality",
                             desc: "Skip the versions YouTube sharpened with AI"}]};
         if (item.key === "player")
             return {title: "Player", body: "Keys on a keyboard: P and D faster and slower, A normal speed, C captions, M sound.", facts: [], rows: [
-                {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length"},
-                {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front"},
-                {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue,
+                {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length", group: "On screen"},
+                {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front", group: "Playback"},
+                {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue, group: "Playback",
                  desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
         if (item.key === "wifi")
             return {title: "Link with Wi-Fi", facts: [], rows: [{key: "cast", label: "Cast from phones", on: st.cast !== false,
@@ -81,14 +81,14 @@ FocusScope {
                            ["outro", "Endcards and credits", "The end, after the video's content"], ["preview", "Preview or recap", "What's coming, or what happened before"],
                            ["hook", "Hook", "A teaser at the start"], ["filler", "Filler", "Tangents and jokes not needed for the video"]];
             return {title: "SponsorBlock", body: "Skips sponsor reads and other parts of videos that viewers have marked. The progress bar shows them in colour.",
-                    facts: [], rows: [{key: "sponsorblock", label: "Skip marked parts", on: !!st.sponsorblock, desc: "On for every video; choose which kinds below"}]
-                        .concat(kinds.map(k => ({key: "skip." + k[0], label: "Skip: " + k[1], on: !!sk[k[0]], desc: k[2], off: !st.sponsorblock})))};
+                    facts: [], rows: [{key: "sponsorblock", label: "Skip marked parts", on: !!st.sponsorblock, desc: "On for every video; choose which kinds below", group: "Every video"}]
+                        .concat(kinds.map(k => ({key: "skip." + k[0], label: "Skip: " + k[1], on: !!sk[k[0]], desc: k[2], off: !st.sponsorblock, group: "Parts to skip"})))};
         }
         if (item.key === "extras")
-            return {title: "DeArrow and more", body: "", facts: [], rows: [
-                {key: "dearrow", label: "DeArrow", on: !!st.dearrow, desc: "Clearer titles and pictures, written by viewers, in place of clickbait"},
-                {key: "dislikes", label: "Return YouTube Dislike", on: !!st.dislikes, desc: "How many people disliked a video, shown in its Description"},
-                {key: "hide_shorts", label: "Hide Shorts", on: !!st.hide_shorts, desc: "Leave Shorts out of Home, the tabs, search and channels"}]};
+            return {title: "DeArrow and more", body: "Extras from the community, and what the pages leave out.", facts: [], rows: [
+                {key: "dearrow", label: "DeArrow", on: !!st.dearrow, desc: "Clearer titles and pictures, written by viewers, in place of clickbait", group: "From other viewers"},
+                {key: "dislikes", label: "Return YouTube Dislike", on: !!st.dislikes, desc: "How many people disliked a video, shown in its Description", group: "From other viewers"},
+                {key: "hide_shorts", label: "Hide Shorts", on: !!st.hide_shorts, desc: "Leave Shorts out of Home, the tabs, search and channels", group: "On the pages"}]};
         return {title: "About", body: "", rows: [],
                 facts: [["yt-dlp", a.ytdlp ? a.ytdlp + (a.ytdlpPath ? "  (" + a.ytdlpPath + ")" : "") : "missing: run  sudo couchbox-yt-dlp"],
                         ["JavaScript", a.js || "none: fewer formats (install nodejs)"], ["TV client", a.client || ""]]};
@@ -190,7 +190,7 @@ FocusScope {
     Flickable {
         id: pane
         x: page.listX + 470 * Y.u; y: 192 * Y.u
-        width: page.width - x - 16 * Y.u
+        width: page.width - x - 42 * Y.u
         height: page.height - y - 30 * Y.u
         clip: true
         interactive: false
@@ -283,10 +283,25 @@ FocusScope {
                         spacing: 8 * Y.u
                         Repeater {
                             model: page.rows
-                            Rectangle {
-                                id: r
+                            Column {                   // a row, under its group's label when a group starts here
+                                id: rw
                                 required property var modelData
                                 required property int index
+                                width: rowsCol.width
+                                readonly property bool heads: !!modelData.group && (index === 0 || (page.rows[index - 1] || {}).group !== modelData.group)
+                                Text {
+                                    visible: rw.heads
+                                    leftPadding: 12 * Y.u
+                                    topPadding: (rw.index ? 18 : 6) * Y.u
+                                    bottomPadding: 10 * Y.u
+                                    text: (rw.modelData.group || "").toUpperCase()
+                                    color: Y.dim; font.family: Y.font; font.pixelSize: 20 * Y.u; font.weight: Font.Bold
+                                    font.letterSpacing: 1.5 * Y.u
+                                }
+                            Rectangle {
+                                id: r
+                                readonly property var modelData: rw.modelData
+                                readonly property int index: rw.index
                                 readonly property bool focused: page.activeFocus && page.area === "rows" && page.row === index
                                 width: rowsCol.width
                                 height: Math.max(92 * Y.u, rcol.height + 36 * Y.u)
@@ -299,9 +314,9 @@ FocusScope {
                                     id: rcol
                                     x: 24 * Y.u
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width - 170 * Y.u
+                                    width: parent.width - 190 * Y.u
                                     spacing: 6 * Y.u
-                                    Text { text: r.modelData.label; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.DemiBold }
+                                    Text { text: r.modelData.label; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
                                     Text {
                                         visible: !!r.modelData.desc
                                         width: parent.width
@@ -311,7 +326,7 @@ FocusScope {
                                     }
                                 }
                                 Rectangle {           // a switch: white, its knob right, when on
-                                    anchors { right: parent.right; rightMargin: 24 * Y.u; verticalCenter: parent.verticalCenter }
+                                    anchors { right: parent.right; rightMargin: 42 * Y.u; verticalCenter: parent.verticalCenter }
                                     width: 76 * Y.u; height: 42 * Y.u; radius: height / 2
                                     color: r.modelData.on ? Y.text : "#5a5a5a"
                                     Rectangle {
@@ -321,6 +336,7 @@ FocusScope {
                                         color: r.modelData.on ? "#1f1f1f" : Y.text
                                     }
                                 }
+                            }
                             }
                         }
                     }
