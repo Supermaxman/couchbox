@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {ref: "${{ inputs.tag }}"}
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with: {context: ., file: ci/Dockerfile, tags: couchbox-dev, load: true, cache-from: "type=gha,scope=ci-image"}
       - name: build couchbox_*.deb
         env: {TAG: "${{ inputs.tag }}"}
