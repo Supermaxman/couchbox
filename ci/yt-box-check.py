@@ -3,32 +3,36 @@
 couchbox-input and the compositor), a screenshot after each step (couchbox-screenshot) and what
 had the focus then (the app's control socket: {"op": "focus"}).
 
-  sudo python3 ci/yt-box-check.py [--profile guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep] [--perf]
+  sudo python3 ci/yt-box-check.py [--profile auto|guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep] [--perf]
+  sudo python3 ci/yt-box-check.py --clean-history RUNDIR [--profile ACCOUNT] [--dry-run]
 
-It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running), then:
-Home; Search from the guide, typing on a keyboard and Enter; back Home; a video from Home;
-Description and Back; scrubbing with the controls hidden; the related row and Up; the clock
-moving; a paused seek back to 0:00 still showing a picture; the Shorts tab; a guest's Library,
-Subscriptions and Settings; Who's watching from the guide (and Back). Each step prints
-PASS or FAIL with what it saw, and saves OUT/NN-name.png and OUT/NN-name.json. --keep leaves
-the app running at the end.
+It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running) and
+walks it with the remote. Each step prints PASS or FAIL with what it saw, and saves
+OUT/NN-name.png and OUT/NN-name.json. --keep leaves the app running at the end.
 
---profile ACCOUNT (an account id from ~/.local/share/couchbox-yt/accounts, or ACCOUNT:PAGE for a
-brand channel) runs the signed-in steps instead, read only, for the household's real account:
-Who's watching, Home, Subscriptions, Library's History, Watch later and Playlists, one
-part-watched video from History (under a minute: it must start where YouTube says), the channel
-and notification panels opened and closed, and Settings → Accounts. Nothing is liked,
-subscribed, saved or changed; the guest's "Sign in" steps and casting aren't run.
+Signed in by default (--profile auto: the TV's first account; YouTube bot-checks a TV that starts
+many guest streams), read only: nothing liked, subscribed, saved or changed on the account, every
+OK checked against what has the focus first. Who's watching (the account, its brand channels),
+Home, Subscriptions, Library's History, Watch later and Playlists; a part-watched video from
+History (it must start where YouTube says) with its channel and notification panels and comments;
+a Home video's player walk (Description, the clock, paused seeks still showing a picture, scrubbing
+hidden, the related row, Quality and speed, captions, comments, the channel's panel and page);
+Shorts next and before; the tabs and a live stream; Settings' rows (Hide Shorts flipped and back:
+this TV's own setting); Settings → Accounts. Today's History before the run goes into
+OUT/history-before.json.
 
---clean-history RUNDIR --profile ACCOUNT [--dry-run] removes from the account's History the
-videos that run played (from RUNDIR/app.log), only their entries in today's History, listing
-them first (--dry-run: only that). Signed-in runs go into the household's History otherwise.
+--profile guest: a guest's walk, light on YouTube: Home, Search typed and entered, one video (it
+plays, or the player offers a sign-in), the pages that ask to sign in, the tabs, Settings' rows,
+Who's watching; and casting's control socket, DIAL and SSDP.
 
---perf times the app instead (as the profile given, guest by default): start until Home shows,
-3 videos at once and 3 after 5 s on their card (prefetched) from OK to their first picture (the stream in yt-dlp's parts, mpv opening it,
-the first frame, a TV refresh switch), opening Search, 3 of Home's rows (keys, calls, late
-frames), every back-end call's median and worst, and the app's processor use and memory: PERF
-lines, and OUT/perf.json.
+--clean-history RUNDIR removes from the account's History the videos that run played (from
+RUNDIR/app.log) that weren't in it before (RUNDIR/history-before.json), only among today's
+entries, listing them first (--dry-run: only that).
+
+--perf times the app instead (as the profile given): start until Home shows, a video at once and
+one after 5 s on its card (prefetched) from OK to its first picture, a resumed one, 10 more and the
+memory after, two 1080p videos' processor use, Search, Home's rows, every back-end call's median
+and worst; PERF lines, a SUMMARY against the targets, OUT/perf.json. Then --clean-history.
 
 Before every key and every reading it checks that couchbox-yt is still the window in front and
 that no Frigate pop-up is up; if either fails it stops at once ("ABORT: ..."), pressing nothing
@@ -271,33 +275,17 @@ def to_entry(key):
         print(f"(the guide has no {key} entry)", flush=True)
 
 
-def guest(r):
-    """A guest's flows (the steps that expect "Sign in" among them)."""
-    r.step("home", lambda f: (f["page"] == "home" and "home" in f["focus"] and f["shown"], "Home, a card in focus"), settle=6)
-    remote("down")  # Home's second row (its cards large, the first row gone above)
-    r.step("home-row2", lambda f: (f["page"] == "home" and "home" in f["focus"], "Home's second row"), settle=2)
-    remote("up")
+def press_button(name, check=None):
+    """The player's control `name`, one key at a time, and OK only once it has the focus."""
+    if not button_to(name):
+        print(f"(couldn't reach the player's {name} button)", flush=True)
+        return False
+    return ok_on(lambda f: d(f).get("button") == name and not d(f).get("panel") and (check is None or check(f)), f"the {name} button")
 
-    # Search from the guide: the keys (not the last results); typing on a keyboard, then Enter
-    remote("left", "up", "ok")
-    r.step(
-        "search-open",
-        lambda f: (
-            f["page"] == "search" and "keys" in f["focus"] and not d(f).get("results"),
-            f"keys page, {d(f).get('area')} {d(f).get('item')}",
-        ),
-    )
-    remote("KEY_S", "KEY_K", "KEY_Y", gap=0.2)
-    r.step("search-typed", lambda f: (d(f).get("query") == "sky", f"query {d(f).get('query')!r}"))
-    remote("KEY_ENTER")
-    r.step(
-        "search-enter", lambda f: (bool(d(f).get("results")) and d(f).get("query") == "sky", f"results for {d(f).get('query')!r}"), settle=4
-    )
-    remote("left", "ok")  # the guide (on Search), OK: Search again
-    r.step("search-reopen", lambda f: ("keys" in f["focus"] and not d(f).get("results"), "Search again: the keys"))
 
-    # a video from Home longer than 5 minutes (a short one ends mid-walk: Up next takes over)
-    remote("left", "down", "ok")
+def open_long_video(r):
+    """A video from Home over 5 minutes (a short one ends mid-walk: Up next takes over), opened."""
+    anchor("home")
     r.step("home-again", lambda f: (f["page"] == "home", "Home"), settle=2)
     long_video = lambda c: c.get("type") == "video" and not c.get("live") and c.get("duration", 0) > 300  # noqa: E731
     found = None
@@ -306,42 +294,34 @@ def guest(r):
         if found:
             break
         remote("down")
-    print(f"(the video: {found and found.get('duration')} s long)" if found else "(no video over 5 minutes on Home's first rows: the first card)", flush=True)
-    if found:
-        ok_on(lambda f: long_video(f.get("card") or {}), "a video over 5 minutes")
-    else:
-        remote("ok")
+    print(f"(the video: {found and found.get('duration')} s long)" if found else "(no video over 5 minutes on Home's first rows)", flush=True)
+    if not found or not ok_on(lambda f: long_video(f.get("card") or {}), "a video over 5 minutes"):
+        return False
     r.step(
         "player",
-        lambda f: (
-            f["page"] == "player" and "controls" in f["focus"] and d(f).get("button") == "play",
-            f"mode {d(f).get('mode')}, on {d(f).get('button')}",
-        ),
+        lambda f: (f["page"] == "player" and "controls" in f["focus"] and d(f).get("button") == "play" and not d(f).get("message"),
+                   f"mode {d(f).get('mode')}, on {d(f).get('button')} {d(f).get('message') or ''}"),
         settle=4,
     )
-    show_controls()  # (they hide after 5 s: Left would seek instead)
-    remote("left", "left", "left", "ok")
-    r.step(
-        "description",
-        lambda f: ("description" in f["focus"] and f["shown"] and d(f).get("panel") == "description", f"panel {d(f).get('panel')!r}"),
-        settle=3,
-    )
-    remote("back")
-    r.step(
-        "description-back",
-        lambda f: (
-            f["page"] == "player" and "controls" in f["focus"] and d(f).get("button") == "description",
-            f"on {d(f).get('button')}, panel {d(f).get('panel')!r}",
-        ),
-    )
+    return True
 
-    # the clock moves; scrubbing with the controls hidden
+
+def player_walk(r):
+    """The player, read only (nothing liked, subscribed, saved: every OK checked first): the
+    description, the clock, paused seeks still showing a picture, scrubbing hidden, the related row,
+    the settings menu's quality and speed, captions on and off, the comments, the channel's panel
+    and page."""
+    if press_button("description"):
+        r.step("description", lambda f: ("description" in f["focus"] and f["shown"] and d(f).get("panel") == "description",
+                                         f"panel {d(f).get('panel')!r}"), settle=3)
+        remote("back")
+        r.step("description-back", lambda f: (f["page"] == "player" and "controls" in f["focus"] and d(f).get("button") == "description",
+                                              f"on {d(f).get('button')}, panel {d(f).get('panel')!r}"))
+    # the clock moves
     p1 = d(focus()).get("position", 0)
     r.step("clock", lambda f: (d(f).get("position", 0) > p1, f"position {p1} -> {d(f).get('position')}"), settle=3)
-
-    # paused seeks still show a picture (not black): one back into the middle, one back to 0:00 and
-    # one forward to 30 s, so "any paused seek" can be told from "only to the start". Up: the bar,
-    # where Left / Right seek 10 s
+    # paused seeks still show a picture (not black): back into the middle, back to 0:00, forward to
+    # 30 s. Up: the bar, where Left / Right seek 10 s
     remote("playpause")
     f = r.step("paused", lambda f: (bool(d(f).get("paused")), f"paused at {d(f).get('position')}"), settle=1)
     picture(r, "paused-picture")
@@ -350,11 +330,7 @@ def guest(r):
     r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
     mid = picture(r, "paused-seek-mid-picture")
     remote("left", "left", "left", "left")
-    r.step(
-        "paused-seek-0",
-        lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"),
-        settle=2.5,
-    )
+    r.step("paused-seek-0", lambda f: (d(f).get("position", 99) <= 1 and bool(d(f).get("paused")), f"position {d(f).get('position')}"), settle=2.5)
     picture(r, "paused-seek-0-picture", ref=mid)
     remote("right", "right", "right")
     r.step("paused-seek-30", lambda f: (bool(d(f).get("paused")), f"position {d(f).get('position')}"), settle=2.5)
@@ -366,149 +342,145 @@ def guest(r):
     r.step("scrub", lambda f: (d(f).get("mode") == "bar" and "controls" in f["focus"], f"mode {d(f).get('mode')}"), settle=0.6)
     remote("down")
     f = r.step("scrub-down", lambda f: (d(f).get("mode") == "controls", f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=0.6)
-    last = d(f).get("button") or "play"  # Up from the related row comes back to this one
-
-    # the related row, and Up back to the controls
+    last = d(f).get("button") or "play"
     remote("down")
     r.step("related", lambda f: (d(f).get("mode") == "related" and "related" in f["focus"], f"mode {d(f).get('mode')}"), settle=1)
     remote("up")
-    r.step(
-        "related-up",
-        lambda f: (
-            d(f).get("mode") == "controls" and "controls" in f["focus"] and d(f).get("button") == last,
-            f"mode {d(f).get('mode')}, on {d(f).get('button')}",
-        ),
-        settle=1,
-    )
-
-    # the settings menu: Quality, then Playback speed (and Back out of each)
-    remote(*["right"] * 13, "ok")
-    r.step("player-settings", lambda f: (d(f).get("panel") == "settings", f"panel {d(f).get('panel')!r}"), settle=1.5)
-    remote("ok")
-    r.step("player-quality", lambda f: (d(f).get("panel") == "quality", f"panel {d(f).get('panel')!r}"), settle=1.5)
-    remote("back", "down", "ok")
-    r.step("player-speed", lambda f: (d(f).get("panel") == "speed", f"panel {d(f).get('panel')!r}"), settle=1.5)
-    remote("back", "back")
-    r.step(
-        "player-settings-back", lambda f: (not d(f).get("panel") and "controls" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=1.5
-    )
-    # captions: CC on (when the video has any: else the TV says so) and off again
-    remote("left", "ok")
-    f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
-    if d(f).get("captions"):
-        remote("ok")
-        r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
-    # comments, from the Description panel's Comments card
-    remote(*["left"] * 11, "ok")
-    r.step("description-again", lambda f: (d(f).get("panel") == "description", f"panel {d(f).get('panel')!r}"), settle=2)
-    for _ in range(4):  # Down to the Comments card (cards without content are skipped)
-        if d(focus()).get("card") == 3:
-            break
-        remote("down")
-    remote("ok")
-    r.step(
-        "comments",
-        lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r} (Summary may be missing: then the card above)"),
-        settle=3,
-    )
-    remote("back")
-    if d(focus()).get("panel"):
+    r.step("related-up", lambda f: (d(f).get("mode") == "controls" and "controls" in f["focus"] and d(f).get("button") == last,
+                                    f"mode {d(f).get('mode')}, on {d(f).get('button')}"), settle=1)
+    # the settings menu: Quality, then Playback speed (and Back out of each): this TV's own choices
+    if press_button("settings"):
+        r.step("player-settings", lambda f: (d(f).get("panel") == "settings", f"panel {d(f).get('panel')!r}"), settle=1.5)
+        if ok_on(lambda f: d(f).get("panel") == "settings" and d(f).get("panelItem", "").startswith("Quality"), "Quality"):
+            r.step("player-quality", lambda f: (d(f).get("panel") == "quality", f"panel {d(f).get('panel')!r}"), settle=1.5)
+            remote("back", "down")
+            if ok_on(lambda f: d(f).get("panel") == "settings" and "speed" in d(f).get("panelItem", "").lower(), "Playback speed"):
+                r.step("player-speed", lambda f: (d(f).get("panel") == "speed", f"panel {d(f).get('panel')!r}"), settle=1.5)
+                remote("back")
         remote("back")
-    r.step("comments-back", lambda f: (not d(f).get("panel"), f"panel {d(f).get('panel')!r}"), settle=1.5)
-
-    # the channel's panel (its picture, Subscribe, Go to channel), then its page, and Back to the player
-    remote(*["left"] * 6, "ok")
-    r.step("channel-panel", lambda f: (d(f).get("panel") == "channel" and "panel" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=2)
-    remote("down", "ok")
-    r.step("channel-page", lambda f: (f.get("page") == "channel" and "channel" in f["focus"], f"page {f.get('page')}"), settle=4)
-    remote("down")
-    r.step("channel-page-down", lambda f: (f.get("page") == "channel", "the next shelf"), settle=1.5)
-    remote("back")
-    r.step("channel-back", lambda f: (f.get("page") == "player" and "controls" in f["focus"], f"page {f.get('page')}"), settle=2)
-
-    # out of the player, then the Shorts tab: straight into Shorts. From here each part starts from
-    # Home, opened through the control socket, so one that goes wrong doesn't throw the rest out
-    remote("back", "back")
+        r.step("player-settings-back", lambda f: (not d(f).get("panel") and "controls" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=1.5)
+    # captions: CC on (when the video has any: else the TV says so) and off again
+    if press_button("cc"):
+        f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
+        if d(f).get("captions") and ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
+            r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
+    # the comments (read)
+    if press_button("comments"):
+        r.step("comments", lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r}"), settle=3)
+        remote("back")
+        if d(focus()).get("panel"):
+            remote("back")
+        r.step("comments-back", lambda f: (not d(f).get("panel"), f"panel {d(f).get('panel')!r}"), settle=1.5)
+    # the channel's panel (its first row is Subscribe: not pressed), then Go to channel, its page, Back
+    if press_button("channel"):
+        r.step("channel-panel", lambda f: (d(f).get("panel") == "channel" and "panel" in f["focus"], f"panel {d(f).get('panel')!r}"), settle=2)
+        remote("down")
+        if ok_on(lambda f: d(f).get("panel") == "channel" and d(f).get("panelItem") == "Go to channel", "Go to channel"):
+            r.step("channel-page", lambda f: (f.get("page") == "channel" and "channel" in f["focus"], f"page {f.get('page')}"), settle=4)
+            remote("down")
+            r.step("channel-page-down", lambda f: (f.get("page") == "channel", "the next shelf"), settle=1.5)
+            remote("back")
+            r.step("channel-back", lambda f: (f.get("page") == "player" and "controls" in f["focus"], f"page {f.get('page')}"), settle=2)
+        elif d(focus()).get("panel"):
+            remote("back")
+    anchor("home")
     r.step("player-left", lambda f: (f["page"] == "home", f"page {f.get('page')}"), settle=2)
+
+
+def shorts_walk(r):
+    """The Shorts tab: straight into Shorts, the next and the one before (Up / Down only: the side's
+    Subscribe and like aren't touched). Shorts send YouTube no playback reports here."""
     to_entry("shorts")
     f = r.step("shorts", lambda f: ("shorts" in f["focus"], f"focus {f.get('focus')}"), settle=5)
     first = d(f).get("videoId")
-    remote("down")  # the next Short
+    remote("down")
     r.step("shorts-next", lambda f: (bool(d(f).get("videoId")) and d(f).get("videoId") != first, f"Short {d(f).get('index')}"), settle=4)
     remote("up")
     r.step("shorts-previous", lambda f: (d(f).get("videoId") == first, f"Short {d(f).get('index')}"), settle=3)
     remote("back")
     r.step("shorts-back", lambda f: ("guide" in f["focus"], "back on the guide"), settle=1.5)
 
-    # a guest's Library (the tiles that need no account), Subscriptions (the sign-in note), Settings
-    # beside the open guide, and Who's watching from the guide's picture (and Back from it)
-    # the tabs: Music, Gaming, Movies & TV (their shelves load), then Library
-    to_entry("music")
-    r.step(
-        "tab-music",
-        lambda f: (f.get("section") == "music" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
-        settle=4,
-    )
-    to_entry("gaming")
-    r.step(
-        "tab-gaming",
-        lambda f: (f.get("section") == "gaming" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
-        settle=4,
-    )
-    to_entry("movies")
-    r.step(
-        "tab-movies",
-        lambda f: (f.get("section") == "movies" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
-        settle=4,
-    )
-    # a live stream from the Live tab's first row: it's live, seeks back (behind live) and forward
-    to_entry("live")
-    r.step("tab-live", lambda f: (f.get("section") == "live" and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows"), settle=4)
-    remote("ok")
-    f = r.step(
-        "live-player",
-        lambda f: (f["page"] == "player" and bool(d(f).get("live")), f"live {d(f).get('live')}, {d(f).get('videoId')}"),
-        settle=10,
-    )
+
+def tabs_walk(r, live=True):
+    """The tabs: Music, Gaming, Movies & TV (their shelves load), Live; and a live stream from its
+    first row: live, behind live, forward again (live streams send no playback reports)."""
+    for key, name in (("music", "tab-music"), ("gaming", "tab-gaming"), ("movies", "tab-movies"), ("live", "tab-live")):
+        to_entry(key)
+        r.step(name, lambda f, k=key: (f.get("section") == k and d(f).get("rows", 0) > 0, f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"),
+               settle=4)
+    if not live:
+        return
+    live_card = card_to(lambda c: c.get("live"), tries=5)
+    if not live_card or not ok_on(lambda f: (f.get("card") or {}).get("live"), "a live stream"):
+        return skip(r, "live-player", "no live stream on the Live tab's first row")
+    f = r.step("live-player", lambda f: (f["page"] == "player" and bool(d(f).get("live")), f"live {d(f).get('live')}, {d(f).get('videoId')}"), settle=10)
     if d(f).get("live"):
         if d(focus()).get("mode") != "hidden":
             remote("back")  # the controls hide: Left / Right seek (Back with them hidden leaves)
             time.sleep(1)
         remote("left")
         r.step("live-behind", lambda f: ("behind live" in (f.get("toast") or ""), f"toast {f.get('toast')!r}"), settle=1)
-        remote("right", "right")  # forward to live again
+        remote("right", "right")
         r.step("live-forward", lambda f: (bool(f.get("toast")), f"toast {f.get('toast')!r}"), settle=1)
-    remote("back", "back")  # out of the player, back on the Live tab
-    r.step("live-left", lambda f: (f.get("section") == "live" and f["page"] != "player", f"page {f.get('page')}"), settle=2)
+    anchor("home")
+
+
+def settings_walk(r):
+    """Settings beside the open guide; Extras' Hide Shorts flipped and flipped back (this TV's own
+    setting, not the account's); About."""
+    to_entry("settings")
+    r.step("settings", lambda f: (f.get("section") == "settings" and "settings" in f["focus"] and f.get("guideOpen"),
+                                  f"guide open {f.get('guideOpen')}, on {d(f).get('item')}"), settle=2)
+    remote(*["down"] * 6, "right", "down", "down")  # Accounts, Video, Player, Ads, Guide tabs, SponsorBlock -> Extras
+    f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)
+    was = d(f).get("on")
+    if d(f).get("row") == "hide_shorts":
+        remote("ok")
+        r.step("settings-flip", lambda f: (d(f).get("on") == (not was), f"Hide Shorts {was} -> {d(f).get('on')}"), settle=1.5)
+        remote("ok")
+        r.step("settings-flip-back", lambda f: (d(f).get("on") == was, f"Hide Shorts back to {d(f).get('on')}"), settle=1.5)
+    remote("left", "down")
+    r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
+
+
+def guest(r):
+    """A guest's flows, light on YouTube (its bot check comes from many guest streams): Home, Search,
+    one video, the pages that ask to sign in, Settings, Who's watching."""
+    r.step("home", lambda f: (f["page"] == "home" and "home" in f["focus"] and f["shown"], "Home, a card in focus"), settle=6)
+    remote("down")  # Home's second row (its cards large, the first row gone above)
+    r.step("home-row2", lambda f: (f["page"] == "home" and "home" in f["focus"], "Home's second row"), settle=2)
+    remote("up")
+
+    # Search from the guide: the keys (not the last results); typing on a keyboard, then Enter
+    remote("left", "up", "ok")
+    r.step("search-open", lambda f: (f["page"] == "search" and "keys" in f["focus"] and not d(f).get("results"),
+                                     f"keys page, {d(f).get('area')} {d(f).get('item')}"))
+    remote("KEY_S", "KEY_K", "KEY_Y", gap=0.2)
+    r.step("search-typed", lambda f: (d(f).get("query") == "sky", f"query {d(f).get('query')!r}"))
+    remote("KEY_ENTER")
+    r.step("search-enter", lambda f: (bool(d(f).get("results")) and d(f).get("query") == "sky", f"results for {d(f).get('query')!r}"), settle=4)
+    remote("left", "ok")  # the guide (on Search), OK: Search again
+    r.step("search-reopen", lambda f: ("keys" in f["focus"] and not d(f).get("results"), "Search again: the keys"))
+
+    # the one guest video: it plays, or YouTube asks for a sign-in and the player offers one
+    if open_long_video(r):
+        f = focus()
+        if d(f).get("signInOffer"):
+            r.step("guest-sign-in-offer", lambda f: (bool(d(f).get("signInOffer")), f"the player says: {d(f).get('message')!r}"), settle=0)
+            anchor("home")
+        else:
+            p1 = d(f).get("position", 0)
+            r.step("guest-clock", lambda f: (d(f).get("position", 0) > p1, f"position {p1} -> {d(f).get('position')}"), settle=3)
+            anchor("home")
+    # a guest's Library (the tiles that need no account) and Subscriptions (the sign-in note)
     to_entry("library")
     r.step("library", lambda f: (f.get("section") == "library" and "tiles" in f["focus"], f"section {f.get('section')}"), settle=2)
     remote("down")
     r.step("library-signin", lambda f: ("action" in f["focus"], "the Sign in button"), settle=1)
     to_entry("subscriptions")
-    r.step(
-        "subscriptions",
-        lambda f: (f.get("section") == "subscriptions" and "message" in f["focus"], f"section {f.get('section')}"),
-        settle=2,
-    )
-    to_entry("settings")
-    r.step(
-        "settings",
-        lambda f: (
-            f.get("section") == "settings" and "settings" in f["focus"] and f.get("guideOpen"),
-            f"guide open {f.get('guideOpen')}, on {d(f).get('item')}",
-        ),
-        settle=2,
-    )
-    # Extras: into its rows, Hide Shorts flipped and flipped back (the TV's setting is left as it was)
-    remote(*["down"] * 6, "right", "down", "down")  # Accounts, Video, Player, Ads, Guide tabs, SponsorBlock -> Extras
-    f = r.step("settings-row", lambda f: (d(f).get("row") == "hide_shorts", f"on row {d(f).get('row')}"), settle=1)
-    was = d(f).get("on")
-    remote("ok")
-    r.step("settings-flip", lambda f: (d(f).get("on") == (not was), f"Hide Shorts {was} -> {d(f).get('on')}"), settle=1.5)
-    remote("ok")
-    r.step("settings-flip-back", lambda f: (d(f).get("on") == was, f"Hide Shorts back to {d(f).get('on')}"), settle=1.5)
-    remote("left", "down")
-    r.step("settings-about", lambda f: (d(f).get("item") == "about", f"on {d(f).get('item')}"), settle=1)
+    r.step("subscriptions", lambda f: (f.get("section") == "subscriptions" and "message" in f["focus"], f"section {f.get('section')}"), settle=2)
+    tabs_walk(r, live=False)
+    settings_walk(r)
     to_entry("who")  # the guide's picture: Who's watching
     r.step("profiles", lambda f: ("profiles" in f["focus"], f"focus {f.get('focus')}"), settle=2)
     remote("back")
@@ -586,6 +558,34 @@ def button_to(name):
 
 
 def account(r, want):
+    """The signed-in walk, read only: account_core, then a Home video's player walk (descriptions,
+    seeks, settings, captions, comments, its channel), Shorts, the tabs and a live stream, Settings'
+    rows. Videos played: the History one (it was there already) and the Home one (--clean-history
+    takes it out again: this run's History before it is in OUT/history-before.json)."""
+    if not account_core(r, want):
+        return
+    if open_long_video(r):
+        player_walk(r)
+    shorts_walk(r)
+    tabs_walk(r)
+    settings_walk(r)
+
+
+def history_before(r):
+    """Today's History before the run plays anything (for --clean-history: not to take those out)."""
+    from couchbox import appctl
+
+    try:
+        ids = appctl.call("yt", {"op": "call", "fn": "historyToday", "args": {}}, timeout=60).get("ids") or []
+    except Exception as err:  # noqa: BLE001
+        print(f"(History before the run: {err})", flush=True)
+        return
+    with open(os.path.join(r.out, "history-before.json"), "w") as fh:
+        json.dump(ids, fh)
+    print(f"(History today before the run: {len(ids)} videos, kept in history-before.json)", flush=True)
+
+
+def account_core(r, want):
     """Who's watching (the account, its brand channels), Home, Subscriptions, Library's lists, a video
     from History resuming where YouTube says, the channel and notification panels, Settings → Accounts."""
     f = r.step("profiles", lambda f: (f.get("page") == "profiles" and d(f).get("count", 0) >= 1,
@@ -605,9 +605,13 @@ def account(r, want):
                                           f"on the account after {len(seen)} ({len(set(seen))} different)"), settle=0.5)
     if not ok_on(lambda f: d(f).get("id") == want and d(f).get("area") == "row", "the account"):
         print("ABORT: the account isn't on Who's watching; pressing nothing more", flush=True)
-        return
+        return False
     r.step("home-signed-in", lambda f: (f.get("page") == "home" and f.get("signedIn") and f.get("profile") == want and d(f).get("rows", 0) > 0,
                                         f"signed in {f.get('signedIn')}, {d(f).get('rows')} rows {d(f).get('problem') or ''}"), settle=6)
+    if not focus().get("signedIn"):
+        print("ABORT: not signed in as the account; pressing nothing more", flush=True)
+        return False
+    history_before(r)
 
     # Subscriptions: the channels down the side and the feed; a channel's own feed
     if guide_to("subscriptions") and ok_on(lambda f: f.get("guideAt") == "subscriptions", "Subscriptions"):
@@ -626,7 +630,8 @@ def account(r, want):
     # Library: History, Watch later, Playlists (each opened and Back)
     if not (guide_to("library") and ok_on(lambda f: f.get("guideAt") == "library", "Library")):
         skip(r, "library", "not in the guide")
-        return settings_accounts(r)
+        settings_accounts(r)
+        return True
     r.step("library", lambda f: (f.get("section") == "library" and (f.get("card") or {}).get("type") == "tile",
                                  f"{d(f).get('rows')} rows, on {(f.get('card') or {}).get('title')}"), settle=3)
     for tile, name in (("FEhistory", "history"), ("VLWL", "watch-later"), ("FEplaylist_aggregation", "playlists")):
@@ -642,16 +647,19 @@ def account(r, want):
     # a part-watched video from History: it starts where YouTube says this account left off
     if not (card_to(lambda c: c.get("id") == "FEhistory", keys=("left",), tries=3) and ok_on(lambda f: (f.get("card") or {}).get("id") == "FEhistory", "History")):
         skip(r, "history-video", "no History tile")
-        return settings_accounts(r)
+        settings_accounts(r)
+        return True
     time.sleep(4)
     part = lambda c: c.get("type") == "video" and 0.03 < (c.get("progress") or 0) < 0.9  # noqa: E731
     c = card_to(part, tries=6) or card_to(part, keys=("down",), tries=3)
     if not c:
         skip(r, "history-video", "no part-watched video among History's first cards: resume not checked, nothing played")
         remote("back")
-        return settings_accounts(r)
+        settings_accounts(r)
+        return True
     if not ok_on(lambda f: part(f.get("card") or {}), "a part-watched video"):
-        return settings_accounts(r)
+        settings_accounts(r)
+        return True
     started = time.time()
     f = r.step("history-video", lambda f: (f.get("page") == "player" and d(f).get("startAt", 0) > 0,
                                            f"starts at {d(f).get('startAt')} s of {d(f).get('duration')} (card: {round(c['progress'] * 100)}% watched)"),
@@ -684,6 +692,7 @@ def account(r, want):
     r.step("player-left", lambda f: (f.get("page") != "player", f"page {f.get('page')} after {round(time.time() - started)} s of playing"), settle=1.5)
     remote("back")
     settings_accounts(r)
+    return True
 
 
 def settings_accounts(r):
@@ -813,6 +822,8 @@ def perf(r, started, signed=False):
             break
         time.sleep(0.1)
     p.say("home-ready", f"{time.monotonic() - started:.1f} s from start", round(time.monotonic() - started, 2))
+    if signed:  # (after Home's measured: it asks YouTube for the History)
+        history_before(r)
     time.sleep(1)
     steps = [e for e in timing_since(-1) if e["kind"] == "startup"]
     p.say("start-steps", ", ".join(f"{e['step']} {e['ms']} ms" for e in steps), steps)
@@ -1010,9 +1021,8 @@ def perf(r, started, signed=False):
 
     p.phase("preload-quiet", preload_quiet)
 
-    if signed:  # as a guest (the household's History stays out of it), then the account again
-        anchor("as:guest")
-        time.sleep(3)
+    # (signed in, as the rest: YouTube bot-checks a TV that starts many guest streams; the check's own
+    # videos come out of the account's History with --clean-history after)
     p.phase("ten-videos", ten)
 
     def known_1080p():
@@ -1031,9 +1041,6 @@ def perf(r, started, signed=False):
     p.phase("known-1080p", known_1080p)
 
 
-    if signed:
-        anchor(f"as:{signed}")
-        time.sleep(3)
 
     allcalls = [e for e in timing_since(-1) if e["kind"] == "call"]
     by = {}
@@ -1075,6 +1082,16 @@ def summary(p):
     p.rows["summary"] = out
 
 
+def first_account():
+    """The first account signed in on the TV (its id), or ""."""
+    home = pwd.getpwnam(TV_USER).pw_dir
+    d = os.path.join(home, ".local/share/couchbox-yt/accounts")
+    try:
+        return sorted(f.removesuffix(".json") for f in os.listdir(d) if f.endswith(".json"))[0]
+    except (OSError, IndexError):
+        return ""
+
+
 def played_in(rundir):
     """The videos a run opened (its app.log: the timing's play lines, SponsorBlock's look-ups)."""
     import re
@@ -1102,6 +1119,15 @@ def clean_history(a):
         sys.exit("--clean-history needs --profile ACCOUNT (the account the run played as)")
     ids = played_in(a.clean_history)
     print(f"the run in {a.clean_history} played {len(ids)} videos: {' '.join(ids)}", flush=True)
+    try:  # already in today's History before the run (the household's): left alone
+        with open(os.path.join(a.clean_history, "history-before.json")) as fh:
+            before = set(json.load(fh))
+    except (OSError, ValueError):
+        before = set()
+    kept = [v for v in ids if v in before]
+    ids = [v for v in ids if v not in before]
+    for vid in kept:
+        print(f"  left alone (in History before the run): {vid}", flush=True)
     if not ids:
         return 0
     if not appctl.running("yt"):
@@ -1127,13 +1153,16 @@ def clean_history(a):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--profile", default="guest")
+    ap.add_argument("--profile", default="auto", help="auto (the default): the first account on the TV, else a guest")
     ap.add_argument("--out", default="/tmp/yt-check")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--clean-history", metavar="RUNDIR", help="remove from the profile's History (today's entries) the videos a run played")
     ap.add_argument("--dry-run", action="store_true", help="with --clean-history: only list what would be removed")
     ap.add_argument("--perf", action="store_true", help="time the app instead (COUCHBOX_YT_TIMING): start, 3 videos, Search, Home's rows")
     a = ap.parse_args()
+    if a.profile == "auto":  # signed in when there's an account: YouTube bot-checks a TV's many guest streams
+        a.profile = first_account() or "guest"
+        print(f"(profile: {a.profile})", flush=True)
     if a.clean_history:
         sys.exit(clean_history(a))
     r = Run(a.out)
