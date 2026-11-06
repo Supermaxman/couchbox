@@ -105,6 +105,7 @@ FocusScope {
         videoId = id;
         startAt = at || 0;
         s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
+        related.rows = []; related.index = 0;   // (not the last video's row while this one's comes: it was, for a live one)
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
@@ -377,7 +378,7 @@ FocusScope {
     function skip(d) {
         if (!s) return;
         video.seek(d);                         // a live stream too: back into its DVR window and forward again
-        if (live && duration > 0) Y.toast(duration - pos - d > 15 ? "-" + Y.clock(duration - pos - d) + " behind live" : "Live");
+        if (live && duration > 0) Y.toast(duration - pos - d > 15 ? Y.clock(duration - pos - d) + " behind live" : "Live");
         if (mode === "hidden") mode = "bar";
         hide.restart();
     }
