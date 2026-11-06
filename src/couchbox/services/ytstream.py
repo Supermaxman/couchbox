@@ -337,16 +337,23 @@ def storyboard(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
-def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True) -> dict[str, Any]:
+def protocol(url: str) -> str:
+    return "hls" if "m3u8" in url or "/hls_" in url else "dash" if url.startswith("edl://") else "https"
+
+
+def resolve(
+    video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, info: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
-    about it (title, channel, chapters, length, portrait for Shorts)."""
+    about it (title, channel, chapters, length, portrait for Shorts). info: yt-dlp's, from
+    before (ytworker's cache); else it's asked for now."""
     from couchbox.services import yttiming
 
     t = time.monotonic()
-    waited = time.monotonic()
     phases = yttiming.Phases()
-    info = extract(video_id, phases)
-    took = yttiming.ms(waited)
+    if info is None:
+        info = extract(video_id, phases)
+    took = yttiming.ms(t)
     out = playable(info, h264, max_height, superres)
     out.update(
         {
@@ -368,8 +375,5 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT, supe
         }
     )
     spans = phases.spans(took)
-    yttiming.note(
-        "stream", id=video_id, extract=took, protocol="hls" if "m3u8" in out["url"] or "/hls_playlist/" in out["url"] else "dash", **spans
-    )
-    out["timing"] = dict(spans, extract=took)
+    out["timing"] = dict(spans, extract=took, protocol=protocol(out["url"]))
     return out

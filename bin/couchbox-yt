@@ -47,7 +47,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming  # noqa: E402
+from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming, ytworker  # noqa: E402
 
 
 class Backend(QObject):
@@ -59,7 +59,9 @@ class Backend(QObject):
     def __init__(self, demo, profile=None):
         super().__init__()
         self.demo = demo
-        self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube()
+        # yt-dlp runs in a worker process (ytworker): never in this one, where it held Qt's thread
+        self.worker = None if demo else ytworker.Client()
+        self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube(client=youtube.TV_CLIENT)
         self.yt.on_event = lambda name, data: self.event.emit(name, json.dumps(data))
         self.pool = ThreadPoolExecutor(max_workers=6)
         if demo:                                     # a made-up TV's settings, fresh each time
@@ -71,7 +73,7 @@ class Backend(QObject):
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
-            threading.Thread(target=ytstream.module, daemon=True).start()    # yt-dlp now: the first video starts sooner
+            self.pool.submit(self.warm)                  # the worker (and yt-dlp) now: the first video starts sooner
             self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
             self.pool.submit(self.yt.refresh_channels)
 
@@ -93,12 +95,24 @@ class Backend(QObject):
             out["qr"] = path if os.path.exists(path) else ""
         return out
 
+    def warm(self):
+        try:
+            self.yt.set_client(self.worker.call("client", timeout=60))
+        except Exception as err:  # noqa: BLE001 (no yt-dlp yet: ours)
+            print(f"stream worker: {err}", flush=True)
+
+    def stream_args(self, max_height=None):
+        st = self.settings.get()
+        cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
+        return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"]}
+
     def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
-        st = self.settings.get()
-        cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
-        return ytstream.resolve(vid, h264=st["h264"], max_height=int(max_height or cap), superres=not st["remove_superres"])
+        out = self.worker.call("resolve", id=vid, **self.stream_args(max_height))
+        t = out.get("timing") or {}
+        yttiming.note("stream", id=vid, **t)
+        return out
 
     # the extras (ytextras): made up in the demo, else SponsorBlock, DeArrow, Return YouTube Dislike
     def segments(self, vid):
@@ -129,7 +143,7 @@ class Backend(QObject):
         return ytextras.hide_shorts(out) if self.settings.get()["hide_shorts"] else out
 
     def about(self):
-        a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else ytstream.about()
+        a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else self.worker.call("about", timeout=30)
         return dict(a, client=self.yt.client.get("clientVersion", ""))
 
     def run(self, op, a):
@@ -540,6 +554,8 @@ def main():
     if control.server:
         control.server.close()
     backend.pool.shutdown(wait=False, cancel_futures=True)
+    if backend.worker:
+        backend.worker.close()
     os._exit(code)                                   # don't wait for requests in flight
 
 

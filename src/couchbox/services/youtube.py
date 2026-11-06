@@ -980,12 +980,12 @@ class YouTube:
     channels: ytauth). The guest's visitor id is kept, so YouTube sees the same TV each time (as a
     real one is)."""
 
-    def __init__(self, data_dir: str | None = None, hl: str = "en", gl: str = "US"):
+    def __init__(self, data_dir: str | None = None, hl: str = "en", gl: str = "US", client: dict[str, str] | None = None):
         from couchbox.services import ytauth
 
         self.dir = data_dir or os.path.expanduser("~/.local/share/couchbox-yt")
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
-        self.client = dict(tv_client(), hl=hl, gl=gl)
+        self.client = dict(client or tv_client(), hl=hl, gl=gl)
         self.s = requests.Session()
         self.s.headers.update(
             {
@@ -1005,6 +1005,13 @@ class YouTube:
         self.auth.channels_for = self.accounts_list
         self.profile: dict[str, Any] = {}  # {} : the guest
         self.sessions: dict[str, dict[str, Any]] = {}  # playback reports in progress, by cpn
+
+    def set_client(self, client: dict[str, str]) -> None:
+        """The TV client's context as yt-dlp keeps it current (from ytworker: no yt-dlp here)."""
+        if not client.get("clientVersion"):
+            return
+        self.client.update({k: client[k] for k in ("clientName", "clientVersion", "userAgent") if k in client})
+        self.s.headers.update({"User-Agent": self.client["userAgent"], "X-YouTube-Client-Version": self.client["clientVersion"]})
 
     # ---------------------------------------------------------------- storage
     def _read(self, name):
