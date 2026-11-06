@@ -124,7 +124,8 @@ Over SSH, without anyone at the TV:
 - `couchbox-record start [FILE] [--seconds N] [--width W] [--fps F] [--audio]` records it as an H.264 MP4, in the background.
   - `couchbox-record stop` finishes it, and `couchbox-record status` shows how it's going.
   - `couchbox-record start --remote "wait:1 down ok wait:3"` records exactly those presses.
-  - `couchbox-record export FILE --gif --width 640` (or `--webm`, `--mp4`) makes a small clip for the README or the release notes.
+  - `couchbox-record export FILE --mp4 --from 2 --to 12` makes a small clip for the README or the release notes: H.264 at 720p at most, which GitHub plays inline. `--webm` (VP9) is smaller still, and `--gif` is only for a few seconds (a GIF of video is tens of MB).
+  - Recordings are 720p30 by default (`--width 1920` for 1080p). On the Pi 5 beside a 1080p60 video, the encoder takes about 115% CPU at 720p and about 190% at 1080p.
 
 KWin lets a program capture the screen only if its `.desktop` file names KWin's interface, matched by the program's executable:
 

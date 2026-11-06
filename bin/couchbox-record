@@ -9,15 +9,17 @@ every second, so a recorder that died still leaves a file that plays.
 
   couchbox-record start [FILE]       in the background; default ~/Videos/couchbox/couchbox-DATE-TIME.mp4
       --seconds N                    stop by itself after N seconds (default 600, at most 3600)
-      --width W --fps F              default 1920 (never wider than the screen) and 30
+      --width W --fps F              default 1280 (720p; never wider than the screen) and 30
       --audio                        with the TV's sound (PipeWire's monitor of the default output)
       --cursor                       with the mouse pointer
       --preset P --crf Q             libx264's (default ultrafast and 23)
       --remote "wait:1 down ok"      press these buttons (couchbox-remote), then stop: a scripted clip
   couchbox-record stop               finish the recording and print its file
   couchbox-record status             recording or not, the file, how long, how big, the encoder's CPU
-  couchbox-record export FILE [OUT] [--gif | --webm | --mp4] [--width W] [--fps F] [--from S] [--seconds N]
-                                     a small clip for the README (default a GIF, 640 wide, 12 fps)
+  couchbox-record export FILE [OUT] [--mp4 | --webm | --gif] [--width W] [--fps F] [--from S] [--to S | --seconds N]
+                                     a small clip for the README or release notes: --mp4 (H.264, 720p at
+                                     most; GitHub plays it inline) is the one to use, --webm (VP9) is
+                                     smaller still; --gif (the default, 640 wide, 12 fps) only for a few seconds
 One recording at a time. It stops by itself at its length, at --max-mb (default 2048), or when the
 disk has less than 1 GB left. Recordings are the TV user's (it runs as tv, like couchbox-screenshot);
 the log of the last one is $XDG_RUNTIME_DIR/couchbox-record/log.
@@ -38,7 +40,8 @@ import time
 
 TV_USER = os.environ.get("COUCHBOX_TV_USER", "tv")
 HELPER = os.environ.get("COUCHBOX_SCREENCAST", "/usr/lib/couchbox/libexec/couchbox-screencast")
-WIDTH, FPS, PRESET, CRF = 1920, 30, "ultrafast", 23
+# 720p: 1080p30 keeps up on the Pi 5 too, but its encoder takes ~190% CPU beside a 1080p60 video (720p ~115%)
+WIDTH, FPS, PRESET, CRF = 1280, 30, "ultrafast", 23
 SECONDS, MAX_SECONDS = 600, 3600
 MAX_MB = 2048
 MIN_FREE = 1 << 30  # stop when the disk has less than this left
@@ -133,12 +136,13 @@ def pipeline(stream, size, fps, audio, out, seconds, preset=PRESET, crf=CRF):
     # the serial is the stream's own (KWin 6.2+); the node id can be reused, but older KWin has only that
     source = f"target-object={stream['serial']}" if stream.get("serial") else f"path={stream['node']}"
     w, h = size
-    # KWin sends frames only when the screen changes: keepalive repeats the last one each second,
-    # videorate fills the gaps (from the first frame: not back to when the pipeline started). A
-    # full queue drops frames rather than holding up the stream.
-    video = (f"pipewiresrc {source} do-timestamp=true keepalive-time=1000 always-copy=true"
-             f" ! videorate skip-to-first=true ! video/x-raw,framerate={fps}/1 ! videoconvertscale n-threads=2"
-             f" ! video/x-raw,format=I420,width={w},height={h},pixel-aspect-ratio=1/1"
+    # KWin sends a frame only when the screen changes (at most FPS a second, as asked), so an idle
+    # screen sends none for a while: the compositor, on the clock, repeats the last one at FPS,
+    # and the file lasts as long as the recording did. A full queue drops frames rather than
+    # holding up the stream.
+    video = (f"pipewiresrc {source} do-timestamp=true always-copy=true ! video/x-raw,max-framerate={fps}/1"
+             f" ! videoconvertscale n-threads=2 ! video/x-raw,format=I420,width={w},height={h},pixel-aspect-ratio=1/1"
+             f" ! compositor start-time-selection=first ! video/x-raw,framerate={fps}/1"
              " ! queue leaky=downstream max-size-buffers=8 max-size-time=0 max-size-bytes=0"
              f" ! x264enc speed-preset={preset} pass=qual quantizer={crf} key-int-max={2 * fps}"
              " ! h264parse ! queue ! mux.")
@@ -454,12 +458,17 @@ def status(_a):
     return 1
 
 
-def export_command(src, out, fmt, width, fps=0, start=0.0, seconds=0.0):
+EXPORT_WIDTH = {"gif": 640, "webm": 1280, "mp4": 1280}
+BIG_CLIP = 10 << 20  # warn above: too big for a README
+
+
+def export_command(src, out, fmt, width=0, fps=0, start=0.0, seconds=0.0):
     """ffmpeg's command for a small clip of SRC: a looping GIF, a VP9 WebM or a small H.264 MP4."""
     trim = (["-ss", f"{start:g}"] if start else []) + (["-t", f"{seconds:g}"] if seconds else [])
-    scale = f"scale={width}:-2:flags=lanczos"
+    scale = f"scale=w=min({width or EXPORT_WIDTH[fmt]}\\,iw):h=-2:flags=lanczos"  # never larger than the recording
     if fmt == "gif":
-        # one palette for the clip, made from what changes (diff), then dithered lightly
+        # two passes in one graph: a palette for the clip from what changes (palettegen reads it
+        # all first), then the frames mapped to it, dithered lightly, redrawing only what changed
         vf = (f"fps={fps or 12},{scale},split[a][b];[a]palettegen=stats_mode=diff[p];"
               "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle")
         codec = ["-an", "-loop", "0"]
@@ -476,6 +485,10 @@ def export_command(src, out, fmt, width, fps=0, start=0.0, seconds=0.0):
 
 def export(a):
     fmt = "webm" if a.webm else "mp4" if a.mp4 else "gif"
+    if a.to:
+        if a.seconds or a.to <= a.start:
+            sys.exit("couchbox-record: --to must be after --from (and not with --seconds)")
+        a.seconds = a.to - a.start
     src = os.path.abspath(a.file)
     if not os.path.isfile(src):
         sys.exit(f"couchbox-record: no file {src}")
@@ -491,7 +504,13 @@ def export(a):
     cmd = export_command(src, out, fmt, a.width, a.fps, a.start, a.seconds)
     if subprocess.run(["nice", "-n", "10", *cmd], check=False).returncode:
         sys.exit(f"couchbox-record: ffmpeg couldn't make {out}")
+    if os.geteuid() == 0:  # run with sudo: the clip belongs to whoever owns its folder (tv, beside the recording)
+        d = os.stat(os.path.dirname(out))
+        os.chown(out, d.st_uid, d.st_gid)
     print(f"{out} ({mb(size_of(out))})")
+    if size_of(out) > BIG_CLIP:
+        hint = "--mp4 (GitHub plays it inline) or --webm" if fmt == "gif" else "a shorter --from/--to, or a smaller --width"
+        print(f"couchbox-record: that's over {BIG_CLIP >> 20} MB, big for a README: try {hint}", file=sys.stderr)
 
 
 def scripted(a, argv):
@@ -550,9 +569,10 @@ def parser():
     kind.add_argument("--gif", action="store_true")
     kind.add_argument("--webm", action="store_true")
     kind.add_argument("--mp4", action="store_true")
-    e.add_argument("--width", type=bounded(64, 3840), default=640)
+    e.add_argument("--width", type=bounded(64, 3840), default=0)
     e.add_argument("--fps", type=bounded(1, 60), default=0)
     e.add_argument("--from", dest="start", type=float, default=0.0, metavar="S")
+    e.add_argument("--to", type=float, default=0.0, metavar="S")
     e.add_argument("--seconds", type=float, default=0.0)
     return p
 

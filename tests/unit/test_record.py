@@ -51,7 +51,10 @@ def test_pipeline():
     assert "target-object=61" in cmd and "pulsesrc" not in cmd
     assert cmd[-1] == "location=/home/tv/Videos/my clip.mp4"  # one word: gst-launch escapes it
     text = " ".join(cmd)
-    assert "video/x-raw,format=I420,width=1280,height=720" in text and "framerate=30/1" in text
+    assert "video/x-raw,format=I420,width=1280,height=720" in text
+    # KWin asked for 30 at most; an idle screen's frames repeated on the clock, so the file lasts as long as the recording
+    assert "max-framerate=30/1" in text and "compositor start-time-selection=first ! video/x-raw,framerate=30/1" in text
+    assert "videorate" not in text and "keepalive" not in text
     assert "speed-preset=ultrafast pass=qual quantizer=23 key-int-max=60" in text
     assert f"reserved-max-duration={660 * 10**9}" in text  # room for the index past the cap
     old_kwin = rec.pipeline({"node": 55, "serial": 0}, (1280, 720), 30, True, "/tmp/a.mp4", 10, "veryfast", 20)
@@ -59,13 +62,15 @@ def test_pipeline():
 
 
 def test_export_commands():
-    gif = rec.export_command("/v/a.mp4", "/v/a.gif", "gif", 640)
+    gif = rec.export_command("/v/a.mp4", "/v/a.gif", "gif")
     vf = gif[gif.index("-vf") + 1]
-    assert vf.startswith("fps=12,scale=640:-2") and "palettegen" in vf and "paletteuse" in vf and "-an" in gif
+    assert vf.startswith("fps=12,scale=w=min(640\\,iw):h=-2") and "palettegen=stats_mode=diff" in vf
+    assert "paletteuse=dither=bayer" in vf and "-an" in gif
     webm = rec.export_command("/v/a.mp4", "/v/a.webm", "webm", 480, fps=24, start=2, seconds=5)
     assert webm[webm.index("-ss") + 1] == "2" and webm[webm.index("-t") + 1] == "5" and "libvpx-vp9" in webm
-    mp4 = rec.export_command("/v/a.mp4", "/v/a-small.mp4", "mp4", 640)
+    mp4 = rec.export_command("/v/a.mp4", "/v/a-small.mp4", "mp4")
     assert "libx264" in mp4 and "+faststart" in mp4 and "-ss" not in mp4
+    assert mp4[mp4.index("-vf") + 1].startswith("scale=w=min(1280\\,iw)")  # 720p at most
 
 
 HELPER = """#!/usr/bin/python3
@@ -87,13 +92,18 @@ with open(out, "wb") as f:
 FFPROBE = """#!/bin/sh
 [ -s "$7" ] && echo 1.5
 """
+FFMPEG = """#!/bin/sh
+echo "$@" > "$(dirname "$0")/ffmpeg.args"
+for last; do :; done
+head -c 2048 /dev/zero > "$last"
+"""
 
 
 @pytest.fixture
 def box(tmp_path, monkeypatch):
     bin_ = tmp_path / "bin"
     bin_.mkdir()
-    for name, body in (("couchbox-screencast", HELPER), ("gst-launch-1.0", GST), ("ffprobe", FFPROBE)):
+    for name, body in (("couchbox-screencast", HELPER), ("gst-launch-1.0", GST), ("ffprobe", FFPROBE), ("ffmpeg", FFMPEG)):
         (bin_ / name).write_text(body)
         (bin_ / name).chmod(0o755)
     run = tmp_path / "run"
@@ -159,3 +169,15 @@ def test_start_refuses_what_it_cant_do(box, monkeypatch):
     assert "already exists" in cli("start", str(box / "x.mp4")).stderr
     monkeypatch.setenv("COUCHBOX_SCREENCAST", str(box / "none"))
     assert "missing" in cli("start").stderr
+
+
+def test_export(box):
+    src = box / "Videos/clip.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"x")
+    r = cli("export", str(src), "--mp4", "--from", "2", "--to", "7.5")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith(f"{box}/Videos/clip-small.mp4 (2 KB)")
+    args = (box / "bin/ffmpeg.args").read_text().split()
+    assert args[args.index("-ss") + 1] == "2" and args[args.index("-t") + 1] == "5.5"
+    assert cli("export", str(src), "--from", "5", "--to", "3").returncode == 1
