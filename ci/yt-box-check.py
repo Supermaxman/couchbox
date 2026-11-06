@@ -771,7 +771,8 @@ class Perf:
             f"app {a.get('Rss')} MB resident, {a.get('Pss')} proportional ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); "
             "mpv cache " + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
             + "; " + ", ".join(f"{k} {sum(x.get('Rss', 0) for x in v)} MB ({sum(x.get('Pss', 0) for x in v)} PSS)" for k, v in procs.items())
-            + f"; {m.get('python_objects')} Python objects",
+            + f"; {m.get('python_objects')} Python objects; app by kind: "
+            + ", ".join(f"{k} {v}" for k, v in (m.get("app_by_kind") or {}).items()),
             m,
         )
         return m
@@ -923,21 +924,34 @@ def perf(r, started, signed=False):
         p.say("resume", f"first frame {play['total']} ms after it was asked for, from {play.get('start')} s "
               f"(stream {play['stream']} ms, {stream.get('protocol')}; mpv open {play['open']} ms, first frame {play['frame']} ms more)",
               {"play": play, "stream": stream})
+        cpu_sample(p, "playing-cpu")
+        anchor("home")
+
+    def cpu_sample(p, name, seconds=30):
+        """The processor use of the app, the worker and node while the video plays (it's made to
+        play, and the position must move), with the video's resolution and fps."""
+        from couchbox import appctl
+
+        if d(focus()).get("paused"):
+            appctl.call("yt", {"op": "media", "action": "play"}, timeout=5)
+            time.sleep(1)
+        pos0 = d(focus()).get("position", 0)
         pids = all_pids()
         c0 = {x: usage(x)[0] for x in pids}
-        time.sleep(30)
+        time.sleep(seconds)
         c1 = {x: usage(x)[0] for x in pids}
         f = focus()
+        moved = d(f).get("position", 0) - pos0
         each = {}
         for x in pids:
-            each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / 30)
+            each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / seconds)
         total = sum(each.values())
         res = f"{d(f).get('height')}p{d(f).get('fps')}"
-        p.say("playing-cpu", f"{total}% of one core over 30 s of {d(f).get('videoId')} ({res}"
-              + ("" if (d(f).get("height") or 0) >= 1080 else ": not 1080p, not comparable") + "): "
-              + ", ".join(f"{k} {v}%" for k, v in each.items()), total)
-        p.rows["playing-video"] = res
-        anchor("home")
+        p.say(name, f"{total}% of one core over {seconds} s of {d(f).get('videoId')} ({res}"
+              + ("" if (d(f).get("height") or 0) >= 1080 else ": not 1080p, not comparable")
+              + f"; it played {moved} s" + ("" if moved >= seconds - 3 else ": NOT PLAYING THROUGHOUT") + "): "
+              + ", ".join(f"{k} {v}%" for k, v in each.items()), total if moved >= seconds - 3 else None)
+        p.rows[f"{name}-video"] = res
 
     p.phase("resume", resume)
 
@@ -959,10 +973,47 @@ def perf(r, started, signed=False):
         p.say("after-10-videos-rss", f"{total:.0f} MB resident in all (app, worker, node), {prop:.0f} MB proportional (PSS)", round(total))
         p.rows["after-10-videos-pss"] = round(prop)
 
+    def preload_quiet():
+        """A card rested on (preloaded) without OK reports nothing to YouTube (no History)."""
+        anchor("home")
+        time.sleep(1)
+        remote("down", gap=0.3)
+        card_to(lambda c: c.get("type") == "video" and not c.get("live"), tries=4)
+        mark = last_at()
+        time.sleep(6)  # well past the prefetch and the preload
+        ev = timing_since(mark)
+        reports = [e for e in ev if e["kind"] == "call" and e.get("op") == "report"]
+        streams = [e for e in ev if e["kind"] == "call" and e.get("op") == "stream"]
+        r.n += 1
+        ok = not reports
+        r.failed += 0 if ok else 1
+        print(f"{'PASS' if ok else 'FAIL'} {r.n:02d} preload-reports-nothing: {len(streams)} stream asked for (the preload), "
+              f"{len(reports)} playback reports", flush=True)
+        p.say("preload-reports", len(reports))
+
+    p.phase("preload-quiet", preload_quiet)
+
     if signed:  # as a guest (the household's History stays out of it), then the account again
         anchor("as:guest")
         time.sleep(3)
     p.phase("ten-videos", ten)
+
+    def known_1080p():
+        """As a guest: a 1080p30 and a 1080p60 H.264 video, 30 s each, for comparing with VacuumTube."""
+        for name, vid in (("cpu-1080p30", "kJQP7kiw5Fk"), ("cpu-1080p60", "LXb3EKWsInQ")):
+            mark = last_at()
+            anchor(f"video:{vid}@60")
+            for _ in range(80):
+                if any(e["kind"] == "play" for e in timing_since(mark)):
+                    break
+                time.sleep(0.25)
+            time.sleep(2)
+            cpu_sample(p, name)
+        anchor("home")
+
+    p.phase("known-1080p", known_1080p)
+
+
     if signed:
         anchor(f"as:{signed}")
         time.sleep(3)
@@ -987,6 +1038,9 @@ TARGETS = (  # name, the perf rows' value, the most it may be, the unit (VacuumT
     ("memory after 10 videos (RSS)", lambda r: r.get("after-10-videos-rss"), 450, "MB"),
     ("memory after 10 videos (PSS; VacuumTube 621-649)", lambda r: r.get("after-10-videos-pss"), 450, "MB"),
     ("CPU playing", lambda r: r.get("playing-cpu"), None, "% of a core"),
+    ("CPU 1080p30 (as a guest)", lambda r: r.get("cpu-1080p30"), None, "% of a core"),
+    ("CPU 1080p60 (as a guest; VacuumTube 157)", lambda r: r.get("cpu-1080p60"), None, "% of a core"),
+    ("playback reports from a preload", lambda r: r.get("preload-reports"), 0, ""),
 )
 
 

@@ -578,6 +578,27 @@ class Shooter(QObject):
         return at
 
 
+def by_kind(pid):
+    """The app's proportional memory (MB) by what it's in: the heap and anonymous memory (Python,
+    Qt, mpv's buffers), the GPU's buffers mapped in (/dev/dri: textures, video frames), memfd and
+    shared memory, libraries."""
+    kinds, cur = {}, None
+    try:
+        with open(f"/proc/{pid}/smaps") as fh:
+            for ln in fh:
+                head = ln.split()
+                if head and "-" in head[0] and len(head) >= 5 and ":" in head[3]:
+                    name = head[5] if len(head) > 5 else ""
+                    cur = ("heap" if name == "[heap]" else "anonymous" if not name or name.startswith("[anon") else
+                           "gpu (/dev/dri)" if name.startswith("/dev/dri") else "memfd/shm" if name.startswith(("/memfd:", "/dev/shm", "/SYSV")) else
+                           "stack" if name.startswith("[stack") else "libraries" if ".so" in name else "files")
+                elif ln.startswith("Pss:") and cur:
+                    kinds[cur] = kinds.get(cur, 0) + int(ln.split()[1])
+    except (OSError, ValueError):
+        pass
+    return {k: round(v / 1024) for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])}
+
+
 def memory():
     """This app's memory in parts (MB): resident, anonymous (Python, Qt, mpv's buffers, textures in
     system memory) and file-backed (libraries); mpv's demuxer cache; the stream worker and node."""
@@ -596,7 +617,7 @@ def memory():
     import gc
 
     from couchbox import player
-    out = {"app": rollup(os.getpid()), "python_objects": len(gc.get_objects())}
+    out = {"app": rollup(os.getpid()), "python_objects": len(gc.get_objects()), "app_by_kind": by_kind(os.getpid())}
     caches = []
     for p in list(player._players):
         try:
