@@ -210,7 +210,7 @@ class Backend(QObject):
     # opens at once (a guest's waits ~3-6 s). The worker deciphers the addresses (the kept node)
     # and keeps them per profile; on any trouble, a guest's way (yt-dlp).
     SIGNED_CLIENTS = ("tv_samsung", "tv_downgraded")
-    LIVE_CLIENTS = ("visionos", "ios")                # a live stream's HLS when the TV client gives none
+    LIVE_CLIENTS = ("visionos", "ios")   # a live stream's HLS (visionOS gives it to a guest)
     KEEP_SIGNED = 3 * 3600
 
     def signed_player(self, vid):
@@ -233,7 +233,10 @@ class Backend(QObject):
                 print(f"yt {vid}: {name}: not among yt-dlp's clients here", flush=True)
                 continue
             try:
-                resp = self.yt.call("player", body, cache=False, as_client=c)
+                if name in self.LIVE_CLIENTS:        # asked as a guest (the TV's sign-in is the TV clients' only:
+                    resp = self.yt._post("player", body, as_client=c)   # 400 with it), with the TV's visitor id
+                else:
+                    resp = self.yt.call("player", body, cache=False, as_client=c)
             except youtube.YouTubeError as err:
                 print(f"yt {vid}: {name}: {err.args[0] if err.args else err}", flush=True)
                 continue
@@ -242,7 +245,7 @@ class Backend(QObject):
             is_live = bool((resp.get("videoDetails") or {}).get("isLive")) or (live_seen and name in self.LIVE_CLIENTS)
             live_seen = live_seen or is_live
             if is_live:  # a live stream: its HLS from whichever client gives it (said in the log: what each gave)
-                print(f"yt {vid}: live, {name}: {(resp.get('playabilityStatus') or {}).get('status')}, HLS {bool(sd.get('hlsManifestUrl'))}, "
+                print(f"yt {vid}: live, {name}{' (guest)' if name in self.LIVE_CLIENTS else ''}: {(resp.get('playabilityStatus') or {}).get('status')}, HLS {bool(sd.get('hlsManifestUrl'))}, "
                       f"DASH {bool(sd.get('dashManifestUrl'))}, formats {len(sd.get('adaptiveFormats') or [])}", flush=True)
                 if ok and sd.get("hlsManifestUrl"):
                     return {k: resp.get(k) for k in keep}

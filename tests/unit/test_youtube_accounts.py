@@ -152,6 +152,8 @@ ACCOUNTS_LIST = {
                                         "accountPhoto": {"thumbnails": [{"url": "https://yt3.example/r=s88-c-k", "width": 88}]},
                                         "channelHandle": {"simpleText": "@robinvale"},
                                         "accountByline": {"simpleText": "robin@example.com"},
+                                        "unlimitedStatus": [{"simpleText": "YouTube Premium"}],
+                                        "shouldShowPremiumLogo": True,
                                         "serviceEndpoint": {
                                             "selectActiveIdentityEndpoint": {"supportedTokens": [{"accountStateToken": {}}]}
                                         },
@@ -184,6 +186,8 @@ def test_accounts_list():
         ("Juniper Hollow", "@juniper", "page-9", False),
     ]
     assert chans[0]["email"] == "robin@example.com" and chans[0]["photo"] == "https://yt3.example/r=s352-c-k"
+    assert chans[0]["premium"] and chans[0]["membership"] == "YouTube Premium"
+    assert not chans[1]["premium"] and chans[1]["membership"] == ""
 
 
 # ------------------------------------------------------------------ InnerTube as a profile

@@ -417,9 +417,10 @@ ApplicationWindow {
     Rectangle {                                  // notices
         id: toast
         function show(t) { toastText.text = t; opacity = 1; toastTimer.restart(); }
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: win.playing ? 56 * win.u : parent.height - height - 56 * win.u   // playing: at the top, clear of the captions
-        width: Math.min(toastText.implicitWidth + 64 * win.u, parent.width * 0.8)
+        // playing: top right, above the title (clear of it and of the captions); else bottom centre
+        x: win.playing ? parent.width - width - 96 * win.u : (parent.width - width) / 2
+        y: win.playing ? 18 * win.u : parent.height - height - 56 * win.u
+        width: Math.min(toastText.implicitWidth + 64 * win.u, parent.width * (win.playing ? 0.5 : 0.8))
         height: 76 * win.u
         radius: height / 2
         color: "#f2212121"

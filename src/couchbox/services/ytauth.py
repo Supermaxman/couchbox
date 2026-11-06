@@ -304,6 +304,7 @@ class Auth:
                         "handle": c.get("handle", ""),
                         "photo": c.get("photo", ""),
                         "premium": bool(c.get("premium") or a.get("premium")),
+                        "membership": c.get("membership") or ("YouTube Premium" if c.get("premium") or a.get("premium") else ""),
                     }
                 )
         return out

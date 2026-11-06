@@ -878,8 +878,12 @@ def parse_accounts(resp: dict[str, Any]) -> list[dict[str, Any]]:
         page = next((dig(t, "pageIdToken", "pageId") for t in tokens if dig(t, "pageIdToken", "pageId")), "")
         byline = text(a.get("accountByline"))
         handle = text(a.get("channelHandle"))
-        # a Premium membership, where the account item says so (its byline or a badge on the TV)
-        premium = any("premium" in str(v).lower() for v in (byline, a.get("badges"), a.get("membershipBadge"), a.get("isPremium")) if v)
+        # a Premium membership: the TV's account item says so with shouldShowPremiumLogo and its
+        # "unlimitedStatus" line ("YouTube Premium"), shown under the name on Who's watching
+        membership = " ".join(text(s) for s in (a.get("unlimitedStatus") or []) if text(s)).strip()
+        premium = bool(a.get("shouldShowPremiumLogo")) or any(
+            "premium" in str(v).lower() for v in (membership, byline, a.get("badges"), a.get("membershipBadge"), a.get("isPremium")) if v
+        )
         out.append(
             {
                 "name": text(a.get("accountName")),
@@ -889,6 +893,7 @@ def parse_accounts(resp: dict[str, Any]) -> list[dict[str, Any]]:
                 "pageId": page,
                 "main": not page,
                 "premium": premium,
+                "membership": membership or ("YouTube Premium" if premium else ""),
             }
         )
     if out and not any(c["main"] for c in out):
