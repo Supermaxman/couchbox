@@ -78,14 +78,24 @@ Item {
             active: card.overVideo && !!card.thumb
             sourceComponent: RoundImage { radius: Y.radius; cover: true; source: card.thumb }
         }
-        Corners {
+        Corners {                            // (over the red bar too: its ends follow the rounding)
             anchors.fill: parent
+            z: 1
             r: card.round ? width / 2 : Y.radius
             color: card.behind
             lower: !card.box
             visible: card.behind.a > 0
         }
+        Corners {                            // a boxed card's picture: its lower corners rounded over the panel
+            anchors.fill: parent
+            z: 1
+            r: Y.radius
+            color: panel.color
+            upper: false
+            visible: card.box
+        }
         Rectangle {                          // the length, bottom right (LIVE in red)
+            z: 2
             visible: !!card.item.duration || card.item.live || card.kind === "short"
             anchors { right: parent.right; bottom: parent.bottom; margins: 8 * Y.u; bottomMargin: (progress.visible ? 10 : 8) * Y.u }
             width: badgeRow.implicitWidth + 16 * Y.u
@@ -203,12 +213,21 @@ Item {
                     required property string modelData
                     width: parent.width
                     text: modelData
-                    color: card.on ? "#606060" : Y.dim
+                    color: card.on ? "#909090" : "#717171"
                     font.family: Y.font; font.pixelSize: Y.tSmall
                     elide: Text.ElideRight
                 }
             }
         }
+    }
+    Rectangle {                              // a boxed card's focus: white right up to the ring (no dark hairline
+        visible: card.on && card.box          // where the panel's rounding and the ring's meet)
+        z: -1
+        x: -Y.ring; y: -Y.ring
+        width: card.artW + 2 * Y.ring
+        height: art.height + panel.height + 2 * Y.ring
+        radius: Y.radius + Y.ring
+        color: Y.text
     }
     Rectangle {                              // the focus ring
         visible: card.on

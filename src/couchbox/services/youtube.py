@@ -1479,7 +1479,13 @@ class YouTube:
         many shelves it gave (0: dropped). Names only: no tokens, no addresses."""
         resp = self.call("browse", {"browseId": browse_id}, cache=False)
         surface = dig(resp, "contents", "tvBrowseRenderer", "content", "tvSurfaceContentRenderer") or {}
-        out = {"surface": sorted(surface), "header": sorted(surface.get("header") or {}), "sections": []}
+        out = {
+            "surface": sorted(surface),
+            "header": sorted(surface.get("header") or {}),
+            "sections": [],
+            "headerOutline": outline(surface.get("header") or resp.get("header") or {}),
+            "metadata": sorted(resp.get("metadata") or {}),
+        }
         for s in section_list(resp).get("contents") or []:
             if not isinstance(s, dict):
                 continue
