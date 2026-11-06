@@ -1,9 +1,12 @@
 // An icon in any colour: a small SVG (24x24, drawn here) handed to Image as a data: address, so
 // one drawing serves the white, grey and dark (on a focused, white row) versions.
 //   Icon { name: "search"; color: Y.text; size: 40 * Y.u }
+// Two Images, one shown: a new drawing (another colour, the filled one) loads into the hidden one
+// and is swapped in once it's ready, so the icon never blinks out while it loads (the guide's
+// icons flickered as the focus moved: each change of colour loaded a new picture in its place).
 import QtQuick
 
-Image {
+Item {
     id: icon
     property string name: ""
     property color color: Y.text
@@ -12,8 +15,42 @@ Image {
     property real weight: 1.8                // the stroke, in the drawing's 24ths (the player's buttons: heavier)
     width: size
     height: size
-    sourceSize: Y.sz(size, size)
-    smooth: true
+    readonly property string source: name ? svg(filled && paths[name + "-filled"] ? name + "-filled" : name, color) : ""
+    property int front: 0                    // which Image is shown
+    property string srcA: ""
+    property string srcB: ""
+    onSourceChanged: show()
+    Component.onCompleted: show()
+    function show() {
+        if ((front === 0 ? srcA : srcB) === source) {       // back to what's shown: drop what was loading
+            if (front === 0) { srcB = ""; } else { srcA = ""; }
+            return;
+        }
+        if (front === 0) srcB = source; else srcA = source;
+        settle();
+    }
+    function settle() {                      // the hidden one is ready with the wanted drawing: show it
+        const back = front === 0 ? imgB : imgA, bsrc = front === 0 ? srcB : srcA;
+        if (bsrc === source && (back.status === Image.Ready || !source)) front = 1 - front;
+    }
+    Image {
+        id: imgA
+        anchors.fill: parent
+        sourceSize: Y.sz(icon.size, icon.size)
+        smooth: true
+        source: icon.srcA
+        visible: icon.front === 0
+        onStatusChanged: icon.settle()
+    }
+    Image {
+        id: imgB
+        anchors.fill: parent
+        sourceSize: Y.sz(icon.size, icon.size)
+        smooth: true
+        source: icon.srcB
+        visible: icon.front === 1
+        onStatusChanged: icon.settle()
+    }
     // stroked drawings ("s"), heavier ones ("t") and filled ones ("f", holes by even-odd); a "|"
     // joins a stroked part and a filled part
     readonly property var paths: ({
@@ -98,5 +135,4 @@ Image {
         }
         return "data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>" + body + "</svg>");
     }
-    source: name ? svg(filled && paths[name + "-filled"] ? name + "-filled" : name, color) : ""
 }
