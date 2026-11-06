@@ -14,6 +14,8 @@ FocusScope {
     property var options: []                  // [{label, icon, checked, trailing}]
     property int index: 0
     property string note: ""                  // under the options (nothing to show yet...)
+    readonly property bool channel: !!name    // the channel's panel: its rows 95 tall, Medium, a larger bell
+    readonly property bool levels: title === "Notifications"   // the bell's levels: higher, Medium labels
     signal picked(int index)
     signal closed()
     x: 1254 * Y.u
@@ -30,7 +32,7 @@ FocusScope {
 
     Column {
         width: parent.width
-        y: panel.avatar || panel.name ? 36 * Y.u : 38 * Y.u
+        y: (panel.channel ? 28 : panel.levels ? 14 : 38) * Y.u
         spacing: 12 * Y.u
         RoundImage {
             visible: !!panel.name
@@ -45,7 +47,7 @@ FocusScope {
             horizontalAlignment: Text.AlignHCenter
             topPadding: 18 * Y.u
             text: panel.name
-            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
+            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Medium
             elide: Text.ElideRight
         }
         Text {
@@ -80,7 +82,7 @@ FocusScope {
                 required property int index
                 readonly property bool on: panel.index === index && panel.activeFocus
                 width: panel.width
-                height: 90 * Y.u
+                height: (panel.channel ? 95 : 90) * Y.u
                 radius: 16 * Y.u
                 color: on ? Y.text : Y.raised
                 Icon {
@@ -96,7 +98,8 @@ FocusScope {
                     anchors { left: parent.left; leftMargin: opt.modelData.icon ? 96 * Y.u : 24 * Y.u; right: parent.right; rightMargin: 84 * Y.u; verticalCenter: parent.verticalCenter }
                     text: opt.modelData.label
                     color: opt.on ? Y.ink : Y.text
-                    font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.DemiBold
+                    font.family: Y.font; font.pixelSize: 30 * Y.u
+                    font.weight: panel.channel || panel.levels ? Font.Medium : Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Text {
@@ -110,7 +113,7 @@ FocusScope {
                     visible: !!opt.modelData.checked || !!opt.modelData.trailing
                     anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }
                     name: opt.modelData.trailing || "check"
-                    size: 38 * Y.u
+                    size: (panel.channel ? 42 : 38) * Y.u
                     color: opt.on ? Y.ink : Y.text
                 }
             }

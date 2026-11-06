@@ -279,7 +279,7 @@ FocusScope {
         else { ctl.forceActiveFocus(); mode = "controls"; hide.restart(); }
     }
     readonly property var notifyLevels: [
-        {level: "all", label: "All", icon: "bell-all"}, {level: "personalized", label: "Personalized", icon: "bell"},
+        {level: "all", label: "All", icon: "bell-all-filled"}, {level: "personalized", label: "Personalized", icon: "bell"},
         {level: "none", label: "None", icon: "bell-off"}
     ]
     // the panel's rows (a function, so onPanelChanged reads them for the new panel, not the last)

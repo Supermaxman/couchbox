@@ -177,6 +177,7 @@ FocusScope {
         }
         Row {
             visible: !!page.nextInfo.title
+            x: 7 * Y.u                         // (YouTube's sits a little right of the title)
             spacing: 22 * Y.u
             Icon { name: "play"; size: 40 * Y.u; color: Y.text; anchors.verticalCenter: parent.verticalCenter }
             Text { width: 500 * Y.u; text: page.nextInfo.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
@@ -189,26 +190,27 @@ FocusScope {
         Rectangle {                            // Subscribe / Subscribed
             readonly property bool on: page.area === "side" && page.side === 0 && page.activeFocus
             width: subRow.implicitWidth + 44 * Y.u; height: 72 * Y.u; radius: height / 2
-            x: -22 * Y.u
+            x: -13 * Y.u
             color: on ? Y.text : "transparent"
             Row {
                 id: subRow
                 anchors.centerIn: parent
-                spacing: 22 * Y.u
+                spacing: 26 * Y.u
                 Icon { name: page.info.subscribed ? "check" : "plus"; size: 38 * Y.u; color: parent.parent.on ? Y.ink : Y.text; anchors.verticalCenter: parent.verticalCenter }
                 Text { text: page.info.subscribed ? "Subscribed" : "Subscribe"; color: parent.parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
             }
         }
         Row {
-            x: -14 * Y.u
+            x: -8 * Y.u
             spacing: 24 * Y.u
             Repeater {
-                model: [page.info.like === "like" ? "heart-filled" : "heart", "comments", "remix", "more"]
+                model: [page.info.like === "like" ? "heart-filled" : "heart", "comments-round", "remix", "more"]
                 CtlButton {
                     required property string modelData
                     required property int index
                     icon: modelData
                     plain: true
+                    weight: 1.9                // outlines, as YouTube's
                     on: page.area === "side" && page.side === index + 1 && page.activeFocus
                 }
             }
