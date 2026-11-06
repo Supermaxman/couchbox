@@ -4,8 +4,21 @@ set -e
 
 in_chroot() { [ "${COUCHBOX_IMAGE_BUILD:-0}" = 1 ] || systemd-detect-virt --chroot >/dev/null 2>&1; }
 
+# KWin lets programs take screenshots by their executable (couchbox-screenshot.desktop), and other
+# .desktop files name /usr/bin/python3 too, so couchbox-screenshot runs on its own hard link to
+# Python. A Python upgrade replaces the file it links to: the trigger on /usr/bin renews the link.
+capture_python() {
+    py=$(readlink -f /usr/bin/python3) || return 0
+    dst=/usr/lib/couchbox/libexec/couchbox-capture-python
+    [ -x "$py" ] && ! [ "$dst" -ef "$py" ] || return 0
+    install -d /usr/lib/couchbox/libexec
+    ln -f "$py" "$dst.new" 2>/dev/null || cp -p "$py" "$dst.new"
+    mv -f "$dst.new" "$dst"
+}
+
 case "$1" in
 configure)
+    capture_python
     getent group couchbox >/dev/null || addgroup --system --quiet couchbox
     if ! id tv >/dev/null 2>&1; then
         useradd --create-home --shell /bin/bash --comment "Couchbox TV session" tv
@@ -80,10 +93,15 @@ X
     fi
     ;;
 triggered)
+    capture_python
     # Plasma Bigscreen was upgraded: lay the Couchbox home screen over the new version (or
     # fall back to its own home screen if this version isn't tested yet)
-    /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
-    in_chroot || touch /var/lib/couchbox/state/home-stale
+    case " $2 " in
+    *" /usr/share/plasma/plasmoids/org.kde.bigscreen.homescreen "*)
+        /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
+        in_chroot || touch /var/lib/couchbox/state/home-stale
+        ;;
+    esac
     ;;
 esac
 

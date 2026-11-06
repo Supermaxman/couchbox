@@ -46,6 +46,7 @@ Couchbox targets the **Raspberry Pi 5 (8 GB recommended)** with an NVMe SSD on t
 |---|---|
 | [docs/install.md](docs/install.md) | **Install**: USB stick → TV → phone or remote, step by step, with troubleshooting |
 | [docs/hardware-test.md](docs/hardware-test.md) | The checklist for testing a release on fresh hardware |
+| [docs/recording.md](docs/recording.md) | Recording the TV screen: clips for the README and release notes, screenshots |
 | [docs/PLAN.md](docs/PLAN.md) | The plan: goals, decisions, milestones with done-when criteria, risks, progress |
 | [docs/design/architecture.md](docs/design/architecture.md) | Components, processes, privilege and security model, file layout |
 | [docs/design/settings.md](docs/design/settings.md) | Every setting, the Settings app, and home screen customization |

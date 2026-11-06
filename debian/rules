@@ -1,9 +1,23 @@
 #!/usr/bin/make -f
 # Couchbox: files are laid out by the top-level Makefile (make install DESTDIR=...).
+# Python and data, plus one small C helper (couchbox-screencast, for couchbox-record).
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+# CC and PKG_CONFIG for the host architecture (an arm64 .deb cross-built on a PC, too)
+DPKG_EXPORT_BUILDTOOLS = 1
+include /usr/share/dpkg/buildtools.mk
+
 %:
 	dh $@ --with python3
 
-override_dh_auto_build override_dh_auto_test override_dh_auto_clean:
+override_dh_auto_build:
+	$(MAKE) helpers
+
+override_dh_auto_clean:
+	rm -rf build/helpers
+
+override_dh_auto_test:
 	true
 
 override_dh_auto_install:
@@ -31,4 +45,4 @@ override_dh_python3:
 
 override_dh_fixperms:
 	dh_fixperms
-	chmod 755 debian/couchbox/usr/lib/couchbox/bin/* debian/couchbox/usr/bin/couchbox
+	chmod 755 debian/couchbox/usr/lib/couchbox/bin/* debian/couchbox/usr/lib/couchbox/libexec/* debian/couchbox/usr/bin/couchbox

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Couchbox screenshot
-Comment=Saves what's on the TV (couchbox-screenshot); lets it ask KWin for the screen
-Exec=/usr/bin/python3 /usr/lib/couchbox/bin/couchbox-screenshot
+Comment=Saves what's on the TV (couchbox-screenshot); lets its own link to Python ask KWin for the screen
+Exec=/usr/lib/couchbox/libexec/couchbox-capture-python /usr/lib/couchbox/bin/couchbox-screenshot
 NoDisplay=true
 X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2
