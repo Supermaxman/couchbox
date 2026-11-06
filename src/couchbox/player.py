@@ -59,6 +59,22 @@ _FenceSyncFn = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint)
 _DeleteSyncFn = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 _gl = {"fence": None, "delete": None, "last": None}
 
+# glibc keeps memory freed by mpv's threads (each video's packets and frames) in per-thread
+# arenas, fragmented, rather than giving it back: measured, a player's resident memory grew
+# from 224 to 395 MB over 8 videos. Fewer arenas, and a trim as each new file starts: it
+# stays at ~210-320.
+try:
+    _libc = ctypes.CDLL("libc.so.6")
+    _libc.mallopt(-8, 2)  # M_ARENA_MAX (for arenas made from now on)
+except (OSError, AttributeError):
+    _libc = None
+
+
+def _trim():
+    """Give the memory freed since back to the system (in a thread: it can take a while)."""
+    if _libc is not None:
+        threading.Thread(target=_libc.malloc_trim, args=(0,), daemon=True).start()
+
 
 def _fence_sync(condition, flags):
     fence = _gl["fence"](condition, flags)
@@ -377,6 +393,7 @@ class MpvVideo(QQuickFramebufferObject):
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
+        QTimer.singleShot(2000, _trim)  # the file before's buffers, freed by now
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 
@@ -484,6 +501,7 @@ class MpvVideo(QQuickFramebufferObject):
     @Slot()
     def stop(self):
         self.mpv.command("stop")
+        QTimer.singleShot(1000, _trim)
 
     @Slot()
     def shutdown(self):

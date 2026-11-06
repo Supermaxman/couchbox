@@ -43,7 +43,7 @@ if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PA
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
 os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # resumed starts and skips to a keyframe (player.KEYFRAMES)
-os.environ.setdefault("COUCHBOX_MPV_CACHE", "64MiB,16MiB")   # mpv's read-ahead and back buffer: YouTube needs less
+os.environ.setdefault("COUCHBOX_MPV_CACHE", "32MiB,8MiB")    # mpv's read-ahead (~1 min of 1080p) and back buffer: always full, so small
 # YouTube's servers send an open-ended range at about playing speed: asked for in 4 MB pieces
 # (the first 256 kB, to start sooner) they come at once. Seeking a DASH stream (and a resumed
 # start) took 2-4 s, mostly waiting to read up to the spot; 0.1-0.3 s so (measured, a PC)
@@ -581,7 +581,7 @@ def memory():
     caches = []
     for p in list(player._players):
         try:
-            st = p.mpv["demuxer-cache-state"] or {}
+            st = getattr(p.mpv, "demuxer_cache_state", None) or {}   # (the property: mpv[name] reads the option)
             caches.append({"bytes_mb": round((st.get("total-bytes") or 0) / 2**20), "ahead_s": round(st.get("cache-duration") or 0, 1)})
         except Exception:  # noqa: BLE001
             pass

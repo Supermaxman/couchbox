@@ -956,10 +956,13 @@ def perf(r, started, signed=False):
         p.say("after-10-videos-rss", f"{total:.0f} MB resident in all (app, worker, node), {prop:.0f} MB proportional (PSS)", round(total))
         p.rows["after-10-videos-pss"] = round(prop)
 
-    if not signed:
-        p.phase("ten-videos", ten)
-    else:
-        p.say("ten-videos", "(run as a guest: --perf without --profile)")
+    if signed:  # as a guest (the household's History stays out of it), then the account again
+        anchor("as:guest")
+        time.sleep(3)
+    p.phase("ten-videos", ten)
+    if signed:
+        anchor(f"as:{signed}")
+        time.sleep(3)
 
     allcalls = [e for e in timing_since(-1) if e["kind"] == "call"]
     by = {}
@@ -1094,7 +1097,7 @@ def main():
         sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
 
     if a.perf:
-        perf(r, started, signed=bool(want))
+        perf(r, started, signed=want)
     elif want:
         account(r, want)
     else:

@@ -227,6 +227,7 @@ ApplicationWindow {
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
         else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
         else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
+        else if (k === "as") win.use(rest === "guest" ? "" : rest, "home");   // watch as a profile (the box check)
         else if (k === "shorts") { stack.clear(StackView.Immediate); push(shortsC, {startId: rest}); }
         else if (k === "signin") push(signInC, {});
     }
