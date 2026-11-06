@@ -1288,12 +1288,15 @@ class YouTube:
     # ---------------------------------------------------------------- requests
     def _post(self, ep: str, body: dict[str, Any], token: str = "", page: str = "", as_client: dict | None = None) -> dict[str, Any]:
         client = dict(self.client, **{k: v for k, v in (as_client or {}).items() if k != "clientNameId"})
-        if self.visitor:
-            client["visitorData"] = self.visitor
+        # the guest's visitor id goes with a guest's requests only: never with an account's, so
+        # YouTube can't tie what a guest is shown to the account's watching (or the other way)
+        visitor = self.visitor if not token else ""
+        if visitor:
+            client["visitorData"] = visitor
         context: dict[str, Any] = {"client": client}
         if page:
             context["user"] = {"onBehalfOfUser": page}  # a brand account of the signed-in Google account
-        headers = {"X-Goog-Visitor-Id": self.visitor} if self.visitor else {}
+        headers = {"X-Goog-Visitor-Id": visitor} if visitor else {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         if as_client:  # another client's: its own name (number), version and user agent in the headers
@@ -1778,15 +1781,20 @@ class YouTube:
             pass  # the next report tries again
 
     # ---------------------------------------------------------------- the guest's searches
+    def _searches_file(self) -> str:
+        """Each profile's own recent searches (a guest's apart: never the account's)."""
+        pid = (self.profile.get("id", "") if self.profile else "") or "guest"
+        return "searches-" + "".join(ch if ch.isalnum() else "_" for ch in pid) + ".json"
+
     def searches(self) -> list[str]:
-        return self._read("searches.json").get("recent", [])
+        return self._read(self._searches_file()).get("recent", [])
 
     def remember_search(self, q: str) -> None:
         q = q.strip()
         if not q:
             return
         recent = [s for s in self.searches() if s.lower() != q.lower()]
-        self._write("searches.json", {"recent": [q, *recent][:20]})
+        self._write(self._searches_file(), {"recent": [q, *recent][:20]})
 
 
 # The guide's Shorts: YouTube's TV app asks for this sequence (reelWatchEndpoint.params)

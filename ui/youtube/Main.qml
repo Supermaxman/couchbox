@@ -29,6 +29,11 @@ ApplicationWindow {
     property string section: "home"
     property bool ready: false
     readonly property bool playing: stack.depth > 0 && stack.currentItem && stack.currentItem.videoId !== undefined
+    // a player under the pages on top (its channel opened from it): its video stays loaded, paused
+    function playerUnder() {
+        for (let i = 0; i < stack.depth; i++) { const it = stack.get(i, StackView.DontLoad); if (it && it.videoId !== undefined) return true; }
+        return false;
+    }
     readonly property var tabs: ({music: 1, gaming: 1, news: 1, podcasts: 1, movies: 1, live: 1, sports: 1})
     property bool picking: false               // "Who's watching" is up
     property bool shortsFromGuide: false       // Shorts opened from the guide: Back returns to it
@@ -67,6 +72,8 @@ ApplicationWindow {
         stack.clear(StackView.Immediate);
         home.loaded = false;
         if (libraryL.item) libraryL.item.loaded = false;
+        if (searchL.item) searchL.item.reset();                // (a guest sees nothing of the account's)
+        if (tabL.item) tabL.item.loaded = false;
         if (subscriptionsL.item) subscriptionsL.item.loaded = false;
         homeLater = !!then && then.indexOf("video:") === 0;   // straight into a video: Home when it's left
         const id = profile ? profile.id : "guest";              // Home's copy from last time, if it's this profile's
@@ -491,9 +498,9 @@ ApplicationWindow {
     // ... and the video itself opened in mpv (paused, muted, reading little ahead): OK then only plays it
     function preloadFocused() {
         const id = win.focusedVideo, c = win.focusedCardInfo;
-        if (!id || win.playing || !c || c.type !== "video") return;
+        if (!id || win.playing || playerUnder() || !c || c.type !== "video") return;   // (a preload would replace its video)
         Y.call("stream", {id: id}, r => {
-            if (win.focusedVideo !== id || win.playing || !r.url || r.live || r.wait > 0 || r.url.indexOf("demo://") === 0) return;
+            if (win.focusedVideo !== id || win.playing || win.playerUnder() || !r.url || r.live || r.wait > 0 || r.url.indexOf("demo://") === 0) return;
             video.preload(r.url, Y.resumeAt(Y.progressOf(c), r.duration || c.duration), r.opts || "");
         }, () => {});
     }

@@ -535,6 +535,14 @@ class MpvVideo(QQuickFramebufferObject):
         videos; closed, Settings' mode comes back a few seconds later."""
         self._rate.set_hold(on)
 
+    @Slot(bool)
+    def setSubtitleShown(self, on):
+        """Captions shown (or kept, hidden, under something drawn over them)."""
+        try:
+            self.mpv.sub_visibility = bool(on)
+        except Exception:  # noqa: BLE001
+            pass
+
     @Slot(int)
     def setSubtitlePosition(self, percent):
         """Where subtitles sit (100: the bottom); raised while the controls are showing."""

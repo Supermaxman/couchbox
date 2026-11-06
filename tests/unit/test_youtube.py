@@ -370,7 +370,13 @@ def test_guest_searches_are_remembered(tmp_path):
     for q in ("paper", "trail", "Paper", " "):
         y.remember_search(q)
     assert y.searches() == ["Paper", "trail"]
-    assert (tmp_path / "searches.json").stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "searches-guest.json").stat().st_mode & 0o777 == 0o600
+    # an account's are its own (a guest never sees them, nor the account a guest's)
+    y.profile = {"id": "acct:", "account": "acct"}
+    assert y.searches() == []
+    y.remember_search("private")
+    y.profile = {}
+    assert y.searches() == ["Paper", "trail"]
 
 
 def test_guest_home_fills_from_the_tabs(monkeypatch, tmp_path):

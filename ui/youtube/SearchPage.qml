@@ -45,6 +45,11 @@ FocusScope {
         if (page.activeFocus) keys.forceActiveFocus();   // (moving through the guide only shows it)
         if (!landing.loaded) landing.load();
     }
+    function reset() {                        // another profile: nothing of the last one's (its results, its shelf)
+        results = false; query = ""; searched = ""; suggestions = []; problem = "";
+        feed.rows = [];
+        landing.loaded = false; landing.row = ({title: "", items: []});
+    }
     function search(q) {
         q = (q || "").trim();
         if (!q) return;
@@ -313,7 +318,9 @@ FocusScope {
             property bool loaded: false
             function load() {
                 loaded = true;
+                const who = Y.profile ? Y.profile.id : "";
                 Y.call("home", {}, r => {
+                    if ((Y.profile ? Y.profile.id : "") !== who) return;   // (asked as the profile before)
                     const sh = (r.shelves || []).find(x => (x.items || []).length && !x.grid && !x.hero);
                     if (sh) landing.row = Object.assign({}, sh, {title: sh.title || "Recommended", subtitle: "", pill: null, more: ""});
                 }, () => { landing.loaded = false; });

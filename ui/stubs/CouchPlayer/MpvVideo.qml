@@ -33,6 +33,7 @@ Rectangle {
     function subText() { return ""; }
     function setRatePolicy(p) {}
     function setRateHold(on) {}
+    function setSubtitleShown(on) {}
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {

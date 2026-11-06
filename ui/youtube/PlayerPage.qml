@@ -15,6 +15,7 @@
 // bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
 // profile left off, and reports what's watched (History, resume on every device).
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Effects
 
 FocusScope {
@@ -178,12 +179,18 @@ FocusScope {
         interval: 1000; repeat: true; running: player.waitLeft > 0
         onTriggered: { player.waitLeft--; if (player.waitLeft <= 0) player.begin(); }
     }
+    // a page opened over the player (its channel): the video paused where it is, playing again on
+    // the way back if it was (the same file: nothing reloaded)
+    property bool resumeOnReturn: false
+    function leaveFor() { resumeOnReturn = !video.paused && !video.ended; video.setPaused(true); }
+    StackView.onActivated: { if (resumeOnReturn) { resumeOnReturn = false; video.setPaused(false); } showControls(); }
     Component.onCompleted: { video.setRateHold(true); start(videoId, startAt); }   // (the TV's rate kept between videos)
     function noteSeen() {                       // the cards' red bars, for the way back
         if (videoId && s && !s.live && duration > 0 && pos > 0) Y.noteSeen(videoId, video.ended ? 1 : pos / duration);
     }
     Component.onDestruction: {
         video.setRateHold(false);
+        video.setSubtitleShown(true);
         noteSeen();
         if (s && reported) report(video.ended ? "end" : "pause");
         Y.videoSide = false;
@@ -388,7 +395,7 @@ FocusScope {
         const o = panelOptions[i];
         if (panel === "channel") {
             if (i === 0) { if (v.subscribed) openPanel("notify"); else subscribe(true); }
-            else { panel = ""; video.setPaused(true); player.openChannel(v.channelId); }
+            else { panel = ""; leaveFor(); player.openChannel(v.channelId); }
         } else if (panel === "notify") {
             if (o.level === "unsubscribe") { subscribe(false); return; }
             const opt = (v.notifyOptions || []).find(x => x.level === o.level);
@@ -441,6 +448,9 @@ FocusScope {
     // captions above the controls while they're up (YouTube's: never under the scrim or the related row)
     readonly property bool captionsHigh: mode !== "hidden" || !!panel
     onCaptionsHighChanged: video.setSubtitlePosition(captionsHigh ? 58 : 100)
+    // ...and out of the way of the related row and the seek frames (they'd sit over them)
+    readonly property bool captionsShown: mode !== "related" && !seeking
+    onCaptionsShownChanged: video.setSubtitleShown(captionsShown)
     onModeChanged: {
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
         else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
@@ -577,7 +587,7 @@ FocusScope {
             facts: ((player.meta.details || {}).facts || []).slice(0, 1).concat([{value: Y.count(player.dislikes) || "0", label: "Dislikes"}],
                                                                               ((player.meta.details || {}).facts || []).slice(1))})
         chapters: player.chapters
-        onOpenChannel: { player.panel = ""; video.setPaused(true); player.openChannel(player.v.channelId); }
+        onOpenChannel: { player.panel = ""; player.leaveFor(); player.openChannel(player.v.channelId); }
         onOpenComments: player.openPanel("comments")
         onSeekTo: t => { video.seekTo(t); player.panel = ""; }
         onClosed: player.panel = ""
