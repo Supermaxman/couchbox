@@ -76,6 +76,11 @@ class SolverError(RuntimeError):
 
 
 def _reap(proc) -> None:
+    for f in (proc.stdin, proc.stdout):
+        try:
+            f.close()
+        except (OSError, AttributeError):
+            pass
     try:
         proc.wait(timeout=2)
     except (subprocess.TimeoutExpired, OSError):
@@ -408,6 +413,9 @@ def solve(n: list[str], sig: list[str]) -> tuple[dict[str, str], dict[str, str]]
     """({n challenge: answer}, {signature: answer}) with the current player, on the kept node."""
     global _script
     if not _script:
+        from couchbox.services import ytstream
+
+        ytstream.add_path()  # (yt-dlp's EJS scripts, from its release: yt-dlp itself isn't needed)
         import yt_dlp_ejs.yt.solver as ejs
 
         _script = server_script(ejs.lib(), ejs.core())

@@ -48,15 +48,22 @@ class Unavailable(RuntimeError):
 
 
 # ------------------------------------------------------------------ yt-dlp
+def add_path() -> None:
+    """yt-dlp's release on Python's path (without importing it: its EJS scripts are enough for
+    the challenge solver)."""
+    for path in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP):
+        if path and os.path.exists(path):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            return
+
+
 def module():
     """The yt_dlp module (imported once), or None when there isn't one."""
     global _module
     if _module is not None:
         return _module or None
-    for path in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP):
-        if path and os.path.exists(path) and path not in sys.path:
-            sys.path.insert(0, path)
-            break
+    add_path()
     try:
         import yt_dlp
 

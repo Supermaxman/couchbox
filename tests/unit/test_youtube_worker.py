@@ -133,3 +133,45 @@ def test_our_own_player_answer_deciphered():
         ytstream.from_player(dict(pr, videoDetails={"isLive": True}), solve)
     with pytest.raises(ytstream.Unavailable):
         ytstream.from_player(dict(pr, playabilityStatus={"status": "LOGIN_REQUIRED", "reason": "Sign in"}), solve)
+
+
+def test_sixty_frames_win_at_the_same_height():
+    # H.264 1080p60 (299) over 1080p30 (137), 720p60 (298) under the 1080p cap's best
+    fs = [
+        {
+            "format_id": "137",
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+            "height": 1080,
+            "width": 1920,
+            "fps": 30,
+            "tbr": 4000,
+            "url": "https://m/137",
+        },
+        {
+            "format_id": "299",
+            "vcodec": "avc1.64002a",
+            "acodec": "none",
+            "height": 1080,
+            "width": 1920,
+            "fps": 60,
+            "tbr": 6000,
+            "url": "https://m/299",
+        },
+        {
+            "format_id": "298",
+            "vcodec": "avc1.4d4020",
+            "acodec": "none",
+            "height": 720,
+            "width": 1280,
+            "fps": 60,
+            "tbr": 3500,
+            "url": "https://m/298",
+        },
+        {"format_id": "140", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128, "url": "https://m/140"},
+    ]
+    v, a = ytstream.pick(fs)
+    assert v["format_id"] == "299" and a["format_id"] == "140"
+    assert ytstream.pick(fs, max_height=720)[0]["format_id"] == "298"
+    out = ytstream.playable({"formats": fs})
+    assert out["itags"] == ["299", "140"] and out["fps"] == 60

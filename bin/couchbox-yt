@@ -136,14 +136,37 @@ class Backend(QObject):
                 self.yt._post("browse", {"browseId": "FEtopics_music"})
         except Exception:  # noqa: BLE001 (offline for now: yt-dlp's usual way meanwhile)
             pass
+        # signed in, streams come from the app's own /player calls: the worker needs no yt-dlp (~20-25 MB)
+        # unless a guest's way is needed later; yt-dlp's TV client details are kept here (a week)
+        signed = bool(self.yt.profile)
         try:
-            self.worker.call("warm", timeout=90)       # node up with the player read: the first video starts sooner
+            self.worker.call("warm", ytdlp=not signed, timeout=90)   # the solver up, the player read
         except Exception as err:  # noqa: BLE001
             print(f"stream worker: {err}", flush=True)
+        self.yt.set_client(self.kept_json("client.json", lambda: self.worker.call("client", timeout=60)))
+
+    def kept_json(self, name, fetch, days=7):
+        """A small answer of the worker's kept in the app's folder (asked again after `days`)."""
+        import time
+        path = os.path.join(self.yt.dir, name)
         try:
-            self.yt.set_client(self.worker.call("client", timeout=60))
+            if time.time() - os.path.getmtime(path) < days * 86400:
+                with open(path) as f:
+                    return json.load(f)
+        except (OSError, ValueError):
+            pass
+        try:
+            out = fetch()
         except Exception as err:  # noqa: BLE001 (no yt-dlp yet: ours)
             print(f"stream worker: {err}", flush=True)
+            return {}
+        try:
+            with open(path + ".tmp", "w") as f:
+                json.dump(out, f)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
+        return out
 
     def stream_args(self, max_height=None):
         st = self.settings.get()
@@ -190,14 +213,8 @@ class Backend(QObject):
 
     def signed_player(self, vid):
         import time
-        if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept: no yt-dlp needed for them at start)
-            path = os.path.join(self.yt.dir, "clients.json")
-            try:
-                with open(path) as f:
-                    self.clients = json.load(f)
-                self.pool.submit(self.refresh_clients, path)
-            except (OSError, ValueError):
-                self.refresh_clients(path)
+        if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept a week: no yt-dlp needed for them)
+            self.clients = self.kept_json("clients.json", lambda: self.worker.call("clients", timeout=60))
         if getattr(self, "player_js", (0, None))[0] < time.time():
             self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
         sts = self.player_js[1].get("sts") or 0
@@ -213,16 +230,6 @@ class Backend(QObject):
             if (resp.get("playabilityStatus") or {}).get("status") == "OK" and (resp.get("streamingData") or {}).get("adaptiveFormats"):
                 return {k: resp.get(k) for k in ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")}
         return None
-
-    def refresh_clients(self, path):
-        c = self.worker.call("clients", timeout=60)
-        self.clients = c
-        try:
-            with open(path + ".tmp", "w") as f:
-                json.dump(c, f)
-            os.replace(path + ".tmp", path)
-        except OSError:
-            pass
 
     def signed_key(self, vid):
         prof = self.yt.profile.get("id", "") if self.yt.profile else ""
@@ -867,7 +874,7 @@ def main():
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     started("qml")
-    shooter.window = engine.rootObjects()[0]
+    shooter.window = Shooter.window = engine.rootObjects()[0]     # (the class's too: the memory report's census)
     shooter.window.frameSwapped.connect(lambda: getattr(shooter, "_drawn", False) or (setattr(shooter, "_drawn", True), started("first-frame")))
     keyfilter.window = shooter.window
     shooter.window.installEventFilter(keyfilter)

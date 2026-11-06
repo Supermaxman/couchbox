@@ -27,7 +27,7 @@ FocusScope {
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
                                           height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
-                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo()}; }
+                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position

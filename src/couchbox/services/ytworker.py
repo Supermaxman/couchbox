@@ -33,7 +33,7 @@ CACHE_SECONDS = 4 * 3600  # at most; less when the addresses expire sooner
 EXPIRY_MARGIN = 900  # an address this close to its expiry is asked for again
 PREFETCH_STALE = 8.0
 MAX_RSS_MB = 400
-MAX_CACHED = 24
+MAX_CACHED = 16
 # what's kept of yt-dlp's information per video (the rest is thumbnails, heat maps, every
 # language's caption formats...: megabytes once parsed)
 INFO_KEYS = (
@@ -282,10 +282,11 @@ class Worker:
                 return self.answer(n, result={"ok": True})
             if op == "resolve":
                 return self.answer(n, result=self.resolve(a))
-            if op == "warm":  # the app's start: yt-dlp imported, node up with the player read
+            if op == "warm":  # the app's start: the solver up with the player read (and yt-dlp, a guest's)
                 from couchbox.services import ytjs
 
-                ytstream.module()
+                if a.get("ytdlp", True):
+                    ytstream.module()
                 ytjs.prepare()
                 return self.answer(n, result={"ok": True, "rss": round(rss_mb())})
             if op == "player":  # the player JS's version and signatureTimestamp (the app's /player calls)

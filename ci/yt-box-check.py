@@ -933,7 +933,7 @@ def perf(r, started, signed=False):
         cpu_sample(p, "playing-cpu")
         anchor("home")
 
-    def cpu_sample(p, name, seconds=30):
+    def cpu_sample(p, name, seconds=30, want=""):
         """The processor use of the app, the worker and node while the video plays (it's made to
         play, and the position must move), with the video's resolution and fps."""
         from couchbox import appctl
@@ -948,6 +948,10 @@ def perf(r, started, signed=False):
         c1 = {x: usage(x)[0] for x in pids}
         f = focus()
         moved = d(f).get("position", 0) - pos0
+        if want and (d(f).get("videoId") != want or not d(f).get("itags")):  # (mpv would still be playing the one before)
+            p.say(name, f"{want} didn't play: the player shows {d(f).get('videoId')!r}, itags {d(f).get('itags')!r}, "
+                  f"{d(f).get('message') or 'no message'}", None)
+            return
         each = {}
         for x in pids:
             each[name_of(x)] = each.get(name_of(x), 0) + round(100 * (c1[x] - c0[x]) / seconds)
@@ -1021,7 +1025,7 @@ def perf(r, started, signed=False):
                     break
                 time.sleep(0.25)
             time.sleep(2)
-            cpu_sample(p, name)
+            cpu_sample(p, name, want=vid)
         anchor("home")
 
     p.phase("known-1080p", known_1080p)
