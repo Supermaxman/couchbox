@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.0](https://github.com/Supermaxman/couchbox/compare/v0.18.2...v0.19.0) (2026-11-06)
+
+
+### New
+
+* couchbox-record, screen recordings of the TV (and screenshots fixed for KWin's authorization) ([#103](https://github.com/Supermaxman/couchbox/issues/103)) ([f4e52ec](https://github.com/Supermaxman/couchbox/commit/f4e52ecb32a09a39ffcc68afd952dd6f5d2506ba))
+* native YouTube app (beta tile): Leanback look, signed-in feeds, SponsorBlock and extras, casting, live DVR ([#102](https://github.com/Supermaxman/couchbox/issues/102)) ([340be10](https://github.com/Supermaxman/couchbox/commit/340be10388d0cf91fa730fed15e361590393c6a2))
+
 ## [0.18.2](https://github.com/Supermaxman/couchbox/compare/v0.18.1...v0.18.2) (2026-11-05)
 
 
