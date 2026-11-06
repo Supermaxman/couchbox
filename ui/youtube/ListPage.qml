@@ -10,6 +10,7 @@ FocusScope {
     property string problem: ""
     property bool loaded: false
     readonly property string label: title
+    function focusDetail() { return {browseId: browseId, loaded: loaded, rows: feed.count, problem: problem}; }
     signal closed()
     Component.onCompleted: Y.call("browse", {id: browseId}, r => {
         loaded = true;

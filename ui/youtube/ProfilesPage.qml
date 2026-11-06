@@ -14,6 +14,8 @@ FocusScope {
     readonly property int count: profiles.length + 1        // + Add account
     readonly property bool onAdd: index === profiles.length
     readonly property var focused: onAdd ? null : profiles[index]
+    function focusDetail() { return {count: profiles.length, brands: profiles.filter(p => !!p.pageId).length, index: index, area: area,
+                                      id: onAdd ? "add" : (focused ? focused.id : "")}; }
     signal chosen(var profile)                // null: watch as a guest
     signal addAccount()
     signal signOut(var profile)

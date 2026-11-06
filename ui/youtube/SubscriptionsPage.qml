@@ -12,6 +12,7 @@ FocusScope {
     property string problem: ""
     readonly property string label: "Subscriptions"
     readonly property real feedX: 621 * Y.u
+    function focusDetail() { return {loaded: loaded, channels: channels.length, picked: picked, rows: feed.count, inFeed: feedFocused, problem: problem}; }
 
     function load() {
         problem = "";

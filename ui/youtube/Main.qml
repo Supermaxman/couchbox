@@ -406,6 +406,18 @@ ApplicationWindow {
 
     // what has the focus, for the control socket's "focus" op (ci/yt-box-check.sh): the named
     // items from the page down to the focused one, whether it's on screen, and the page's details
+    // the card (or Library tile) the focus is on: what it is, not what it's called
+    function focusedCard(it) {
+        for (let p = it; p; p = p.parent) {
+            const c = p.currentItem;
+            if (c && c.item !== undefined && c.kind !== undefined) {
+                const x = c.item || {};
+                return {type: x.type || "video", id: x.id || "", progress: x.progress || 0, live: !!x.live};
+            }
+            if (c && c.modelData && c.modelData.colors) return {type: "tile", id: c.modelData.id || "", title: c.modelData.title || ""};
+        }
+        return null;
+    }
     function focusState() {
         const names = [];
         let it = win.activeFocusItem, shown = !!it;
@@ -415,8 +427,11 @@ ApplicationWindow {
         }
         const cur = stack.depth ? stack.currentItem : null;
         const st = {focus: names.join("/"), item: String(it).split("(")[0], shown: shown, section: section, guideOpen: guide.open,
-                    toast: toast.opacity > 0 ? toastText.text : "", queue: Y.queue.length};
-        if (cur && cur.focusDetail) st.detail = cur.focusDetail();
+                    toast: toast.opacity > 0 ? toastText.text : "", queue: Y.queue.length,
+                    signedIn: Y.signedIn, profile: Y.profile ? Y.profile.id : "", card: focusedCard(it),
+                    guideAt: guide.activeFocus ? (guide.cur < 0 ? "who" : guide.keyAt(guide.cur)) : ""};
+        if (picking) st.detail = profilesPage.focusDetail();
+        else if (cur && cur.focusDetail) st.detail = cur.focusDetail();
         else if (!cur && page(section).focusDetail) st.detail = page(section).focusDetail();
         return st;
     }

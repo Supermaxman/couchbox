@@ -7,6 +7,7 @@ FocusScope {
     property bool loaded: false
     property string problem: ""
     readonly property string label: "Library"
+    function focusDetail() { return {loaded: loaded, rows: feed.count, row: feed.index, problem: problem}; }
     function load() {
         problem = "";
         Y.call("library", {}, r => {

@@ -3,7 +3,7 @@
 couchbox-input and the compositor), a screenshot after each step (couchbox-screenshot) and what
 had the focus then (the app's control socket: {"op": "focus"}).
 
-  sudo python3 ci/yt-box-check.py [--profile guest|pick|ID] [--out /tmp/yt-check] [--keep]
+  sudo python3 ci/yt-box-check.py [--profile guest|pick|ACCOUNT[:PAGE]] [--out /tmp/yt-check] [--keep]
 
 It starts couchbox-yt muted (COUCHBOX_MUTE=1, as the TV user, replacing one that's running), then:
 Home; Search from the guide, typing on a keyboard and Enter; back Home; a video from Home;
@@ -12,6 +12,13 @@ moving; a paused seek back to 0:00 still showing a picture; the Shorts tab; a gu
 Subscriptions and Settings; Who's watching from the guide (and Back). Each step prints
 PASS or FAIL with what it saw, and saves OUT/NN-name.png and OUT/NN-name.json. --keep leaves
 the app running at the end.
+
+--profile ACCOUNT (an account id from ~/.local/share/couchbox-yt/accounts, or ACCOUNT:PAGE for a
+brand channel) runs the signed-in steps instead, read only, for the household's real account:
+Who's watching, Home, Subscriptions, Library's History, Watch later and Playlists, one
+part-watched video from History (under a minute: it must start where YouTube says), the channel
+and notification panels opened and closed, and Settings → Accounts. Nothing is liked,
+subscribed, saved or changed; the guest's "Sign in" steps and casting aren't run.
 
 Before every key and every reading it checks that couchbox-yt is still the window in front and
 that no Frigate pop-up is up; if either fails it stops at once ("ABORT: ..."), pressing nothing
@@ -229,42 +236,8 @@ def show_controls():
         time.sleep(0.6)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--profile", default="guest")
-    ap.add_argument("--out", default="/tmp/yt-check")
-    ap.add_argument("--keep", action="store_true")
-    a = ap.parse_args()
-    r = Run(a.out)
-
-    # a fresh app, muted, as the TV user in its session
-    subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
-    time.sleep(1)
-    unit = f"{UNIT}-{int(time.time())}"
-    subprocess.run(
-        [
-            *tv_env(),
-            "systemd-run",
-            "--user",
-            "--quiet",
-            "--collect",
-            f"--unit={unit}",
-            "--setenv=COUCHBOX_MUTE=1",
-            "--setenv=COUCHBOX_MPV_LOG=1",  # mpv's warnings, and what draws after a seek (mpv-debug lines)
-            "--",
-            APP,
-            "--profile",
-            a.profile,
-        ],
-        check=True,
-    )
-    for _ in range(60):
-        if "focus" in focus():
-            break
-        time.sleep(1)
-    else:
-        sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
-
+def guest(r):
+    """A guest's flows (the steps that expect "Sign in" among them)."""
     r.step("home", lambda f: (f["page"] == "home" and "home" in f["focus"] and f["shown"], "Home, a card in focus"), settle=6)
     remote("down")  # Home's second row (its cards large, the first row gone above)
     r.step("home-row2", lambda f: (f["page"] == "home" and "home" in f["focus"], "Home's second row"), settle=2)
@@ -493,7 +466,229 @@ def main():
     remote("back")
     r.step("profiles-back", lambda f: ("guide" in f["focus"], f"focus {f.get('focus')}"), settle=1.5)
 
-    cast_checks(r)
+
+
+# ------------------------------------------------------------------ signed in (read only)
+# The household's own account: nothing here may change it. No like, subscribe, bell level, save or
+# playlist changes; comments are only read. OK is pressed only where it was checked, just before,
+# that it opens something (ok_on); the player's buttons are reached one key at a time, reading which
+# one has the focus. One video plays (from History), for under a minute.
+PLAY_LIMIT = 45  # seconds in the player before leaving it
+
+
+def skip(r, name, why):
+    r.n += 1
+    print(f"SKIP {r.n:02d} {name}: {why}", flush=True)
+
+
+def ok_on(check, what):
+    """OK, if check(focus) still holds (else nothing is pressed): returns whether it was pressed."""
+    f = focus()
+    if not check(f):
+        print(f"(not pressing OK: the focus isn't on {what}: {f.get('focus')} {d(f)} {f.get('card')})", flush=True)
+        return False
+    remote("ok")
+    return True
+
+
+def guide_to(key):
+    """The guide, then Up / Down to its entry `key` (None if it isn't in the guide)."""
+    for _ in range(4):  # Left until the guide opens (from a page's first card)
+        if focus().get("guideAt"):
+            break
+        remote("left")
+        time.sleep(0.4)
+    if not focus().get("guideAt"):
+        return False
+    for step in ("up", "down"):  # all the way up first (Who's watching is above the entries), then down
+        for _ in range(16):
+            at = focus().get("guideAt")
+            if at == key:
+                return True
+            if step == "up" and at == "who":
+                break
+            remote(step, gap=0.3)
+    return focus().get("guideAt") == key
+
+
+def card_to(match, keys=("right",), tries=8):
+    """Move (Right by default) until the focused card satisfies match(card)."""
+    for _ in range(tries):
+        c = focus().get("card") or {}
+        if match(c):
+            return c
+        remote(*keys, gap=0.35)
+    c = focus().get("card") or {}
+    return c if match(c) else None
+
+
+def button_to(name):
+    """The player's control `name`, one Left / Right at a time (controls showing: else they seek)."""
+    show_controls()
+    order = ["channel", "description", "bell", "prev", "play", "next", "like", "dislike", "comments", "ask", "save", "thanks", "cc", "settings"]
+    for _ in range(16):
+        f = focus()
+        b = d(f).get("button")
+        if d(f).get("mode") != "controls" or d(f).get("panel"):
+            return False
+        if b == name:
+            return True
+        remote("left" if order.index(name) < order.index(b or "play") else "right", gap=0.3)
+    return d(focus()).get("button") == name
+
+
+def account(r, want):
+    """Who's watching (the account, its brand channels), Home, Subscriptions, Library's lists, a video
+    from History resuming where YouTube says, the channel and notification panels, Settings → Accounts."""
+    f = r.step("profiles", lambda f: (f.get("page") == "profiles" and d(f).get("count", 0) >= 1,
+                                      f"{d(f).get('count')} profiles, {d(f).get('brands')} brand channels"), settle=4)
+    count = d(f).get("count", 0)
+    remote(*["left"] * count, gap=0.3)  # the first, then each in turn, to the one wanted
+    seen = []
+    for _ in range(count + 1):
+        g = focus()
+        if d(g).get("area") != "row":
+            break
+        seen.append(d(g).get("id"))
+        if d(g).get("id") == want:
+            break
+        remote("right", gap=0.4)
+    r.step("profiles-account", lambda f: (d(f).get("id") == want and d(f).get("area") == "row",
+                                          f"on the account after {len(seen)} ({len(set(seen))} different)"), settle=0.5)
+    if not ok_on(lambda f: d(f).get("id") == want and d(f).get("area") == "row", "the account"):
+        print("ABORT: the account isn't on Who's watching; pressing nothing more", flush=True)
+        return
+    r.step("home-signed-in", lambda f: (f.get("page") == "home" and f.get("signedIn") and f.get("profile") == want and d(f).get("rows", 0) > 0,
+                                        f"signed in {f.get('signedIn')}, {d(f).get('rows')} rows {d(f).get('problem') or ''}"), settle=6)
+
+    # Subscriptions: the channels down the side and the feed; a channel's own feed
+    if guide_to("subscriptions") and ok_on(lambda f: f.get("guideAt") == "subscriptions", "Subscriptions"):
+        r.step("subscriptions", lambda f: (f.get("section") == "subscriptions" and d(f).get("channels", 0) > 1 and d(f).get("rows", 0) > 0,
+                                           f"{d(f).get('channels')} channels, {d(f).get('rows')} rows {d(f).get('problem') or ''}"), settle=4)
+        remote("right")
+        r.step("subscriptions-feed", lambda f: (d(f).get("inFeed") and (f.get("card") or {}).get("type") in ("video", "live", "short"),
+                                                f"in the feed on a {(f.get('card') or {}).get('type')}"), settle=1)
+        remote("left")
+        remote("down")
+        r.step("subscriptions-channel", lambda f: (d(f).get("picked") == 1 and d(f).get("rows", 0) > 0,
+                                                   f"channel {d(f).get('picked')}: {d(f).get('rows')} rows"), settle=3)
+    else:
+        skip(r, "subscriptions", "not in the guide")
+
+    # Library: History, Watch later, Playlists (each opened and Back)
+    if not (guide_to("library") and ok_on(lambda f: f.get("guideAt") == "library", "Library")):
+        skip(r, "library", "not in the guide")
+        return settings_accounts(r)
+    r.step("library", lambda f: (f.get("section") == "library" and (f.get("card") or {}).get("type") == "tile",
+                                 f"{d(f).get('rows')} rows, on {(f.get('card') or {}).get('title')}"), settle=3)
+    for tile, name in (("FEhistory", "history"), ("VLWL", "watch-later"), ("FEplaylist_aggregation", "playlists")):
+        c = card_to(lambda c, t=tile: c.get("id") == t, tries=5)  # left to right: Back leaves the focus on the last
+        if not c or not ok_on(lambda f, t=tile: (f.get("card") or {}).get("id") == t, tile):
+            skip(r, f"library-{name}", "no such tile")
+            continue
+        r.step(f"library-{name}", lambda f, t=tile: (f.get("page") == "list" and d(f).get("browseId") == t and d(f).get("loaded"),
+                                                     f"{d(f).get('rows')} rows {d(f).get('problem') or ''}"), settle=4)
+        remote("back")
+        r.step(f"library-{name}-back", lambda f: (f.get("section") == "library" and f.get("page") != "list", f"page {f.get('page')}"), settle=1.5)
+
+    # a part-watched video from History: it starts where YouTube says this account left off
+    if not (card_to(lambda c: c.get("id") == "FEhistory", keys=("left",), tries=3) and ok_on(lambda f: (f.get("card") or {}).get("id") == "FEhistory", "History")):
+        skip(r, "history-video", "no History tile")
+        return settings_accounts(r)
+    time.sleep(4)
+    part = lambda c: c.get("type") == "video" and 0.03 < (c.get("progress") or 0) < 0.9  # noqa: E731
+    c = card_to(part, tries=6) or card_to(part, keys=("down",), tries=3)
+    if not c:
+        skip(r, "history-video", "no part-watched video among History's first cards: resume not checked, nothing played")
+        remote("back")
+        return settings_accounts(r)
+    if not ok_on(lambda f: part(f.get("card") or {}), "a part-watched video"):
+        return settings_accounts(r)
+    started = time.time()
+    f = r.step("history-video", lambda f: (f.get("page") == "player" and d(f).get("startAt", 0) > 0,
+                                           f"starts at {d(f).get('startAt')} s of {d(f).get('duration')} (card: {round(c['progress'] * 100)}% watched)"),
+               settle=8)
+    expect = c["progress"] * (d(f).get("duration") or 0)
+    r.step("history-resumed", lambda f: (d(f).get("startAt", 0) > 0 and d(f).get("position", 0) >= d(f).get("startAt", 0) - 3
+                                         and (not expect or abs(d(f).get("startAt", 0) - expect) < max(30, 0.05 * expect)),
+                                         f"position {d(f).get('position')}, from {d(f).get('startAt')} (the card says about {round(expect)})"), settle=1)
+
+    # the channel's panel (Back only: its first row is Subscribe), the bell's levels (only when
+    # already subscribed: else the bell subscribes), the comments (read)
+    if button_to("channel") and ok_on(lambda f: d(f).get("button") == "channel" and not d(f).get("panel"), "the channel button"):
+        r.step("channel-panel", lambda f: (d(f).get("panel") == "channel", f"panel {d(f).get('panel')!r}"), settle=2)
+        remote("back")
+        r.step("channel-panel-closed", lambda f: (not d(f).get("panel"), f"panel {d(f).get('panel')!r}"), settle=1.5)
+    else:
+        skip(r, "channel-panel", "couldn't reach the channel button")
+    if not d(focus()).get("subscribed"):
+        skip(r, "notifications", "not subscribed to this channel: the bell would subscribe, so it isn't pressed")
+    elif button_to("bell") and ok_on(lambda f: d(f).get("button") == "bell" and d(f).get("subscribed") and not d(f).get("panel"), "the bell"):
+        r.step("notifications", lambda f: (d(f).get("panel") == "notify", f"panel {d(f).get('panel')!r}"), settle=2)
+        remote("back")
+        r.step("notifications-closed", lambda f: (not d(f).get("panel"), f"panel {d(f).get('panel')!r}"), settle=1.5)
+    if time.time() - started < PLAY_LIMIT - 10 and button_to("comments") and ok_on(lambda f: d(f).get("button") == "comments", "Comments"):
+        r.step("comments", lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r}"), settle=3)
+        remote("back")
+        if d(focus()).get("panel"):
+            remote("back")
+    remote("back", "back")  # out of the player: History
+    r.step("player-left", lambda f: (f.get("page") != "player", f"page {f.get('page')} after {round(time.time() - started)} s of playing"), settle=1.5)
+    remote("back")
+    settings_accounts(r)
+
+
+def settings_accounts(r):
+    if guide_to("settings") and ok_on(lambda f: f.get("guideAt") == "settings", "Settings"):
+        r.step("settings-accounts", lambda f: (f.get("section") == "settings" and d(f).get("item") == "accounts",
+                                               f"on {d(f).get('item')}"), settle=2)
+    else:
+        skip(r, "settings-accounts", "Settings isn't in the guide")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--profile", default="guest")
+    ap.add_argument("--out", default="/tmp/yt-check")
+    ap.add_argument("--keep", action="store_true")
+    a = ap.parse_args()
+    r = Run(a.out)
+    # an account (its id, or account:page for a brand channel): the signed-in steps, read only
+    want = "" if a.profile in ("guest", "pick") else a.profile if ":" in a.profile else a.profile + ":"
+
+    # a fresh app, muted, as the TV user in its session
+    subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)
+    time.sleep(1)
+    unit = f"{UNIT}-{int(time.time())}"
+    subprocess.run(
+        [
+            *tv_env(),
+            "systemd-run",
+            "--user",
+            "--quiet",
+            "--collect",
+            f"--unit={unit}",
+            "--setenv=COUCHBOX_MUTE=1",
+            "--setenv=COUCHBOX_MPV_LOG=1",  # mpv's warnings, and what draws after a seek (mpv-debug lines)
+            "--",
+            APP,
+            "--profile",
+            "pick" if want else a.profile,
+        ],
+        check=True,
+    )
+    for _ in range(60):
+        if "focus" in focus():
+            break
+        time.sleep(1)
+    else:
+        sys.exit("FAIL couchbox-yt didn't come up (no answer on its control socket)")
+
+    if want:
+        account(r, want)
+    else:
+        guest(r)
+        cast_checks(r)
     save_log(unit, a.out)
     if not a.keep:
         subprocess.run(["pkill", "-u", TV_USER, "-f", APP], check=False)

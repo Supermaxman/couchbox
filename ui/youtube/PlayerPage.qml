@@ -24,7 +24,8 @@ FocusScope {
     Item { id: ctl; objectName: "controls"; focus: true }
     function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), paused: !!video.paused, row: related.index, rows: related.count,
                                           captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
-                                          card: panel === "description" ? description.index : -1}; }
+                                          card: panel === "description" ? description.index : -1,
+                                          subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0)}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
