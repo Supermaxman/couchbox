@@ -26,6 +26,7 @@ Rectangle {
     function seekTo(p) { position = p; }
     function setSubtitle(s) { subtitle = s; }
     function stop() {}
+    function warmUp() {}
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {

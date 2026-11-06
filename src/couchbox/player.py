@@ -249,6 +249,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
         self._t_loaded = 0.0
         self._t_start = 0
+        self._loads = 0  # files loaded (loadWith)
         self._pos_pending = False  # a position update is due (they're passed on 10 times a second)
         self._pos = 0.0
         self._dur = 0.0
@@ -400,6 +401,7 @@ class MpvVideo(QQuickFramebufferObject):
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
+        self._loads += 1
         if TIMING and _DEBUG:  # what mpv does while it opens the file (connecting, reading, probing): 4 s of it
             try:
                 self.mpv["msg-level"] = "all=warn,cplayer=v,stream=v,demux=v,ffmpeg=v,lavf=v"
@@ -419,6 +421,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._error = ""
         self.endedChanged.emit()
         opts = "cache=no,demuxer-readahead-secs=0,demuxer-lavf-analyzeduration=0.5,demuxer-lavf-probesize=65536,video-latency-hacks=yes"
+        self._loads += 1
         self.mpv.command("loadfile", url, "replace", -1, opts)
         self.mpv.pause = False
 
@@ -512,6 +515,28 @@ class MpvVideo(QQuickFramebufferObject):
         self.mpv.sub_pos = max(0, min(150, percent))
 
     @Slot()
+    @Slot()
+    def warmUp(self):
+        """A moment of black and silence, muted, while nothing plays: mpv's video output and render
+        context, its decoders and the sound output made before the first real video needs them
+        (its first open on the box took 1.1 s, later ones ~0.26)."""
+        a = "av://lavfi:anullsrc=d=0.5"
+        try:
+            self.mpv.command("loadfile", "av://lavfi:color=c=black:s=16x16:r=10:d=0.5", "replace", -1, f"audio-file=%{len(a)}%{a},mute=yes")
+            self.mpv.pause = False
+            self._warm_at = self._loads
+            QTimer.singleShot(2500, self._warm_done)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @Slot()
+    def _warm_done(self):
+        if self._loads == getattr(self, "_warm_at", -1):  # (no real video since)
+            try:
+                self.mpv.command("stop")
+            except Exception:  # noqa: BLE001
+                pass
+
     def stop(self):
         self.mpv.command("stop")
         QTimer.singleShot(1000, _trim)

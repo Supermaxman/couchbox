@@ -297,9 +297,18 @@ ApplicationWindow {
             readonly property bool placed: Y.videoRect.width > 0          // Shorts
             x: placed ? Y.videoRect.x : Y.videoSide ? 54 * Y.u : 0
             y: placed ? Y.videoRect.y : Y.videoSide ? 219 * Y.u : 0
-            width: placed ? Y.videoRect.width : Y.videoSide ? 1146 * Y.u : parent.width
-            height: placed ? Y.videoRect.height : Y.videoSide ? 645 * Y.u : parent.height
-            visible: win.playing
+            width: warming ? 2 : placed ? Y.videoRect.width : Y.videoSide ? 1146 * Y.u : parent.width
+            height: warming ? 2 : placed ? Y.videoRect.height : Y.videoSide ? 645 * Y.u : parent.height
+            visible: win.playing || warming
+            // once Home shows, before any video: mpv's output made (a 2-pixel moment of black, muted)
+            property bool warming: false
+            Timer {
+                running: Y.homeShown && !win.shot && !win.playing && !video.warmed
+                interval: 1500
+                onTriggered: { video.warmed = true; if (win.playing) return; video.warming = true; video.warmUp(); warmEnd.start(); }
+            }
+            property bool warmed: false
+            Timer { id: warmEnd; interval: 2500; onTriggered: video.warming = false }
         }
 
         Item {
