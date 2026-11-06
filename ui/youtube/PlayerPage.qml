@@ -136,6 +136,8 @@ FocusScope {
             for (let i = 0; i < rel.length; i += 3) rows.push({kind: "shelf", title: "", items: rel.slice(i, i + 3), more: ""});
             related.rows = rows;
             mprisUpdate();
+            const n = upNext();                // what plays next: its stream ready for the end
+            if (n && !n.item.live) Y.call("prefetch", {id: n.item.id}, () => {}, () => {});
         }, () => {});
     }
     function begin() {

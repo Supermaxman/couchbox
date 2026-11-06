@@ -106,6 +106,12 @@ class Backend(QObject):
         cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
         return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"]}
 
+    def prefetch(self, vid):
+        """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
+        if not self.demo and vid:
+            self.worker.prefetch(vid, **self.stream_args())
+        return {"ok": True}
+
     def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
@@ -182,6 +188,7 @@ class Backend(QObject):
             "searches": lambda: {"items": y.searches()},
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
+            "prefetch": lambda: self.prefetch(a["id"]),
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),

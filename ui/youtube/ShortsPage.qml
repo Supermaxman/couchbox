@@ -62,6 +62,7 @@ FocusScope {
     function fetchNext() {
         const n = items[index + 1];
         nextInfo = {};
+        if (n) Y.call("prefetch", {id: n.id}, () => {}, () => {});          // Down plays it: its stream now
         if (n) Y.call("short", {id: n.id}, r => { if (page && page.items[page.index + 1] && page.items[page.index + 1].id === n.id) page.nextInfo = r; }, () => {});
     }
 

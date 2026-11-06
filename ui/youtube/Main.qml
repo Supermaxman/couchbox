@@ -438,8 +438,16 @@ ApplicationWindow {
     }
     Timer {
         interval: 300; repeat: true; running: !win.shot
-        onTriggered: control.setFocus(JSON.stringify(win.focusState()))
+        onTriggered: {
+            const st = win.focusState();
+            control.setFocus(JSON.stringify(st));
+            const c = st.card;                 // a video card that keeps the focus: its stream now, for OK
+            const id = c && (c.type === "video" || c.type === "short") && !c.live ? c.id : "";
+            if (id !== win.focusedVideo) { win.focusedVideo = id; if (id) prefetch.restart(); }
+        }
     }
+    property string focusedVideo: ""
+    Timer { id: prefetch; interval: 600; onTriggered: if (win.focusedVideo && !win.playing) Y.call("prefetch", {id: win.focusedVideo}, () => {}, () => {}) }
     Timer { interval: 1000; repeat: true; running: win.playing && !win.shot; onTriggered: win.updateState() }   // the position, for casting
     Timer {
         id: idle
