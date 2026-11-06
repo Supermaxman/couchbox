@@ -691,6 +691,13 @@ def settings_accounts(r):
 
 
 # ------------------------------------------------------------------ perf: where the time goes
+def all_pids():
+    """The app, its stream worker and the worker's node."""
+    out = subprocess.run(["pgrep", "-u", TV_USER, "-f", f"{APP}|couchbox.services.ytworker|--permission -e"],
+                         capture_output=True, text=True, check=False).stdout.split()
+    return [int(x) for x in out]
+
+
 def app_pid():
     out = subprocess.run(["pgrep", "-u", TV_USER, "-f", APP], capture_output=True, text=True, check=False).stdout.split()
     return int(out[0]) if out else 0
@@ -729,6 +736,23 @@ class Perf:
     def __init__(self, out):
         self.out, self.rows, self.pid = out, {}, app_pid()
 
+    def memory(self, name):
+        """The app's memory in parts (its control socket's "memory")."""
+        from couchbox import appctl
+
+        try:
+            m = appctl.call("yt", {"op": "memory"}, timeout=10)
+        except Exception as err:  # noqa: BLE001
+            return self.say(f"{name}-memory", f"(no answer: {err})")
+        a, procs = m.get("app") or {}, m.get("processes") or {}
+        self.say(
+            f"{name}-memory",
+            f"app {a.get('Rss')} MB resident ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); mpv cache "
+            + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
+            + "; " + ", ".join(f"{k} {sum(v)} MB" for k, v in procs.items()) + f"; {m.get('python_objects')} Python objects",
+            m,
+        )
+
     def say(self, name, value, data=None):
         print(f"PERF {name}: {value}", flush=True)
         self.rows[name] = data if data is not None else value
@@ -740,6 +764,7 @@ class Perf:
         fn()
         c1, rss = usage(self.pid)
         wall = time.monotonic() - t0
+        self.memory(name)
         self.say(f"{name}-cpu", f"{100 * (c1 - c0) / max(wall, 0.1):.0f}% of one core over {wall:.0f} s, {rss:.0f} MB resident",
                  {"cpu_pct": round(100 * (c1 - c0) / max(wall, 0.1)), "seconds": round(wall, 1), "rss_mb": round(rss)})
 
@@ -838,6 +863,65 @@ def perf(r, started):
 
     p.phase("home-rows", rows)
 
+    def resume():
+        """A long video opened at 5:00, as Continue watching does (no key: the control socket), and
+        30 s of it playing: the processor use of the app, the worker and node."""
+        anchor("home")
+        time.sleep(2)
+        long = None
+        for _ in range(3):
+            long = card_to(lambda c: c.get("type") == "video" and not c.get("live") and c.get("duration", 0) > 900, tries=6)
+            if long:
+                break
+            remote("down", gap=0.35)
+        if not long:
+            p.say("resume", "no video over 15 minutes on Home's first rows")
+            return
+        mark = last_at()
+        anchor(f"video:{long['id']}@300")
+        play = None
+        for _ in range(120):
+            play = next((e for e in timing_since(mark) if e["kind"] == "play"), None)
+            if play:
+                break
+            time.sleep(0.25)
+        if not play:
+            p.say("resume", "no first frame in 30 s")
+            return
+        ev = timing_since(mark)
+        stream = next((e for e in ev if e["kind"] == "stream"), {})
+        p.say("resume", f"first frame {play['total']} ms after it was asked for, from {play.get('start')} s "
+              f"(stream {play['stream']} ms, {stream.get('protocol')}; mpv open {play['open']} ms, first frame {play['frame']} ms more)",
+              {"play": play, "stream": stream})
+        pids = all_pids()
+        c0 = sum(usage(x)[0] for x in pids)
+        time.sleep(30)
+        c1 = sum(usage(x)[0] for x in pids)
+        f = focus()
+        p.say("playing-cpu", f"{100 * (c1 - c0) / 30:.0f}% of one core (app, worker and node) over 30 s of {d(f).get('videoId')}",
+              round(100 * (c1 - c0) / 30))
+        anchor("home")
+
+    p.phase("resume", resume)
+
+    def ten():
+        """10 videos in turn, 6 s each: the memory after (app, worker and node)."""
+        for i in range(10):
+            anchor("home")
+            time.sleep(1.5)
+            remote(*["down"] * (i // 3), *["right"] * (i % 3), gap=0.3)
+            if card_to(lambda c: c.get("type") == "video" and not c.get("live"), tries=4) and ok_on(
+                lambda f: (f.get("card") or {}).get("type") == "video", "a video"
+            ):
+                time.sleep(6)
+        anchor("home")
+        time.sleep(3)
+        p.memory("after-10-videos")
+        total = sum(usage(x)[1] for x in all_pids())
+        p.say("after-10-videos-rss", f"{total:.0f} MB resident in all (app, worker, node)", round(total))
+
+    p.phase("ten-videos", ten)
+
     allcalls = [e for e in timing_since(-1) if e["kind"] == "call"]
     by = {}
     for e in allcalls:
@@ -845,7 +929,33 @@ def perf(r, started):
     p.say("calls", "; ".join(f"{op} x{len(v)} median {sorted(v)[len(v) // 2]} max {max(v)} ms" for op, v in sorted(by.items())), by)
     stalls = [e["ms"] for e in timing_since(-1) if e["kind"] == "stall"]
     p.say("late-frames", f"{len(stalls)}" + (f", worst {max(stalls)} ms" if stalls else ""), stalls)
+    summary(p)
     p.save()
+
+
+TARGETS = (  # name, the perf rows' value, the most it may be, the unit (VacuumTube on the box: 406-484 ms, ~1081 MB)
+    ("warm start", lambda r: max([v["play"]["total"] for k, v in r.items() if k.startswith("video-warm") and isinstance(v, dict) and "play" in v] or [None]), 400, "ms"),
+    ("cold start", lambda r: max([v["play"]["total"] for k, v in r.items() if k.startswith("video-cold") and isinstance(v, dict) and "play" in v] or [None]), 700, "ms"),
+    ("resume start", lambda r: (r.get("resume") or {}).get("play", {}).get("total") if isinstance(r.get("resume"), dict) else None, 800, "ms"),
+    ("Home ready", lambda r: round(r["home-ready"] * 1000) if isinstance(r.get("home-ready"), (int, float)) else None, 1500, "ms"),
+    ("worst GUI stall", lambda r: max(r.get("late-frames") or [0]), 100, "ms"),
+    ("memory after 10 videos", lambda r: r.get("after-10-videos-rss"), 450, "MB"),
+    ("CPU playing", lambda r: r.get("playing-cpu"), None, "% of a core"),
+)
+
+
+def summary(p):
+    """One line per target: the value, and PASS or FAIL (CPU: compared with VacuumTube's, by hand)."""
+    out = []
+    for name, get, most, unit in TARGETS:
+        try:
+            v = get(p.rows)
+        except (KeyError, TypeError, ValueError):
+            v = None
+        verdict = "n/a" if v is None else "info" if most is None else "PASS" if v <= most else "FAIL"
+        out.append(f"{verdict} {name}: {v if v is not None else '-'} {unit}" + (f" (at most {most})" if most is not None else ""))
+    print("SUMMARY\n  " + "\n  ".join(out), flush=True)
+    p.rows["summary"] = out
 
 
 def main():

@@ -76,6 +76,7 @@ class Backend(QObject):
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
         self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
+        self.home_lock = threading.Lock()
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
@@ -159,6 +160,35 @@ class Backend(QObject):
     def signed_key(self, vid):
         prof = self.yt.profile.get("id", "") if self.yt.profile else ""
         return f"{vid}|{prof}" if prof else ""
+
+    # ---------------------------------------------------------------- Home at once
+    # Home as it was last time (per profile), shown while the new one comes (~1.3-1.8 s on the box)
+    def home_file(self):
+        prof = (self.yt.profile.get("id", "") if self.yt.profile else "") or "guest"
+        return os.path.join(self.yt.dir, "home-" + "".join(ch if ch.isalnum() else "_" for ch in prof) + ".json")
+
+    def home(self):
+        with self.home_lock:                         # Search's landing shelf asks too: once, then from the cache
+            out = self.page(self.yt.home())
+        if not self.demo and out.get("shelves"):
+            try:
+                path = self.home_file()
+                fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump(out, f)
+                os.replace(path + ".tmp", path)
+            except OSError:
+                pass
+        return out
+
+    def home_cached(self):
+        if self.demo:
+            return {}
+        try:
+            with open(self.home_file()) as f:
+                return {"page": json.load(f)}
+        except (OSError, ValueError):
+            return {}
 
     def prefetch(self, vid):
         """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
@@ -265,7 +295,8 @@ class Backend(QObject):
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
-            "home": lambda: self.page(y.home()),
+            "home": self.home,
+            "homeCached": self.home_cached,
             "browse": lambda: self.page(y.browse(a["id"], a.get("params", ""))),
             "more": lambda: self.page(y.more(a["token"])),
             "channel": lambda: self.page(y.channel(a["id"], a.get("params", ""))),
@@ -384,6 +415,8 @@ class Control(QObject):
             return dict(self.focus, page=self.state.get("page", ""), timing=yttiming.recent(40))
         if op == "timing":
             return {"timing": yttiming.recent()}
+        if op == "memory":                           # where the memory goes (the box check's perf mode)
+            return memory()
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):
@@ -472,6 +505,56 @@ class Shooter(QObject):
         for when, kind, key, text, repeat in plan:
             QTimer.singleShot(when, lambda k=kind, y=key, x=text, r=repeat: self._send(k, y, x, r))
         return at
+
+
+def memory():
+    """This app's memory in parts (MB): resident, anonymous (Python, Qt, mpv's buffers, textures in
+    system memory) and file-backed (libraries); mpv's demuxer cache; the stream worker and node."""
+    def rollup(pid):
+        out = {}
+        try:
+            with open(f"/proc/{pid}/smaps_rollup") as fh:
+                for ln in fh:
+                    k, _, v = ln.partition(":")
+                    if k in ("Rss", "Anonymous", "Pss_File", "Shared_Clean", "Private_Dirty"):
+                        out[k] = round(int(v.split()[0]) / 1024)
+        except (OSError, ValueError):
+            pass
+        return out
+
+    import gc
+
+    from couchbox import player
+    out = {"app": rollup(os.getpid()), "python_objects": len(gc.get_objects())}
+    caches = []
+    for p in list(player._players):
+        try:
+            st = p.mpv["demuxer-cache-state"] or {}
+            caches.append({"bytes_mb": round((st.get("total-bytes") or 0) / 2**20), "ahead_s": round(st.get("cache-duration") or 0, 1)})
+        except Exception:  # noqa: BLE001
+            pass
+    out["mpv_cache"] = caches
+    kids = {}
+    try:
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                try:
+                    with open(f"/proc/{d}/stat") as fh:
+                        st = fh.read()
+                    ppid = int(st.rsplit(")", 1)[1].split()[1])
+                    with open(f"/proc/{d}/cmdline", "rb") as fh:
+                        cmd = fh.read().replace(b"\0", b" ").decode(errors="replace")
+                except (OSError, ValueError):
+                    continue
+                if ppid == os.getpid() or "couchbox.services.ytworker" in cmd:
+                    name = "worker" if "ytworker" in cmd else "node" if "node" in cmd.split(" ")[0] else cmd.split(" ")[0]
+                    kids.setdefault(name, []).append(rollup(int(d)).get("Rss", 0))
+                elif "--permission" in cmd and "readline" in cmd:
+                    kids.setdefault("node", []).append(rollup(int(d)).get("Rss", 0))
+    except OSError:
+        pass
+    out["processes"] = kids
+    return out
 
 
 class Watch(QObject):
