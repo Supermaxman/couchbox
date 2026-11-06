@@ -463,6 +463,7 @@ class Backend(QObject):
             "mark": lambda: (started(a.get("step", "")), self.warm_once() if a.get("step") == "home-shown" else None, {"ok": True})[2],
             "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
             "historyRemove": lambda: self.history_remove(a.get("ids") or [], bool(a.get("dryRun", True)), a.get("profile")),
+            "premiumProbe": lambda: y.premium_probe(),   # measuring: where YouTube says this account has Premium
             "historyToday": lambda: {"ids": [e["id"] for e in y.history_today(newest=60)]} if y.profile else {"ids": []},
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),

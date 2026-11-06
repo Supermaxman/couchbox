@@ -303,7 +303,7 @@ class Auth:
                         "name": c.get("name", ""),
                         "handle": c.get("handle", ""),
                         "photo": c.get("photo", ""),
-                        "premium": bool(c.get("premium", a.get("premium", False))),
+                        "premium": bool(c.get("premium") or a.get("premium")),
                     }
                 )
         return out

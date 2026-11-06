@@ -878,6 +878,8 @@ def parse_accounts(resp: dict[str, Any]) -> list[dict[str, Any]]:
         page = next((dig(t, "pageIdToken", "pageId") for t in tokens if dig(t, "pageIdToken", "pageId")), "")
         byline = text(a.get("accountByline"))
         handle = text(a.get("channelHandle"))
+        # a Premium membership, where the account item says so (its byline or a badge on the TV)
+        premium = any("premium" in str(v).lower() for v in (byline, a.get("badges"), a.get("membershipBadge"), a.get("isPremium")) if v)
         out.append(
             {
                 "name": text(a.get("accountName")),
@@ -886,6 +888,7 @@ def parse_accounts(resp: dict[str, Any]) -> list[dict[str, Any]]:
                 "email": byline if "@" in byline and not byline.startswith("@") else "",
                 "pageId": page,
                 "main": not page,
+                "premium": premium,
             }
         )
     if out and not any(c["main"] for c in out):
@@ -936,8 +939,31 @@ def tracking(resp: dict[str, Any]) -> dict[str, str]:
 
 
 def is_premium(resp: Any) -> bool:
-    """YouTube marks a Premium member's pages with its Premium logo."""
-    return bool(resp) and "YOUTUBE_PREMIUM_LOGO" in json.dumps(resp)
+    """YouTube marks a Premium member's pages with its Premium logo (on the TV: an icon or badge
+    named YOUTUBE_PREMIUM..., or its "Premium" wordmark)."""
+    if not resp:
+        return False
+    s = json.dumps(resp)
+    return "YOUTUBE_PREMIUM" in s or "YOUTUBE_LOGO_PREMIUM" in s or "PREMIUM_LOGO" in s
+
+
+def premium_hints(o: Any, path: str = "", out: list | None = None, depth: int = 0) -> list[str]:
+    """Where an answer says "premium" (keys and short texts; at most 12): for finding how the TV
+    marks a Premium account (the box check's premiumProbe). No tokens: those are long."""
+    out = [] if out is None else out
+    if len(out) >= 12 or depth > 40:
+        return out
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if "premium" in k.lower() and not isinstance(v, (dict, list)):
+                out.append(f"{path}.{k} = {str(v)[:60]}")
+            premium_hints(v, f"{path}.{k}", out, depth + 1)
+    elif isinstance(o, list):
+        for i, v in enumerate(o[:50]):
+            premium_hints(v, f"{path}[{i}]", out, depth + 1)
+    elif isinstance(o, str) and "premium" in o.lower() and len(o) < 80:
+        out.append(f"{path} = {o}")
+    return out
 
 
 def parse_suggestions(body: str) -> list[str]:
@@ -1273,6 +1299,24 @@ class YouTube:
         resp = self.call("feedback", {"feedbackTokens": [token]}, cache=False)
         self.changed()
         return bool(dig(resp, "feedbackResponses", 0, "isProcessed"))
+
+    def premium_probe(self) -> dict[str, Any]:
+        """How this profile's answers mark Premium (where they say "premium"): its accounts list
+        and a Home and History page."""
+        self.need_profile("look")
+        token = self.auth.token(self.profile["account"])
+        acc = self._post(
+            "account/accounts_list",
+            {"accountReadMask": {"returnOwner": True, "returnBrandAccounts": True, "returnPersonaAccounts": False}},
+            token=token,
+        )
+        out = {"detected": bool(self.profile.get("premium")), "accounts_list": premium_hints(acc)}
+        for name, bid in (("home", "FEtopics"), ("library", "FElibrary"), ("history", "FEhistory")):
+            try:
+                out[name] = premium_hints(self.call("browse", {"browseId": bid}, cache=False))
+            except YouTubeError as err:
+                out[name] = [f"({err.args[0]})"]
+        return out
 
     def player_probe(self, video_id: str, clients: dict[str, dict] | None = None) -> dict[str, Any]:
         """player_one as the app's own client and as each of clients (yt-dlp's: name -> context)."""
