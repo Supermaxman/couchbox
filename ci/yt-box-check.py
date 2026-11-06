@@ -614,9 +614,10 @@ def search_walk(r, want):
 
 
 def menu_test(r, want):
-    """The card menu's one write, undone: a Home video saved to Watch later through the hold-OK
-    menu (Save to playlist, Watch later), checked, then taken out the same way and checked. A
-    video already in Watch later is left alone. Only with the owner's OK (--menu-test)."""
+    """The card menu's one write, undone: a Home video saved through the hold-OK menu's "Save to
+    Watch later", checked, then taken out through Save to playlist's Watch later and checked. A
+    video already in Watch later is left alone. Only with the owner's OK (--menu-test). Before:
+    the menu's entries as YouTube sends them (menuProbe: words, icons, endpoint names)."""
     from couchbox import appctl
 
     def in_wl(vid):
@@ -632,19 +633,33 @@ def menu_test(r, want):
     if in_wl(vid):
         print(f"(menu test: {vid} is in Watch later already: left alone, nothing tested)", flush=True)
         return
+    try:
+        probe = appctl.call("yt", {"op": "call", "fn": "menuProbe", "args": {}}, timeout=30)
+        with open(os.path.join(r.out, "menu-probe.json"), "w") as fh:
+            json.dump(probe, fh, indent=1)
+        print(f"(a Home card's menu: {[e.get('label') for e in probe.get('entries') or []]}; in menu-probe.json)", flush=True)
+    except Exception as err:  # noqa: BLE001
+        print(f"(menuProbe: {err})", flush=True)
+
+    def to_row(key):
+        for _ in range(12):
+            if d(focus()).get("at") == key:
+                return True
+            remote("down", gap=0.3)
+        return d(focus()).get("at") == key
+
     remote("ok@1.2")  # hold OK: the card's menu
-    r.step("menu-open", lambda f: ("playlist" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
-    for _ in range(10):
-        if d(focus()).get("at") == "playlist":
-            break
-        remote("down", gap=0.3)
+    r.step("menu-open", lambda f: ("later" in d(f).get("keys", []), f"menu {d(f).get('keys')}"), settle=1)
+    to_row("later")
+    remote("ok")  # Save to Watch later
+    time.sleep(3)
+    saved = in_wl(vid)
+    r.step("menu-saved", lambda f: (saved is True, f"{vid} in Watch later: {saved}; notice {f.get('toast')!r}"), settle=0)
+    remote("ok@1.2")  # the menu again: Save to playlist, Watch later (ticked): out of it
+    to_row("playlist")
     remote("ok")
     r.step("menu-playlists", lambda f: (d(f).get("mode") == "playlists", f"mode {d(f).get('mode')}, on {d(f).get('at')}"), settle=2)
     remote("ok")  # the first: Watch later
-    time.sleep(3)
-    saved = in_wl(vid)
-    r.step("menu-saved", lambda f: (saved is True, f"{vid} in Watch later: {saved}"), settle=0)
-    remote("ok")  # again: out of it
     time.sleep(3)
     gone = in_wl(vid)
     r.step("menu-unsaved", lambda f: (gone is False, f"{vid} in Watch later: {gone}"), settle=0)

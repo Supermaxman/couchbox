@@ -57,6 +57,11 @@ FocusScope {
         close();
         return true;
     }
+    // Watch later: the card menu's own edit when the card has one (as the TV app sends it), else ours
+    function saveTo(it, pid, add, done) {
+        if (pid === "WL" && it.laterEdit) Y.call("editPlaylist", {edit: it.laterEdit, add: add}, done, e => Y.toast(e));
+        else Y.call("save", {id: it.id, playlist: pid, add: add}, done, e => Y.toast(e));
+    }
     function pick() {
         const o = options[index], it = item;
         if (!o) return;
@@ -64,7 +69,7 @@ FocusScope {
         if (o.key === "later") {
             if (needAccount("save videos")) return;
             close();
-            Y.call("save", {id: it.id, playlist: "WL", add: true}, () => Y.toast("Saved to Watch later"), e => Y.toast(e));
+            saveTo(it, "WL", true, () => Y.toast("Saved to Watch later"));
         } else if (o.key === "playlist") {
             if (needAccount("save videos")) return;
             Y.call("saveOptions", {id: it.id}, r => {
@@ -73,10 +78,10 @@ FocusScope {
             }, e => { Y.toast(e); close(); });
         } else if (o.key === "pl") {
             const add = !o.pl.saved;
-            Y.call("save", {id: it.id, playlist: o.pl.id, add: add}, () => {
+            saveTo(it, o.pl.id, add, () => {
                 Y.toast((add ? "Saved to " : "Removed from ") + o.pl.title);
                 menu.playlists = menu.playlists.map(p => p.id === o.pl.id ? Object.assign({}, p, {saved: add}) : p);
-            }, e => Y.toast(e));
+            });
         } else if (o.key === "newpl") {
             const title = "New playlist";
             close();

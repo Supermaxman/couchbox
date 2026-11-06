@@ -297,6 +297,9 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     fb = menu_feedback(t.get("onLongPressCommand"))
     if fb:
         out["feedback"] = fb
+    wl = menu_watch_later(t.get("onLongPressCommand"))
+    if wl:
+        out["laterEdit"] = wl
     out["lines"] = split_channel(out["lines"])
     return out if out["id"] and out["title"] else None
 
@@ -345,17 +348,40 @@ def outline(o: Any, depth: int = 0) -> Any:
     return type(o).__name__
 
 
+def menu_entries(cmd: Any) -> list[dict[str, Any]]:
+    """A card's menu, whatever renderer each entry is (menuServiceItemRenderer,
+    menuNavigationItemRenderer, the TV's newer ones): [{label, icon, entry}] (entry: its body)."""
+    out = []
+    for menu in _find(cmd or {}, "menuRenderer"):
+        for m in (menu or {}).get("items") or [] if isinstance(menu, dict) else []:
+            inner = next(iter(m.values()), None) if isinstance(m, dict) and m else None
+            if isinstance(inner, dict):
+                out.append(
+                    {"label": text(inner.get("text") or inner.get("title")), "icon": dig(inner, "icon", "iconType") or "", "entry": inner}
+                )
+    return out
+
+
+def menu_watch_later(cmd: Any) -> dict[str, Any] | None:
+    """The menu's own Save to Watch later: its playlistEditEndpoint (playlistId WL, its actions
+    and params as the TV sends them), for browse/edit_playlist."""
+    for e in menu_entries(cmd):
+        for ep in _find(e["entry"], "playlistEditEndpoint"):
+            if isinstance(ep, dict) and ep.get("playlistId") == "WL":
+                return {k: ep[k] for k in ("playlistId", "actions", "params") if k in ep}
+    return None
+
+
 def menu_feedback(cmd: Any) -> list[dict[str, str]]:
     """The feedback options of a card's menu (Not interested, Don't recommend channel, Remove from
     watch history): [{kind, label, token}] (its feedback token, for the feedback endpoint)."""
     out: list[dict[str, str]] = []
-    for m in _find(cmd or {}, "menuServiceItemRenderer"):
-        if not isinstance(m, dict):
-            continue
-        tok = next((f.get("feedbackToken") for f in _find(m.get("serviceEndpoint") or {}, "feedbackEndpoint") if isinstance(f, dict)), "")
+    for e in menu_entries(cmd):
+        m = e["entry"]
+        tok = next((f.get("feedbackToken") for f in _find(m, "feedbackEndpoint") if isinstance(f, dict)), "")
         if not tok:
             continue
-        label, icon = text(m.get("text")), dig(m, "icon", "iconType") or ""
+        label, icon = e["label"], e["icon"]
         kind = next((k for k, icons, words in FEEDBACK_KINDS if icon in icons), "") or next(
             (k for k, _i, words in FEEDBACK_KINDS if any(w in label.lower() for w in words)), ""
         )
@@ -365,10 +391,12 @@ def menu_feedback(cmd: Any) -> list[dict[str, str]]:
 
 
 def _menu_channel(cmd):
-    for m in dig(cmd, "showMenuCommand", "menu", "menuRenderer", "items") or []:
-        e = endpoint(dig(m, "menuNavigationItemRenderer", "navigationEndpoint"))
-        if e.get("type") == "channel":
-            return e["id"]
+    """The channel a card's menu goes to (Go to channel), whatever its entry's renderer."""
+    for e in menu_entries(cmd):
+        for b in _find(e["entry"], "browseEndpoint"):
+            bid = (b or {}).get("browseId", "") if isinstance(b, dict) else ""
+            if bid.startswith("UC"):
+                return bid
     return ""
 
 
@@ -1179,6 +1207,11 @@ class YouTube:
                 headers["X-YouTube-Client-Name"] = as_client["clientNameId"]
         r = self.s.post(f"{API}/{ep}?prettyPrint=false", json={"context": context, **body}, headers=headers, timeout=TIMEOUT)
         if r.status_code >= 400:
+            try:  # YouTube's reason, for the log (its error message: no tokens in it)
+                why = (r.json().get("error") or {}).get("message") or ""
+            except ValueError:
+                why = ""
+            print(f"yt {ep}: {r.status_code} {str(why)[:200]}", flush=True)
             raise YouTubeError(f"YouTube said {r.status_code} ({ep})", r.status_code)
         data = r.json()
         vd = dig(data, "responseContext", "visitorData")
@@ -1377,6 +1410,36 @@ class YouTube:
         resp = self.call("feedback", {"feedbackTokens": [token]}, cache=False)
         self.changed()
         return bool(dig(resp, "feedbackResponses", 0, "isProcessed"))
+
+    def edit_playlist(self, edit: dict[str, Any], add: bool = True) -> dict[str, Any]:
+        """A menu's own playlist edit (its Save to Watch later), sent as the TV app sends it; add
+        False: the same, taking the video out again."""
+        self.need_profile("save videos")
+        body = {k: edit[k] for k in ("playlistId", "actions", "params") if k in edit}
+        if not add:
+            body["actions"] = [
+                {"action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": a.get("addedVideoId", "")}
+                for a in body.get("actions") or []
+            ]
+        self.call("browse/edit_playlist", body, cache=False)
+        self.changed()
+        return {"saved": add}
+
+    def menu_probe(self) -> dict[str, Any]:
+        """The first Home video's menu as this profile gets it, for wiring the card menu: each
+        entry's renderer, words, icon and the endpoints in it (their names, never tokens)."""
+        resp = self.call("browse", {"browseId": "FEwhat_to_watch"}, cache=False)
+        for t in _find(resp, "tileRenderer"):
+            if isinstance(t, dict) and t.get("contentType") == "TILE_CONTENT_TYPE_VIDEO":
+                cmd = t.get("onLongPressCommand") or {}
+                entries = []
+                for e in menu_entries(cmd):
+                    found = sorted(
+                        {k for k in json.dumps(e["entry"]).replace('"', " ").split() if k.endswith("Endpoint") or k.endswith("Command")}
+                    )
+                    entries.append({"label": e["label"], "icon": e["icon"], "keys": sorted(e["entry"]), "endpoints": found})
+                return {"top": sorted(cmd), "menu": sorted(cmd.get("showMenuCommand") or {}), "entries": entries}
+        return {"entries": [], "note": "no video tile on Home"}
 
     def feedback(self, token: str) -> dict[str, Any]:
         """A card menu's Not interested, Don't recommend channel or Remove from watch history."""
@@ -1989,6 +2052,9 @@ class Demo(YouTube):
     def feedback(self, token):
         self.need_profile("tell YouTube what you'd rather not see")
         return {"ok": True}
+
+    def edit_playlist(self, edit, add=True):
+        return self.save(((edit.get("actions") or [{}])[0]).get("addedVideoId", ""), "WL", add)
 
     def create_playlist(self, title, video_id):
         self.need_profile("make playlists")

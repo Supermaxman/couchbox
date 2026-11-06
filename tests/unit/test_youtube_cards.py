@@ -143,3 +143,49 @@ def test_movies_carousel_is_a_hero_row_even_with_its_title_in_the_menu():
     got = Y.parse_shelf(shelf)
     assert len(got) == 1 and got[0]["hero"] and got[0]["items"][0]["title"] == "A Made-up Show"
     assert Y.outline({"a": [{"b": "x"}], "trackingParams": "t"}) == {"a": [{"b": "str"}, 1]}
+
+
+def test_card_menu_reads_any_entry_renderer():
+    cmd = {
+        "showMenuCommand": {
+            "menu": {
+                "menuRenderer": {
+                    "items": [
+                        {
+                            "menuServiceItemRenderer": {
+                                "text": {"simpleText": "Save to Watch later"},
+                                "icon": {"iconType": "WATCH_LATER"},
+                                "serviceEndpoint": {
+                                    "playlistEditEndpoint": {
+                                        "playlistId": "WL",
+                                        "params": "p",
+                                        "actions": [{"addedVideoId": "vid00000001", "action": "ACTION_ADD_VIDEO"}],
+                                    }
+                                },
+                            }
+                        },
+                        {
+                            "tvMenuItemRenderer": {
+                                "title": {"simpleText": "Not interested"},
+                                "icon": {"iconType": "NOT_INTERESTED"},
+                                "command": {"commandExecutorCommand": {"commands": [{"feedbackEndpoint": {"feedbackToken": "tok"}}]}},
+                            }
+                        },
+                        {
+                            "tvMenuItemRenderer": {
+                                "title": {"simpleText": "Go to channel"},
+                                "command": {"browseEndpoint": {"browseId": "UCdemo0000000000000orbit"}},
+                            }
+                        },
+                    ]
+                }
+            }
+        }
+    }
+    assert Y.menu_watch_later(cmd) == {
+        "playlistId": "WL",
+        "params": "p",
+        "actions": [{"addedVideoId": "vid00000001", "action": "ACTION_ADD_VIDEO"}],
+    }
+    assert [(f["kind"], f["token"]) for f in Y.menu_feedback(cmd)] == [("not_interested", "tok")]
+    assert Y._menu_channel(cmd) == "UCdemo0000000000000orbit"
