@@ -526,3 +526,26 @@ def test_the_check_removes_only_todays_entries_of_its_own_videos(tmp_path):
     assert y.remove_from_history("tok-1")
     _, body, headers = y.s.posts[-1]
     assert body["feedbackTokens"] == ["tok-1"] and headers["Authorization"].startswith("Bearer ")
+
+
+def test_restricted_mode_goes_with_every_request(tmp_path):
+    y = Y.YouTube(data_dir=str(tmp_path))
+    seen = []
+
+    class S:
+        def post(self, url, json=None, headers=None, timeout=None):
+            seen.append(json["context"])
+
+            class R:
+                status_code = 200
+
+                def json(self):
+                    return {}
+
+            return R()
+
+    y.s = S()
+    y._post("browse", {"browseId": "FEwhat_to_watch"})
+    y.restricted = True
+    y._post("browse", {"browseId": "FEwhat_to_watch"})
+    assert "user" not in seen[0] and seen[1]["user"]["enableSafetyMode"] is True

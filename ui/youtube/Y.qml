@@ -29,7 +29,10 @@ QtObject {
     property bool shot: false                 // --shot: still (no blinking caret)
     // the TV's settings (ytextras.Settings: SponsorBlock, DeArrow, dislikes, Hide Shorts, H.264 only)
     property var settings: ({sponsorblock: true, skip: {sponsor: true}, dearrow: false, dislikes: false, hide_shorts: false, h264: true})
-    function setting(key, value) { call("setting", {key: key, value: value}, s => y.settings = s); }
+    function setting(key, value, code, done) {
+        call("setting", {key: key, value: value, code: code || ""}, s => { y.settings = s; if (done) done(true); },
+             e => { y.toast(e); if (done) done(false); });
+    }
     // SponsorBlock's colours for its kinds of segment (its own defaults; Endcards lighter, to show on
     // the dark bar), for the progress bar
     readonly property var segmentColors: ({sponsor: "#00d400", selfpromo: "#ffff00", interaction: "#cc00ff", intro: "#00ffff",

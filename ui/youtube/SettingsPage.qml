@@ -16,7 +16,8 @@ FocusScope {
     property string area: "list"              // list | rows
     property int row: 0
     readonly property var groups: [
-        {header: "Account", items: [{key: "accounts", label: "Accounts"}]},
+        {header: "Account", items: [{key: "accounts", label: "Accounts"}, {key: "premium", label: "Your Premium benefits"}, {key: "purchases", label: "Purchases and memberships"}]},
+        {header: "Family", items: [{key: "restricted", label: "Restricted mode"}, {key: "parent", label: "Parent code"}]},
         {header: "Playback", items: [{key: "video", label: "Video"}, {key: "player", label: "Player"}, {key: "captions", label: "Captions"}, {key: "ads", label: "Ads"}]},
         {header: "Appearance", items: [{key: "guide", label: "Guide tabs"}]},
         {header: "Link TV & phone", items: [{key: "wifi", label: "Link with Wi-Fi"}, {key: "tvcode", label: "Link with TV code"}]},
@@ -25,7 +26,7 @@ FocusScope {
     ]
     readonly property var items: groups.reduce((a, g) => a.concat(g.items), [])
     readonly property var item: items[cur] || ({})
-    function focusDetail() { return {item: item.key || "", area: area, row: (rows[row] || {}).key || "", on: !!(rows[row] || {}).on}; }
+    function focusDetail() { return {item: item.key || "", area: area, row: (rows[row] || {}).key || "", on: !!(rows[row] || {}).on, code: codeFor, locked: !!Y.settings.parent_lock}; }
     function load() {
         Y.call("about", {}, a => page.about = a, () => {});
         Y.call("settings", {}, st => Y.settings = st, () => {});
@@ -59,9 +60,27 @@ FocusScope {
         if (item.key === "player")
             return {title: "Player", body: "Keys on a keyboard: P and D faster and slower, A normal speed, C captions, M sound.", facts: [], rows: [
                 {key: "remaining_time", label: "Show remaining time", on: !!st.remaining_time, desc: "The time left in place of the video's length", group: "On screen"},
+                {key: "autoplay", label: "Autoplay next video", on: st.autoplay !== false, desc: "When a video ends, the next one plays after a few seconds", group: "Playback"},
+                {key: "previews", label: "Previews", on: false, off: true, desc: "Playing a card's video, muted, while it has the focus: not on this TV yet", group: "Playback"},
                 {key: "pause_on_blur", label: "Pause on blur", on: !!st.pause_on_blur, desc: "Pause when another window comes in front", group: "Playback"},
                 {key: "block_continue", label: "Block \"Continue watching?\"", on: !!st.block_continue, group: "Playback",
                  desc: "Autoplay doesn't stop to ask after 2 hours without a key"}]};
+        if (item.key === "premium")
+            return {title: "Your Premium benefits", body: "Premium's benefits and your membership are shown on a phone or computer.", rows: [],
+                    facts: [["Watching as", Y.profile ? Y.profile.name + (Y.profile.premium ? " (YouTube Premium)" : "") : "a guest"],
+                            ["Open", "youtube.com/premium"]]};
+        if (item.key === "purchases")
+            return {title: "Purchases and memberships", body: "Films and shows you bought or rented, and channel memberships, are listed on a phone or computer.", rows: [],
+                    facts: [["Open", "youtube.com/paid_memberships"]]};
+        if (item.key === "restricted")
+            return {title: "Restricted mode", facts: [],
+                    body: "Hides videos that may be mature, for every profile on this TV." + (st.parent_lock ? " The parent code turns it off." : " A parent code (Family) keeps it on."),
+                    rows: [{key: "restricted", label: "Restricted mode", on: !!st.restricted, group: "This TV", locked: !!st.parent_lock,
+                            desc: "YouTube leaves out what may be mature in search, Home and videos. Not every video is caught."}]};
+        if (item.key === "parent")
+            return {title: "Parent code", facts: [],
+                    body: st.parent_lock ? "Restricted mode can be turned off, and this code changed, only with it." : "Four digits that keep Restricted mode as it is.",
+                    rows: [{key: "parent_code", label: st.parent_lock ? "Remove the parent code" : "Set a parent code", button: true}]};
         if (item.key === "captions")
             return {title: "Captions", body: "CC on the player turns them on or off for the video playing.", facts: [], rows: [
                 {key: "captions_always", label: "Always show captions", on: st.captions_always !== false, group: "Every video",
@@ -105,11 +124,38 @@ FocusScope {
         const r = rows[row];
         if (!r) return;
         if (r.key === "who") Y.whoIsWatching();
+        else if (r.key === "parent_code") askCode(Y.settings.parent_lock ? "remove" : "set");
+        else if (r.key === "restricted" && r.locked) askCode("restricted");
         else if (r.key === "newcode") newCode();
         else if (r.choices) {                 // a choice: OK steps to the next
             const keys = r.choices.map(c => c[0]), i = keys.indexOf(r.value);
             Y.setting(r.key, keys[(i + 1) % keys.length]);
         } else if (!r.off) Y.setting(r.key, !r.on);
+    }
+    // the parent code: four digits on the remote (Up / Down a digit, Left / Right, or the number keys)
+    property string codeFor: ""               // "" | set | remove | restricted
+    property var digits: [0, 0, 0, 0]
+    property int digit: 0
+    function askCode(what) { codeFor = what; digits = [0, 0, 0, 0]; digit = 0; pad.forceActiveFocus(); }
+    function codeKey(k) {
+        const d = digits.slice();
+        if (k >= Qt.Key_0 && k <= Qt.Key_9) { d[digit] = k - Qt.Key_0; digits = d; if (digit < 3) digit++; else codeDone(); return true; }
+        if (k === Qt.Key_Up) { d[digit] = (d[digit] + 1) % 10; digits = d; return true; }
+        if (k === Qt.Key_Down) { d[digit] = (d[digit] + 9) % 10; digits = d; return true; }
+        if (k === Qt.Key_Left) { digit = Math.max(0, digit - 1); return true; }
+        if (k === Qt.Key_Right) { if (digit < 3) digit++; return true; }
+        if (k === Qt.Key_Return || k === Qt.Key_Enter) { codeDone(); return true; }
+        if (k === Qt.Key_Escape || k === Qt.Key_Back) { codeFor = ""; pad.focus = false; page.forceActiveFocus(); return true; }
+        return true;
+    }
+    function codeDone() {
+        const code = digits.join(""), what = codeFor;
+        codeFor = "";
+        pad.focus = false;
+        page.forceActiveFocus();
+        if (what === "set") Y.setting("parent_code", code, "", ok => { if (ok) Y.toast("Parent code set: " + code + ". Keep it somewhere safe."); });
+        else if (what === "remove") Y.setting("parent_code", "", code, ok => { if (ok) Y.toast("Parent code removed"); });
+        else if (what === "restricted") Y.setting("restricted", !Y.settings.restricted, code);
     }
     function enterRows() { if (rows.length) { area = "rows"; row = 0; } }
 
@@ -141,9 +187,16 @@ FocusScope {
         property real selY: 0                 // the chosen row's place in the list
         onSelYChanged: follow()
         onHeightChanged: follow()
-        function follow() {                   // its group's header in view above it, room below it
+        function follow() {                   // its group's header in view above it, room below it,
             const top = catCol.y + selY - 46 * Y.u, bottom = catCol.y + selY + 78 * Y.u + 40 * Y.u;
-            contentY = Math.max(0, Math.min(contentHeight - height, Math.max(Math.min(contentY, top), bottom - height)));
+            let want = Math.max(0, Math.min(contentHeight - height, Math.max(Math.min(contentY, top), bottom - height)));
+            // ...and the list's top on a row's (or a header's) top: no row cut in half up there
+            const tops = [0];
+            for (const g of catCol.children)
+                for (const it of g.children || []) if (it.height > 0 && it.visible) tops.push(catCol.y + it.mapToItem(catCol, 0, 0).y);
+            const fit = tops.filter(t => t >= want - 0.5 && t <= top + 0.5).sort((a, b) => a - b);
+            if (fit.length) want = fit[0];
+            contentY = Math.max(0, Math.min(Math.max(0, contentHeight - height), want));
         }
         Behavior on contentY { NumberAnimation { duration: 140 } }
     Column {
@@ -194,6 +247,46 @@ FocusScope {
         x: page.listX + 442 * Y.u; y: 192 * Y.u
         width: 2 * Y.u; height: parent.height - y
         color: Y.raised2
+    }
+    FocusScope {                              // the parent code's four digits (they have the keys while up)
+        id: pad
+        visible: !!page.codeFor
+        anchors.fill: parent
+        z: 20
+        Keys.onPressed: e => { if (!page.codeFor) { e.accepted = false; return; } page.codeKey(e.key); e.accepted = true; }
+    Rectangle {
+        visible: !!page.codeFor
+        anchors.fill: parent
+        color: Y.bg
+        Column {
+            anchors.centerIn: parent
+            spacing: 30 * Y.u
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: page.codeFor === "set" ? "Choose a parent code" : "Enter the parent code"
+                color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+            }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 24 * Y.u
+                Repeater {
+                    model: 4
+                    Rectangle {
+                        required property int index
+                        width: 110 * Y.u; height: 140 * Y.u; radius: 18 * Y.u
+                        color: page.digit === index ? Y.text : Y.raised
+                        Text { anchors.centerIn: parent; text: page.digits[parent.index]; color: page.digit === parent.index ? Y.ink : Y.text
+                               font.family: Y.font; font.pixelSize: 64 * Y.u; font.weight: Font.Bold }
+                    }
+                }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Up and Down change a digit, Left and Right move (or the number keys). OK when done, Back to cancel."
+                color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u
+            }
+        }
+    }
     }
     // the details, centred: a large heading, the line under it, facts, a button, or the rows of
     // switches in VacuumTube's look (cards on a darker panel, a count of them, capital sub-headers)

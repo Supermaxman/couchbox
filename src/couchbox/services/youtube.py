@@ -1209,6 +1209,7 @@ class YouTube:
             }
         )
         self.visitor = self._read("visitor.json").get("visitorData", "")
+        self.restricted = False  # Restricted mode: the app sets it from its settings
         self.cache: dict[str, tuple[float, Any]] = {}
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(max_workers=6)
@@ -1296,6 +1297,8 @@ class YouTube:
         context: dict[str, Any] = {"client": client}
         if page:
             context["user"] = {"onBehalfOfUser": page}  # a brand account of the signed-in Google account
+        if self.restricted:  # Restricted mode (Settings): YouTube leaves out what may be mature
+            context.setdefault("user", {})["enableSafetyMode"] = True
         headers = {"X-Goog-Visitor-Id": visitor} if visitor else {}
         if token:
             headers["Authorization"] = f"Bearer {token}"

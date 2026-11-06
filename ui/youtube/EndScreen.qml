@@ -12,7 +12,9 @@ FocusScope {
     signal playNow()
     signal cancel()
     function begin() { remaining = seconds; button = 0; tick.restart(); }
-    Timer { id: tick; interval: 1000; repeat: true; running: end.visible && !!end.next && !Y.shot
+    // (Autoplay next video off: no countdown, unless it's from the queue)
+    readonly property bool auto: queued || Y.settings.autoplay !== false
+    Timer { id: tick; interval: 1000; repeat: true; running: end.visible && !!end.next && !Y.shot && end.auto
             onTriggered: { end.remaining--; if (end.remaining <= 0) { stop(); end.playNow(); } } }
     Keys.onLeftPressed: button = 0
     Keys.onRightPressed: button = 1
@@ -40,6 +42,7 @@ FocusScope {
         Image { anchors.fill: parent; source: end.next ? end.next.thumb || "" : ""; fillMode: Image.PreserveAspectCrop; sourceSize: Y.sz(width, height); asynchronous: true }
         Corners { anchors.fill: parent; color: "#0f0f0f"; visible: false }
         Rectangle {                            // the countdown
+            visible: end.auto
             anchors.centerIn: parent
             width: 150 * Y.u; height: width; radius: width / 2
             color: "#b3000000"

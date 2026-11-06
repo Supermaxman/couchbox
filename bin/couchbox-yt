@@ -103,6 +103,7 @@ class Backend(QObject):
         else:
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
+        self.yt.restricted = bool(self.settings.get().get("restricted"))   # Restricted mode, from the start
         self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
         Backend.current = self
         self.home_lock = threading.Lock()
@@ -168,6 +169,32 @@ class Backend(QObject):
         except OSError:
             pass
         return out
+
+    # ---------------------------------------------------------------- settings (a parent code locks Restricted mode)
+    @staticmethod
+    def code_hash(code):
+        import hashlib
+        return hashlib.sha256(("couchbox-yt-parent:" + code).encode()).hexdigest()
+
+    def shown_settings(self, st=None):
+        st = dict(st or self.settings.get())
+        st["parent_lock"] = bool(st.pop("parent_code", ""))   # (the code's hash stays here)
+        self.yt.restricted = bool(st.get("restricted"))
+        return st
+
+    def set_setting(self, key, value, code=""):
+        st = self.settings.get()
+        if key in ("restricted", "parent_code") and st.get("parent_code") and self.code_hash(code) != st["parent_code"]:
+            raise ValueError("That isn't the parent code.")
+        if key == "parent_code":
+            digits = str(value or "")
+            if digits and not (len(digits) == 4 and digits.isdigit()):
+                raise ValueError("A parent code is four digits.")
+            value = self.code_hash(digits) if digits else ""
+        out = self.settings.set(key, value)
+        if key == "restricted" and hasattr(self.yt, "cache"):
+            self.yt.cache.clear()                      # (pages asked for before: not restricted)
+        return self.shown_settings(out)
 
     def stream_args(self, max_height=None):
         st = self.settings.get()
@@ -449,9 +476,9 @@ class Backend(QObject):
         y = self.yt
         ops = {
             "status": lambda: dict(y.profiles(), guide=[{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
-                                   demo=self.demo, settings=self.settings.get(), homeCopy=self.home_copy_of_last()),
-            "settings": lambda: self.settings.get(),
-            "setting": lambda: self.settings.set(a["key"], a["value"]),
+                                   demo=self.demo, settings=self.shown_settings(), homeCopy=self.home_copy_of_last()),
+            "settings": lambda: self.shown_settings(),
+            "setting": lambda: self.set_setting(a["key"], a["value"], str(a.get("code") or "")),
             "segments": lambda: self.segments(a["id"]),
             "branding": lambda: self.branding(a["id"]),
             "votes": lambda: self.votes(a["id"]),
