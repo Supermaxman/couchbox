@@ -367,11 +367,33 @@ def player_walk(r):
     # captions: CC on (when the video has any: else the TV says so) and off again
     if press_button("cc"):
         f = r.step("captions-on", lambda f: (True, f"captions {d(f).get('captions')!r} (none: the video has no captions)"), settle=2)
+        if d(f).get("captions"):  # their words on the screen (mpv's sub-text) within 10 s
+            end = time.monotonic() + 10
+            while time.monotonic() < end and not d(focus()).get("subText"):
+                time.sleep(0.5)
+            r.step("captions-text", lambda f: (bool(d(f).get("subText")), f"on screen: {(d(f).get('subText') or '')[:40]!r}"), settle=0)
         if d(f).get("captions") and ok_on(lambda f: d(f).get("button") == "cc", "the captions button"):
             r.step("captions-off", lambda f: (not d(f).get("captions"), f"captions {d(f).get('captions')!r}"), settle=1.5)
     # the comments (read)
     if press_button("comments"):
-        r.step("comments", lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r}"), settle=3)
+        f = r.step("comments", lambda f: (d(f).get("panel") == "comments", f"panel {d(f).get('panel')!r}"), settle=3)
+        # a comment's replies (read): down to the first with replies, OK, they load; Back: the
+        # comments again, on the same one
+        at = (d(f).get("comments") or {}).get("withReplies", -1)
+        if 0 <= at <= 12:
+            remote(*["down"] * at, gap=0.35)
+            time.sleep(0.6)
+            if ok_on(lambda f: (d(f).get("comments") or {}).get("at") == at, "a comment with replies"):
+                end = time.monotonic() + 8
+                while time.monotonic() < end and not (d(focus()).get("comments") or {}).get("replies"):
+                    time.sleep(0.5)
+                r.step("comment-replies", lambda f: ((d(f).get("comments") or {}).get("thread") and (d(f).get("comments") or {}).get("replies", 0) > 0,
+                                                     f"replies {(d(f).get('comments') or {}).get('replies')}"), settle=0)
+                remote("back")
+                r.step("comment-replies-back", lambda f: (not (d(f).get("comments") or {}).get("thread") and (d(f).get("comments") or {}).get("at") == at,
+                                                          f"comments again, on {(d(f).get('comments') or {}).get('at')} (was {at})"), settle=1)
+        else:
+            print(f"(no comment with replies among the first ones: {at})", flush=True)
         remote("back")
         if d(focus()).get("panel"):
             remote("back")

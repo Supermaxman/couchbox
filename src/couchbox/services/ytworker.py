@@ -77,11 +77,14 @@ def slim(info: dict[str, Any]) -> dict[str, Any]:
     out["formats"] = [{k: f[k] for k in FORMAT_KEYS if k in f} for f in info.get("formats") or []]
     want = ("en",)
     out["subtitles"] = {lang: [t for t in tracks if t.get("ext") == "vtt"] for lang, tracks in (info.get("subtitles") or {}).items()}
+    # automatic captions: the wanted languages', and the spoken one's whatever it is (yt-dlp's
+    # "xx-orig", ours marked orig): a video with only Spanish ones had none to offer
     out["automatic_captions"] = {
         lang: [t for t in tracks if t.get("ext") == "vtt"]
         for lang, tracks in (info.get("automatic_captions") or {}).items()
-        if lang.split("-")[0] in want
+        if lang.split("-")[0] in want or lang.endswith("-orig") or any(t.get("orig") for t in tracks)
     }
+    out["_tracks"] = info.get("_tracks") or []  # (for YouTube's translation when none is in English)
     return out
 
 

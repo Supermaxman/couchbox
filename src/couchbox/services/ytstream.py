@@ -318,30 +318,63 @@ def chapters(info: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def captions(info: dict[str, Any], want: tuple[str, ...] = ("en",)) -> list[dict[str, Any]]:
-    """Captions to offer: the video's own (its languages, the wanted ones first), then YouTube's
-    automatic ones in the wanted languages: [{lang, name, url, auto}] (WebVTT, which mpv reads)."""
+    """Captions to offer, as YouTube's TV app does: the video's own (every language), its
+    automatic ones (whatever their language), and when nothing is in a wanted language, one
+    translated to it by YouTube ("auto-translated"): [{lang, name, url, auto, translated}]
+    (WebVTT, which mpv reads); the video's own first, the wanted languages first among them."""
     out = []
 
-    def add(subs, auto):
-        for lang, tracks in (subs or {}).items():
-            if auto and lang.split("-")[0] not in want:
-                continue
-            vtt = next((t for t in tracks if t.get("ext") == "vtt" and t.get("url")), None)
-            if vtt and lang != "live_chat":
-                name = vtt.get("name") or lang
-                out.append(
-                    {
-                        "lang": lang,
-                        "name": f"{name} (auto-generated)" if auto and "auto" not in name.lower() else name,
-                        "url": vtt["url"],
-                        "auto": auto,
-                    }
-                )
+    def vtt_of(tracks):
+        return next((t for t in tracks or [] if t.get("ext") == "vtt" and t.get("url")), None)
 
-    add(info.get("subtitles"), False)
-    add(info.get("automatic_captions"), True)
-    out.sort(key=lambda c: (c["auto"], c["lang"].split("-")[0] not in want, c["lang"]))
-    return out[:12]
+    def add(lang, vtt, auto, translated=False):
+        name = vtt.get("name") or lang
+        if auto and not translated and "auto" not in name.lower():
+            name = f"{name} (auto-generated)"
+        out.append({"lang": lang, "name": name, "url": vtt["url"], "auto": auto, "translated": translated})
+
+    for lang, tracks in (info.get("subtitles") or {}).items():
+        vtt = vtt_of(tracks)
+        if vtt and lang != "live_chat":
+            add(lang, vtt, False)
+    autos = info.get("automatic_captions") or {}
+    # yt-dlp lists YouTube's automatic captions in every language it translates them to, the
+    # spoken one as "xx-orig" (ours, from /player: the spoken one only, marked "orig")
+    for lang, tracks in autos.items():
+        vtt = vtt_of(tracks)
+        if not vtt:
+            continue
+        orig = lang.endswith("-orig") or vtt.get("orig")
+        if orig or lang.split("-")[0] in want:
+            spoken = lang.removesuffix("-orig")
+            translated = (
+                not orig
+                and any(k.endswith("-orig") for k in autos)
+                and not any(k.removesuffix("-orig").split("-")[0] == lang.split("-")[0] and k.endswith("-orig") for k in autos)
+            )
+            add(spoken, dict(vtt, name=(vtt.get("name") or spoken) + (" (auto-translated)" if translated else "")), True, translated)
+    # nothing in a wanted language: YouTube's translation of a track that offers one (tlang)
+    if not any(c["lang"].split("-")[0] in want for c in out):
+        src = next((t for t in info.get("_tracks") or [] if t.get("translatable")), None)
+        if src:
+            name = {"en": "English"}.get(want[0], want[0])
+            out.append(
+                {
+                    "lang": want[0],
+                    "name": f"{name} (auto-translated)",
+                    "url": src["url"] + "&tlang=" + want[0],
+                    "auto": True,
+                    "translated": True,
+                }
+            )
+    seen, uniq = set(), []
+    for c in out:
+        key = (c["lang"], c["auto"], c["translated"])
+        if key not in seen:
+            seen.add(key)
+            uniq.append(c)
+    uniq.sort(key=lambda c: (c["auto"], c["lang"].split("-")[0] not in want, c["translated"], c["lang"]))  # the video's own first
+    return uniq[:12]
 
 
 def heights(formats: list[dict[str, Any]], h264: bool = True) -> list[int]:
@@ -658,11 +691,15 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
     duration = float(vd.get("lengthSeconds") or 0)
     subs: dict[str, list] = {}
     auto: dict[str, list] = {}
+    tracks: list[dict[str, Any]] = []  # every track, for a translation when none is in English
     for t in ((pr.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {}).get("captionTracks") or []:
         lang = t.get("languageCode") or ""
         name = "".join(r.get("text", "") for r in (t.get("name") or {}).get("runs") or []) or (t.get("name") or {}).get("simpleText", "")
         entry = {"ext": "vtt", "url": (t.get("baseUrl") or "") + "&fmt=vtt", "name": name}
+        if t.get("kind") == "asr":
+            entry["orig"] = True  # (the spoken language's: translations come by tlang)
         (auto if t.get("kind") == "asr" else subs).setdefault(lang, []).append(entry)
+        tracks.append({"url": entry["url"], "translatable": bool(t.get("isTranslatable")), "asr": t.get("kind") == "asr"})
     return {
         "id": vd.get("videoId") or "",
         "title": vd.get("title") or "",
@@ -674,4 +711,5 @@ def from_player(pr: dict[str, Any], solve: Any, get: Any = None) -> dict[str, An
         "formats": formats + _storyboard_formats(pr, duration),
         "subtitles": subs,
         "automatic_captions": auto,
+        "_tracks": tracks,
     }

@@ -528,6 +528,14 @@ class MpvVideo(QQuickFramebufferObject):
         """Where subtitles sit (100: the bottom); raised while the controls are showing."""
         self.mpv.sub_pos = max(0, min(150, percent))
 
+    @Slot(result=str)
+    def subText(self):
+        """The caption on screen now ("" when none): the box check's proof that captions show."""
+        try:
+            return str(self.mpv.sub_text or "")[:200]
+        except Exception:  # noqa: BLE001
+            return ""
+
     # ---------------------------------------------------------------- one file ready to play
     PRELOAD_CACHE = "4MiB"  # what's read ahead of a preloaded file (no more: it may never play)
 

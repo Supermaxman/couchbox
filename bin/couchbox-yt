@@ -384,9 +384,16 @@ class Backend(QObject):
             self.worker.prefetch(vid, key=key, player=pr, **self.stream_args())
 
     def stream(self, vid, max_height=None):
-        import time
         if self.demo:
             return youtube.demo_stream(vid)
+        out = self._stream(vid, max_height)
+        c = out.get("captions") or []                # (always: an owner's "no captions" is traceable)
+        print(f"yt {vid}: captions: {len(c)} tracks (asr {sum(1 for x in c if x.get('auto') and not x.get('translated'))}, "
+              f"translated {sum(1 for x in c if x.get('translated'))}): {', '.join(x.get('lang', '') for x in c) or 'none'}", flush=True)
+        return out
+
+    def _stream(self, vid, max_height=None):
+        import time
         key = self.signed_key(vid)
         if key:
             try:

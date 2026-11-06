@@ -30,6 +30,7 @@ Rectangle {
     function preload(url, start, opts) {}
     function cancelPreload() {}
     function videoInfo() { return ""; }
+    function subText() { return ""; }
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {

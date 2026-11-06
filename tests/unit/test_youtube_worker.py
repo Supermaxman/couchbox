@@ -212,3 +212,59 @@ https://manifest.example/video.m3u8
 """
     out = ytstream.playable({"live_status": "is_live", "formats": ytstream.hls_formats(master)})
     assert out["url"] == "https://manifest.example/video.m3u8" and "audio-file=" in out["opts"] and "audio.m3u8" in out["opts"]
+
+
+def test_captions_every_track_and_a_translation_when_none_is_english():
+    """A video whose only captions are Spanish, generated: they're offered, and English by
+    YouTube's translation (the owner's "no captions" on a video VacuumTube had them for)."""
+    from couchbox.services import ytworker
+
+    pr = {
+        "playabilityStatus": {"status": "OK"},
+        "videoDetails": {"videoId": "capt0000001", "title": "Una prueba", "lengthSeconds": "60"},
+        "streamingData": {
+            "adaptiveFormats": [
+                {
+                    "itag": 137,
+                    "url": "https://media.example/vp?itag=137",
+                    "mimeType": 'video/mp4; codecs="avc1.640028"',
+                    "width": 1920,
+                    "height": 1080,
+                },
+                {"itag": 140, "url": "https://media.example/vp?itag=140", "mimeType": 'audio/mp4; codecs="mp4a.40.2"', "audioChannels": 2},
+            ]
+        },
+        "captions": {
+            "playerCaptionsTracklistRenderer": {
+                "captionTracks": [
+                    {
+                        "baseUrl": "https://www.youtube.example/api/timedtext?v=capt0000001&lang=es&kind=asr",
+                        "languageCode": "es",
+                        "kind": "asr",
+                        "name": {"simpleText": "Spanish (auto-generated)"},
+                        "isTranslatable": True,
+                    }
+                ]
+            }
+        },
+    }
+    info = ytworker.slim(ytstream.from_player(pr, lambda n, s: ({}, {})))
+    got = ytstream.captions(info)
+    assert [(c["lang"], c["auto"], c["translated"]) for c in got] == [("en", True, True), ("es", True, False)]
+    assert got[0]["url"].endswith("&fmt=vtt&tlang=en") and got[0]["name"] == "English (auto-translated)"
+    assert got[1]["name"] == "Spanish (auto-generated)"
+
+
+def test_captions_from_ytdlp_keep_the_spoken_language():
+    info = {
+        "subtitles": {"de": [{"ext": "vtt", "url": "https://s.example/de", "name": "German"}]},
+        "automatic_captions": {
+            "de-orig": [{"ext": "vtt", "url": "https://s.example/de-orig", "name": "German (Original)"}],
+            "en": [{"ext": "vtt", "url": "https://s.example/en", "name": "English"}],
+            "fr": [{"ext": "vtt", "url": "https://s.example/fr", "name": "French"}],
+        },
+    }
+    from couchbox.services import ytworker
+
+    got = ytstream.captions(ytworker.slim(info))
+    assert [(c["lang"], c["auto"], c["translated"]) for c in got] == [("de", False, False), ("en", True, True), ("de", True, False)]
