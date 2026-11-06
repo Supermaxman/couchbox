@@ -771,7 +771,8 @@ class Perf:
             f"app {a.get('Rss')} MB resident, {a.get('Pss')} proportional ({a.get('Anonymous')} anonymous, {a.get('Pss_File')} files); "
             "mpv cache " + (", ".join(f"{c['bytes_mb']} MB / {c['ahead_s']} s" for c in m.get("mpv_cache") or []) or "none")
             + "; " + ", ".join(f"{k} {sum(x.get('Rss', 0) for x in v)} MB ({sum(x.get('Pss', 0) for x in v)} PSS)" for k, v in procs.items())
-            + f"; {m.get('python_objects')} Python objects; app by kind: "
+            + f"; {m.get('python_objects')} Python objects; QML: {(m.get('qml') or {}).get('items')} items, "
+            + f"{(m.get('qml') or {}).get('images')} pictures ({(m.get('qml') or {}).get('image_mb')} MB decoded); app by kind: "
             + ", ".join(f"{k} {v}" for k, v in (m.get("app_by_kind") or {}).items()),
             m,
         )

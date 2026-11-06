@@ -68,7 +68,7 @@ FocusScope {
         clip: true
         model: feed.rows
         spacing: 50 * Y.u
-        cacheBuffer: Math.round(1600 * Y.u)
+        cacheBuffer: Math.round(700 * Y.u)     // rows kept made off screen (each with its pictures): a little
         highlightRangeMode: ListView.StrictlyEnforceRange
         preferredHighlightBegin: feed.topRoom
         preferredHighlightEnd: feed.topRoom + 200 * Y.u

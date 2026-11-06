@@ -36,6 +36,21 @@ SITE = "yt"                                        # appctl socket, MPRIS name (
 # up from LD_LIBRARY_PATH, which only counts at start, so start again with it.
 RPI_FFMPEG = "/opt/couchbox/ffmpeg-rpi/lib"
 os.environ.setdefault("COUCHBOX_YT_T0", str(time.time()))   # the app's start (timing; before the restart below)
+# glibc: 2 arenas, and big blocks (video frames, packets) mapped on their own so they go back to
+# the system when freed (its moving threshold kept them in a growing heap); for the restart
+# below and the stream worker too (environment), and for this process from here on (mallopt)
+os.environ.setdefault("GLIBC_TUNABLES", "glibc.malloc.arena_max=2:glibc.malloc.mmap_threshold=131072:glibc.malloc.trim_threshold=131072")
+try:
+    import ctypes
+    _libc = ctypes.CDLL("libc.so.6")
+    _libc.mallopt(-8, 2)                           # M_ARENA_MAX
+    _libc.mallopt(-3, 131072)                      # M_MMAP_THRESHOLD (fixed: no moving up)
+    _libc.mallopt(-1, 131072)                      # M_TRIM_THRESHOLD
+except (OSError, AttributeError):
+    pass
+# Qt's compiled QML, kept where this app surely may write (the box's default place stayed empty)
+os.environ.setdefault("QML_DISK_CACHE_PATH", os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "couchbox-yt", "qmlcache"))
+os.makedirs(os.environ["QML_DISK_CACHE_PATH"], exist_ok=True)
 if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PATH", ""):
     os.environ["LD_LIBRARY_PATH"] = RPI_FFMPEG + (":" + os.environ["LD_LIBRARY_PATH"] if os.environ.get("LD_LIBRARY_PATH") else "")
     os.execv(sys.executable, [sys.executable] + sys.argv)  # noqa: S606
@@ -599,6 +614,29 @@ def by_kind(pid):
     return {k: round(v / 1024) for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])}
 
 
+def picture_census():
+    """The QML's items now, and its pictures shown (Images ready): how many, and how much their
+    decoded pixels take (width x height x 4: the copy in memory, and as much again as a texture)."""
+    win = Shooter.window
+    if win is None:
+        return {}
+    items = images = 0
+    pixels = 0
+    todo = [win.contentItem()]
+    while todo:
+        it = todo.pop()
+        items += 1
+        todo.extend(it.childItems())
+        if it.metaObject().className().startswith("QQuickImage"):
+            try:
+                if int(it.property("status") or 0) == 1:
+                    images += 1
+                    pixels += int(it.property("implicitWidth") or 0) * int(it.property("implicitHeight") or 0)
+            except (TypeError, ValueError):
+                pass
+    return {"items": items, "images": images, "image_mb": round(pixels * 4 / 2**20)}
+
+
 def memory():
     """This app's memory in parts (MB): resident, anonymous (Python, Qt, mpv's buffers, textures in
     system memory) and file-backed (libraries); mpv's demuxer cache; the stream worker and node."""
@@ -626,6 +664,7 @@ def memory():
         except Exception:  # noqa: BLE001
             pass
     out["mpv_cache"] = caches
+    out["qml"] = picture_census()
     kids = {}
     try:
         for d in os.listdir("/proc"):
