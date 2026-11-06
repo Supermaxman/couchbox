@@ -71,6 +71,7 @@ class Backend(QObject):
         else:
             self.settings = ytextras.Settings(self.yt.dir)
         self.extras = ytextras.Extras()
+        self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
@@ -123,18 +124,82 @@ class Backend(QObject):
                 raise youtube.YouTubeError(f"No profile {profile} on this TV.")
         return y.player_probe(vid, None if self.demo else self.worker.call("clients"))
 
+    # ---------------------------------------------------------------- streams signed in
+    # Signed in, the app asks /player itself, as YouTube's TV client (yt-dlp's tv_samsung, else
+    # tv_downgraded) with the profile's own sign-in: a Premium account gets no ads, so its DASH
+    # opens at once (a guest's waits ~3-6 s). The worker deciphers the addresses (the kept node)
+    # and keeps them per profile; on any trouble, a guest's way (yt-dlp).
+    SIGNED_CLIENTS = ("tv_samsung", "tv_downgraded")
+    KEEP_SIGNED = 3 * 3600
+
+    def signed_player(self, vid):
+        import time
+        if not getattr(self, "clients", None):
+            self.clients = self.worker.call("clients", timeout=60)
+        if getattr(self, "player_js", (0, None))[0] < time.time():
+            self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
+        sts = self.player_js[1].get("sts") or 0
+        body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
+                "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}}
+        for name in self.SIGNED_CLIENTS:
+            c = self.clients.get(name)
+            if not c:
+                continue
+            resp = self.yt.call("player", body, cache=False, as_client=c)
+            if resp.get("adPlacements") or resp.get("playerAds"):
+                return None                          # ads planned (not Premium): its DASH waits them out; a guest's way
+            if (resp.get("playabilityStatus") or {}).get("status") == "OK" and (resp.get("streamingData") or {}).get("adaptiveFormats"):
+                return {k: resp.get(k) for k in ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")}
+        return None
+
+    def signed_key(self, vid):
+        prof = self.yt.profile.get("id", "") if self.yt.profile else ""
+        return f"{vid}|{prof}" if prof else ""
+
     def prefetch(self, vid):
         """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
-        if not self.demo and vid:
+        import time
+        if self.demo or not vid:
+            return {"ok": True}
+        key = self.signed_key(vid)
+        if not key:
             self.worker.prefetch(vid, **self.stream_args())
+        elif self.kept.get(key, 0) < time.time():
+            self.pool.submit(self.prefetch_signed, vid, key)
         return {"ok": True}
 
+    def prefetch_signed(self, vid, key):
+        import time
+        try:
+            pr = self.signed_player(vid)
+        except Exception as err:  # noqa: BLE001
+            print(f"yt {vid}: signed-in prefetch: {err}", flush=True)
+            return
+        if pr:
+            self.kept[key] = time.time() + self.KEEP_SIGNED
+            self.worker.prefetch(vid, key=key, player=pr, **self.stream_args())
+
     def stream(self, vid, max_height=None):
+        import time
         if self.demo:
             return youtube.demo_stream(vid)
+        key = self.signed_key(vid)
+        if key:
+            try:
+                t = yttiming.now()
+                kept = self.kept.get(key, 0) > time.time()
+                pr = None if kept else self.signed_player(vid)
+                player_ms = 0 if kept else yttiming.ms(t)
+                if kept or pr:
+                    out = self.worker.call("resolve", id=vid, key=key, **({"player": pr} if pr else {}), **self.stream_args(max_height))
+                    self.kept[key] = time.time() + self.KEEP_SIGNED
+                    yttiming.note("stream", id=vid, signed=True, player=player_ms, **(out.get("timing") or {}))
+                    return out
+            except Exception as err:  # noqa: BLE001 - a guest's way next
+                print(f"yt {vid}: signed in: {err}; a guest's way", flush=True)
+                self.kept.pop(key, None)
         out = self.worker.call("resolve", id=vid, **self.stream_args(max_height))
-        t = out.get("timing") or {}
-        yttiming.note("stream", id=vid, **t)
+        yttiming.note("stream", id=vid, **(out.get("timing") or {}))
         return out
 
     # the extras (ytextras): made up in the demo, else SponsorBlock, DeArrow, Return YouTube Dislike

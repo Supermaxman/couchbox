@@ -104,7 +104,8 @@ class Worker:
             self.out.flush()
 
     def take(self, req: dict[str, Any]) -> None:
-        if req.get("op") == "resolve" and self.cache.get((req.get("args") or {}).get("id", "")) is not None:
+        args = req.get("args") or {}
+        if req.get("op") == "resolve" and self.cache.get(args.get("key") or args.get("id", "")) is not None:
             # kept from before: answered now, not behind an extraction in progress (a prefetch)
             threading.Thread(target=self.run_one, args=(req, time.monotonic()), daemon=True).start()
             return
@@ -116,13 +117,23 @@ class Worker:
             self.cv.notify()
 
     def info(self, a: dict[str, Any], phases: Any = None) -> tuple[dict[str, Any], bool]:
-        from couchbox.services import ytstream
+        """yt-dlp's information for a video: kept, from the app's own /player call (signed in: "player"
+        and the cache "key", one per profile), else yt-dlp's."""
+        from couchbox.services import ytjs, ytstream
 
-        info = self.cache.get(a["id"])
+        key = a.get("key") or a["id"]
+        info = self.cache.get(key)
         if info is not None:
             return info, True
-        info = ytstream.extract(a["id"], phases, a.get("visitor") or "")
-        self.cache.put(a["id"], info)
+        if a.get("player"):
+            t = time.monotonic()
+            info = ytstream.from_player(a["player"], ytjs.solve)
+            del t
+            if phases is not None:
+                phases.marks.append((0, "decipher"))
+        else:
+            info = ytstream.extract(a["id"], phases, a.get("visitor") or "")
+        self.cache.put(key, info)
         return info, False
 
     def resolve(self, a: dict[str, Any]) -> dict[str, Any]:
@@ -158,12 +169,17 @@ class Worker:
         n, op, a = req.get("n", 0), req.get("op"), req.get("args") or {}
         try:
             if op == "prefetch":
-                if time.monotonic() - asked > PREFETCH_STALE or self.cache.get(a["id"]) is not None:
+                if time.monotonic() - asked > PREFETCH_STALE or self.cache.get(a.get("key") or a["id"]) is not None:
                     return self.answer(n, result={"ok": True, "skipped": True})
                 self.info(a)
                 return self.answer(n, result={"ok": True})
             if op == "resolve":
                 return self.answer(n, result=self.resolve(a))
+            if op == "player":  # the player JS's version and signatureTimestamp (the app's /player calls)
+                from couchbox.services import ytjs
+
+                p = ytjs.current_player()
+                return self.answer(n, result={"ver": p["ver"], "sts": p["sts"]})
             if op == "about":
                 return self.answer(n, result=ytstream.about())
             if op == "client":

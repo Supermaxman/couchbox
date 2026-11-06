@@ -79,3 +79,57 @@ def test_a_kept_video_is_answered_at_once_not_behind_a_prefetch(monkeypatch):
         time.sleep(0.02)
     answer = json.loads(out.getvalue().splitlines()[0])
     assert answer["n"] == 8 and answer["result"]["timing"]["cached"] and len(w.queue) == 1
+
+
+def test_our_own_player_answer_deciphered():
+    pr = {
+        "playabilityStatus": {"status": "OK"},
+        "videoDetails": {"videoId": "vid00000001", "title": "A video", "author": "Orbit Lab", "lengthSeconds": "600"},
+        "streamingData": {
+            "adaptiveFormats": [
+                {
+                    "itag": 137,
+                    "mimeType": 'video/mp4; codecs="avc1.640028"',
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30,
+                    "bitrate": 4000000,
+                    "signatureCipher": "s=SIG1&sp=sig&url=https%3A%2F%2Fmedia.example%2Fvideoplayback%3Fitag%3D137%26n%3DNNN%26expire%3D1999999999",
+                },
+                {
+                    "itag": 140,
+                    "mimeType": 'audio/mp4; codecs="mp4a.40.2"',
+                    "bitrate": 130000,
+                    "audioChannels": 2,
+                    "url": "https://media.example/videoplayback?itag=140&n=NNN&expire=1999999999",
+                },
+            ]
+        },
+        "storyboards": {
+            "playerStoryboardSpecRenderer": {
+                "spec": "https://i.example/sb/$L/$N.jpg?x=1|48#27#100#10#10#0#default#rs$A|80#45#100#10#10#2000#M$M#rs$B"
+            }
+        },
+    }
+    asked = {}
+
+    def solve(n, sig):
+        asked.update(n=n, sig=sig)
+        return {"NNN": "nnn"}, {"SIG1": "sig1"}
+
+    info = ytstream.from_player(pr, solve)
+    v, a = ytstream.pick(info["formats"])
+    assert asked == {"n": ["NNN", "NNN"], "sig": ["SIG1"]}
+    assert v["format_id"] == "137" and "n=nnn" in v["url"] and "sig=sig1" in v["url"] and v["vcodec"] == "avc1.640028"
+    assert a["format_id"] == "140" and "n=nnn" in a["url"]
+    out = ytstream.playable(info)
+    assert out["protocol"] == "dash" and out["url"].startswith("edl://") and not out["wait"]
+    sb = ytstream.storyboard(info["formats"])
+    assert sb["cols"] == 10 and sb["sheets"][0]["url"] == "https://i.example/sb/1/M0.jpg?x=1&sigh=rs$B"
+    # a live stream, or one YouTube won't play: the usual way instead
+    import pytest
+
+    with pytest.raises(ytstream.Unavailable):
+        ytstream.from_player(dict(pr, videoDetails={"isLive": True}), solve)
+    with pytest.raises(ytstream.Unavailable):
+        ytstream.from_player(dict(pr, playabilityStatus={"status": "LOGIN_REQUIRED", "reason": "Sign in"}), solve)

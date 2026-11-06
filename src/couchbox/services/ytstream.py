@@ -422,3 +422,127 @@ def resolve(
     spans = phases.spans(took)
     out["timing"] = dict(spans, extract=took, protocol=out["protocol"])
     return out
+
+
+# ------------------------------------------------------------------ from our own /player call
+def _codecs(mime: str) -> tuple[str, str]:
+    """(vcodec, acodec) of 'video/mp4; codecs="avc1.4d401f"' (as yt-dlp names them)."""
+    import re
+
+    kind = mime.split("/")[0]
+    codec = (re.search(r'codecs="([^"]+)"', mime) or [None, ""])[1].split(",")[0].strip()
+    return (codec, "none") if kind == "video" else ("none", codec)
+
+
+def _storyboard_formats(pr: dict[str, Any], duration: float) -> list[dict[str, Any]]:
+    """The player response's storyboard spec as yt-dlp's storyboard formats (for storyboard())."""
+    spec = (((pr.get("storyboards") or {}).get("playerStoryboardSpecRenderer") or {}).get("spec")) or ""
+    parts = spec.split("|")
+    if len(parts) < 2:
+        return []
+    base, out = parts[0], []
+    for i, level in enumerate(parts[1:]):
+        f = level.split("#")
+        if len(f) < 8:
+            continue
+        w, h, count, cols, rows, interval = (int(x or 0) for x in f[:6])
+        name, sigh = f[6], f[7]
+        per = cols * rows or 1
+        sheets = -(-count // per) if count else 0
+        step = interval / 1000 if interval else (duration / count if count else 0)
+        url = base.replace("$L", str(i)).replace("$N", name) + f"&sigh={sigh}"
+        frags = [{"url": url.replace("$M", str(j)), "duration": step * min(per, count - j * per)} for j in range(sheets)]
+        out.append(
+            {
+                "format_id": f"sb{i}",
+                "format_note": "storyboard",
+                "width": w,
+                "height": h,
+                "columns": cols,
+                "rows": rows,
+                "fragments": frags,
+                "url": frags[0]["url"] if frags else "",
+                "vcodec": "none",
+                "acodec": "none",
+            }
+        )
+    return out
+
+
+def from_player(pr: dict[str, Any], solve: Any) -> dict[str, Any]:
+    """yt-dlp's information, as extract() gives it, from an InnerTube /player response (the TV
+    client, signed in: no ads, so DASH opens at once): every format's address deciphered (its
+    signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). Unavailable when it has
+    nothing to play this way (live streams: yt-dlp's way)."""
+    from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+
+    status = (pr.get("playabilityStatus") or {}).get("status")
+    if status != "OK":
+        raise Unavailable((pr.get("playabilityStatus") or {}).get("reason") or "YouTube won't play this video here.")
+    vd = pr.get("videoDetails") or {}
+    sd = pr.get("streamingData") or {}
+    raw = (sd.get("adaptiveFormats") or []) + (sd.get("formats") or [])
+    if vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw:
+        raise Unavailable("not a plain video (live): the usual way")
+    pending = []
+    for f in raw:
+        if f.get("url"):
+            url, s, sp = f["url"], "", ""
+        else:
+            c = parse_qs(f.get("signatureCipher") or f.get("cipher") or "")
+            url, s, sp = (c.get("url") or [""])[0], (c.get("s") or [""])[0], (c.get("sp") or ["signature"])[0]
+        if not url:
+            continue
+        n = (parse_qs(urlparse(url).query).get("n") or [""])[0]
+        pending.append((f, url, s, sp, n))
+    n_ans, sig_ans = solve([p[4] for p in pending if p[4]], [p[2] for p in pending if p[2]])
+    formats = []
+    for f, url, s, sp, n in pending:
+        u = urlparse(url)
+        q = parse_qsl(u.query, keep_blank_values=True)
+        if n:
+            if n not in n_ans:
+                continue
+            q = [(k, n_ans[n] if k == "n" else v) for k, v in q]
+        if s:
+            if s not in sig_ans:
+                continue
+            q.append((sp, sig_ans[s]))
+        vcodec, acodec = _codecs(f.get("mimeType") or "")
+        track = f.get("audioTrack") or {}
+        formats.append(
+            {
+                "format_id": f"{f.get('itag')}" + ("-drc" if f.get("isDrc") else ""),
+                "url": urlunparse(u._replace(query=urlencode(q))),
+                "vcodec": vcodec,
+                "acodec": acodec,
+                "width": f.get("width"),
+                "height": f.get("height"),
+                "fps": f.get("fps"),
+                "tbr": (f.get("bitrate") or 0) / 1000,
+                "abr": (f.get("averageBitrate") or f.get("bitrate") or 0) / 1000 if vcodec == "none" else None,
+                "audio_channels": f.get("audioChannels"),
+                "format_note": f.get("qualityLabel") or "",
+                "language_preference": (10 if track.get("audioIsDefault") else -1) if track else None,
+            }
+        )
+    duration = float(vd.get("lengthSeconds") or 0)
+    subs: dict[str, list] = {}
+    auto: dict[str, list] = {}
+    for t in ((pr.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {}).get("captionTracks") or []:
+        lang = t.get("languageCode") or ""
+        name = "".join(r.get("text", "") for r in (t.get("name") or {}).get("runs") or []) or (t.get("name") or {}).get("simpleText", "")
+        entry = {"ext": "vtt", "url": (t.get("baseUrl") or "") + "&fmt=vtt", "name": name}
+        (auto if t.get("kind") == "asr" else subs).setdefault(lang, []).append(entry)
+    return {
+        "id": vd.get("videoId") or "",
+        "title": vd.get("title") or "",
+        "channel": vd.get("author") or "",
+        "channel_id": vd.get("channelId") or "",
+        "duration": duration,
+        "view_count": int(vd.get("viewCount") or 0),
+        "live_status": "not_live",
+        "formats": formats + _storyboard_formats(pr, duration),
+        "subtitles": subs,
+        "automatic_captions": auto,
+    }

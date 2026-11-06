@@ -53,6 +53,117 @@ HANDLER_JS = r"""
 })()
 """
 
+
+class SolverError(RuntimeError):
+    pass
+
+
+class Node:
+    """The node process (one, shared): started on first use, again if it died."""
+
+    lock = threading.Lock()
+    proc: subprocess.Popen | None = None
+    n = 0
+
+    @classmethod
+    def ask(cls, path: str, script: str, req: dict[str, Any]) -> dict[str, Any]:
+        with cls.lock:
+            if cls.proc is None or cls.proc.poll() is not None:
+                cls.proc = subprocess.Popen(  # noqa: S603
+                    [path, "--permission", "-e", BOOT_JS],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    bufsize=1,
+                )
+                cls.proc.stdin.write(json.dumps(script) + "\n")
+            cls.n += 1
+            req = dict(req, id=cls.n)
+            try:
+                cls.proc.stdin.write(json.dumps(req) + "\n")
+                cls.proc.stdin.flush()
+                while True:
+                    line = cls.proc.stdout.readline()
+                    if not line:
+                        raise SolverError("the challenge solver stopped")
+                    out = json.loads(line)
+                    if out.get("id") == req["id"]:
+                        return out
+            except (OSError, ValueError) as err:
+                cls.proc.kill()
+                cls.proc = None
+                raise SolverError(f"the challenge solver failed: {err}") from err
+
+
+def server_script(lib: str, core: str) -> str:
+    return f"{lib}\nObject.assign(globalThis, lib);\n{core}\n{HANDLER_JS}"
+
+
+# ------------------------------------------------------------------ without yt-dlp's extractor
+# (couchbox-yt's own /player calls, signed in: ytworker.signed_info)
+_script = ""
+PLAYER_URL = "https://www.youtube.com/s/player/{}/player_ias.vflset/en_US/base.js"  # yt-dlp's "main" variant
+_player: dict[str, Any] = {}  # {"ver", "sts", "js", "until"}
+
+
+def node_path() -> str:
+    from couchbox.services import ytstream
+
+    rt = ytstream.js_runtimes().get("node")
+    if not rt:
+        raise SolverError("no node on this box")
+    return rt["path"]
+
+
+def current_player(session: Any = None) -> dict[str, Any]:
+    """The current player JS: {ver, sts, url, js}, looked at again after an hour."""
+    import re
+    import time
+
+    import requests
+
+    if _player.get("until", 0) > time.time():
+        return _player
+    s = session or requests.Session()
+    page = s.get("https://www.youtube.com/iframe_api", timeout=(8, 20)).text
+    ver = re.search(r"player\\?/([0-9a-fA-F]{8})\\?/", page)
+    if not ver:
+        raise SolverError("no player version in iframe_api")
+    if _player.get("ver") != ver.group(1):
+        url = PLAYER_URL.format(ver.group(1))
+        js = s.get(url, timeout=(8, 30)).text
+        sts = re.search(r"(?:signatureTimestamp|sts)\s*:\s*(\d{5})", js)
+        _player.update(ver=ver.group(1), url=url, js=js, sts=int(sts.group(1)) if sts else 0)
+    _player["until"] = time.time() + 3600
+    return _player
+
+
+def solve(n: list[str], sig: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    """({n challenge: answer}, {signature: answer}) with the current player, on the kept node."""
+    global _script
+    if not _script:
+        import yt_dlp_ejs.yt.solver as ejs
+
+        _script = server_script(ejs.lib(), ejs.core())
+    p = current_player()
+    reqs = [r for r in ({"type": "n", "challenges": sorted(set(n))}, {"type": "sig", "challenges": sorted(set(sig))}) if r["challenges"]]
+    if not reqs:
+        return {}, {}
+    body = {"player_url": p["url"], "requests": reqs}
+    out = Node.ask(node_path(), _script, body)
+    if out.get("need_player"):
+        out = Node.ask(node_path(), _script, dict(body, player=p["js"]))
+    if out.get("error"):
+        raise SolverError(out["error"])
+    got: dict[str, dict[str, str]] = {"n": {}, "sig": {}}
+    for r, data in zip(reqs, out["responses"], strict=True):
+        if data["type"] == "error":
+            raise SolverError(f"{r['type']}: {data['error']}")
+        got[r["type"]] = data["data"]
+    return got["n"], got["sig"]
+
+
 _registered = False
 
 
@@ -76,50 +187,13 @@ def register() -> bool:
     except ImportError:
         return False
 
-    class Node:
-        """The node process (one, shared): started on first use, again if it died."""
-
-        lock = threading.Lock()
-        proc: subprocess.Popen | None = None
-        n = 0
-
-        @classmethod
-        def ask(cls, path: str, script: str, req: dict[str, Any]) -> dict[str, Any]:
-            with cls.lock:
-                if cls.proc is None or cls.proc.poll() is not None:
-                    cls.proc = subprocess.Popen(  # noqa: S603
-                        [path, "--permission", "-e", BOOT_JS],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        text=True,
-                        bufsize=1,
-                    )
-                    cls.proc.stdin.write(json.dumps(script) + "\n")
-                cls.n += 1
-                req = dict(req, id=cls.n)
-                try:
-                    cls.proc.stdin.write(json.dumps(req) + "\n")
-                    cls.proc.stdin.flush()
-                    while True:
-                        line = cls.proc.stdout.readline()
-                        if not line:
-                            raise JsChallengeProviderError("the challenge solver stopped")
-                        out = json.loads(line)
-                        if out.get("id") == req["id"]:
-                            return out
-                except (OSError, ValueError) as err:
-                    cls.proc.kill()
-                    cls.proc = None
-                    raise JsChallengeProviderError(f"the challenge solver failed: {err}") from err
-
     @register_provider
     class CouchboxNodeJCP(NodeJCP):
         PROVIDER_NAME = "couchbox-node"
 
         def _script(self) -> str:
             if not hasattr(self, "_server"):
-                self._server = f"{self._lib_script.code}\nObject.assign(globalThis, lib);\n{self._core_script.code}\n{HANDLER_JS}"
+                self._server = server_script(self._lib_script.code, self._core_script.code)
             return self._server
 
         def _real_bulk_solve(self, /, requests):
@@ -129,10 +203,13 @@ def register() -> bool:
             for player_url, group in grouped.items():
                 body = {"player_url": player_url, "requests": [{"type": r.type.value, "challenges": r.input.challenges} for r in group]}
                 self.logger.info("Solving JS challenges using node (kept running)")
-                out = Node.ask(self.runtime_info.path, self._script(), body)
-                if out.get("need_player"):  # a player version it hasn't read yet
-                    player = self._get_player(next((r.video_id for r in group), None), player_url)
-                    out = Node.ask(self.runtime_info.path, self._script(), dict(body, player=player))
+                try:
+                    out = Node.ask(self.runtime_info.path, self._script(), body)
+                    if out.get("need_player"):  # a player version it hasn't read yet
+                        player = self._get_player(next((r.video_id for r in group), None), player_url)
+                        out = Node.ask(self.runtime_info.path, self._script(), dict(body, player=player))
+                except SolverError as err:
+                    raise JsChallengeProviderError(str(err)) from err
                 if out.get("error"):
                     raise JsChallengeProviderError(out["error"])
                 for r, data in zip(group, out["responses"], strict=True):
