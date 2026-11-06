@@ -58,3 +58,35 @@ def test_wormholes_are_the_hero_row():
     }
     (row,) = Y.parse_shelf(shelf)
     assert row["hero"] is True and row["items"][0]["title"] == "A show"
+
+
+def test_subscriptions_rail_all_first_and_a_heading_not_a_row():
+    from couchbox.services import youtube as Y
+
+    def tab(title, bid="", thumb=True):
+        tr = {"title": {"simpleText": title}, "endpoint": {"browseEndpoint": {"browseId": bid}}}
+        if thumb:
+            tr["thumbnail"] = {"thumbnails": [{"url": "https://yt3.ggpht.com/x=s88-c-k", "width": 88}]}
+        return {"tabRenderer": tr}
+
+    resp = {
+        "contents": {
+            "tvSecondaryNavRenderer": {
+                "sections": [
+                    {
+                        "tvSecondaryNavSectionRenderer": {
+                            "tabs": [
+                                tab("All", "FEsubscriptions", thumb=False),
+                                tab("Orbit Lab", "UCaaaaaaaaaaaaaaaaaaaaaa"),
+                                tab("A-Z", "FEsubscriptions_az", thumb=False),
+                                tab("Kettle & Crumb", "UCbbbbbbbbbbbbbbbbbbbbbb"),
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    chans = Y.parse_subscriptions(resp)["channels"]
+    assert [c["title"] for c in chans] == ["All", "Orbit Lab", "Kettle & Crumb"]
+    assert chans[0].get("all") and chans[2]["section"] == "A-Z" and not chans[1]["section"]

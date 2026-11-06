@@ -19,6 +19,7 @@ FocusScope {
     property bool dimIdle: false                 // the headers grey while the focus is elsewhere on the page
     property bool fixed: false
     property int perRow: 3                   // a grid (History, Watch later) in rows of this many
+    property real rowGap: 50 * Y.u               // between rows
     property bool gridScroll: false          // its rows scroll under the focus like shelves (Subscriptions)
     property bool gridMore: false            // "more" continues a grid (items), not the page (shelves)
     property real topRoom: 12 * Y.u              // room above the current row (its focus ring)
@@ -67,7 +68,7 @@ FocusScope {
         focus: true
         clip: true
         model: feed.rows
-        spacing: 50 * Y.u
+        spacing: feed.rowGap
         cacheBuffer: Math.round(700 * Y.u)     // rows kept made off screen (each with its pictures): a little
         highlightRangeMode: ListView.StrictlyEnforceRange
         preferredHighlightBegin: feed.topRoom

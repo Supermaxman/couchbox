@@ -37,7 +37,7 @@ FocusScope {
         picked = i;
         const c = channels[i];
         if (!c) return;
-        if (!c.id) { if (allPage) feed.setPage(allPage); return; }
+        if (!c.id || c.all) { if (allPage) feed.setPage(allPage); return; }
         Y.call("channel", {id: c.id, params: c.params || ""}, r => { if (page.picked === i) feed.setPage(r); }, e => Y.toast(e));
     }
     // Left off the feed's first card comes back to the channels (Main asks: toGuide() is shared)
@@ -53,6 +53,7 @@ FocusScope {
         indent: page.feedX
         perRow: 3
         gridScroll: true
+        rowGap: 96 * Y.u                       // YouTube's grid here: rows 591 px apart
         onAtTop: {}
         onOpen: it => Y.open(it)
     }
@@ -93,13 +94,14 @@ FocusScope {
             required property int index
             readonly property bool on: ListView.isCurrentItem && list.activeFocus
             readonly property bool sel: page.picked === index
+            readonly property bool all: !!row.modelData.all || !row.modelData.id
             width: list.width
             height: (modelData.section ? 62 : 0) * Y.u + 78 * Y.u
-            Text {
+            Text {                             // a heading ("A-Z"): small and grey, not a row
                 visible: !!row.modelData.section
-                x: 18 * Y.u; y: 14 * Y.u
+                x: 18 * Y.u; y: 18 * Y.u
                 text: row.modelData.section || ""
-                color: Y.dim; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
+                color: "#aaaaaa"; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
             }
             Rectangle {
                 y: row.height - 78 * Y.u
@@ -111,8 +113,8 @@ FocusScope {
                     x: 18 * Y.u
                     width: 54 * Y.u; height: width
                     anchors.verticalCenter: parent.verticalCenter
-                    Icon { anchors.centerIn: parent; visible: !row.modelData.id; name: "list"; size: 38 * Y.u; color: row.on ? Y.ink : Y.text }
-                    RoundImage { anchors.fill: parent; visible: !!row.modelData.id; source: row.modelData.thumb || ""; fallback: row.modelData.title || "" }
+                    Icon { anchors.centerIn: parent; visible: row.all; name: "list"; size: 38 * Y.u; color: row.on ? Y.ink : Y.text }
+                    RoundImage { anchors.fill: parent; visible: !row.all; source: row.modelData.thumb || ""; fallback: row.modelData.title || "" }
                     Rectangle {                // new videos
                         visible: !!row.modelData.new
                         anchors { right: parent.right; bottom: parent.bottom; margins: -2 * Y.u }

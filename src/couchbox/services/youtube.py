@@ -903,6 +903,7 @@ def parse_subscriptions(resp: dict[str, Any]) -> dict[str, Any]:
     if not nav:
         return {"channels": [], "page": parse_page(resp)}
     channels, page = [], None
+    label = ""  # a tab that's only a heading ("A-Z"): a label over the channels after it
     for sec in nav.get("sections") or []:
         sr = sec.get("tvSecondaryNavSectionRenderer") or {}
         title = text(sr.get("title"))
@@ -919,8 +920,15 @@ def parse_subscriptions(resp: dict[str, Any]) -> dict[str, Any]:
             }
             if not ch["title"]:
                 continue
-            if title and not any(c["section"] == title for c in channels):
+            if channels and not ch["id"].startswith("UC") and not ch["thumb"]:  # "A-Z": a heading, not a row
+                label = ch["title"]
+                continue
+            if label:
+                ch["section"], label = label, ""
+            elif title and not any(c["section"] == title for c in channels):
                 ch["section"] = title
+            if not channels:
+                ch["all"] = True  # the first: All (YouTube gives it an address too)
             channels.append(ch)
             if tr.get("selected") and tr.get("content") and page is None:
                 page = parse_content(tr["content"])
