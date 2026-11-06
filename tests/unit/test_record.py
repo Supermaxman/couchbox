@@ -64,7 +64,7 @@ def test_pipeline():
 def test_export_commands():
     gif = rec.export_command("/v/a.mp4", "/v/a.gif", "gif")
     vf = gif[gif.index("-vf") + 1]
-    assert vf.startswith("fps=12,scale=w=min(640\\,iw):h=-2") and "palettegen=stats_mode=diff" in vf
+    assert vf.startswith("fps=10,scale=w=min(480\\,iw):h=-2") and "palettegen=stats_mode=diff" in vf
     assert "paletteuse=dither=bayer" in vf and "-an" in gif
     webm = rec.export_command("/v/a.mp4", "/v/a.webm", "webm", 480, fps=24, start=2, seconds=5)
     assert webm[webm.index("-ss") + 1] == "2" and webm[webm.index("-t") + 1] == "5" and "libvpx-vp9" in webm

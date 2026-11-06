@@ -20,7 +20,7 @@ every second, so a recorder that died still leaves a file that plays.
   couchbox-record export FILE [OUT] [--mp4 | --webm | --gif] [--width W] [--fps F] [--from S] [--to S | --seconds N]
                                      a small clip for the README or release notes: --mp4 (H.264, 720p at
                                      most; GitHub plays it inline) is the one to use, --webm (VP9) is
-                                     smaller still; --gif (the default, 640 wide, 12 fps) only for a few seconds
+                                     smaller still; --gif (the default, 480 wide, 10 fps) only for a few seconds
 One recording at a time. It stops by itself at its length, at --max-mb (default 2048), or when the
 disk has less than 1 GB left. Recordings are the TV user's (it runs as tv, like couchbox-screenshot);
 the log of the last one is $XDG_RUNTIME_DIR/couchbox-record/log.
@@ -475,7 +475,8 @@ def status(_a):
     return 1
 
 
-EXPORT_WIDTH = {"gif": 640, "webm": 1280, "mp4": 1280}
+EXPORT_WIDTH = {"gif": 480, "webm": 1280, "mp4": 1280}
+GIF_FPS = 10
 BIG_CLIP = 10 << 20  # warn above: too big for a README
 
 
@@ -486,7 +487,7 @@ def export_command(src, out, fmt, width=0, fps=0, start=0.0, seconds=0.0):
     if fmt == "gif":
         # two passes in one graph: a palette for the clip from what changes (palettegen reads it
         # all first), then the frames mapped to it, dithered lightly, redrawing only what changed
-        vf = (f"fps={fps or 12},{scale},split[a][b];[a]palettegen=stats_mode=diff[p];"
+        vf = (f"fps={fps or GIF_FPS},{scale},split[a][b];[a]palettegen=stats_mode=diff[p];"
               "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle")
         codec = ["-an", "-loop", "0"]
     elif fmt == "webm":
@@ -526,7 +527,9 @@ def export(a):
         os.chown(out, d.st_uid, d.st_gid)
     print(f"{out} ({mb(size_of(out))})")
     if size_of(out) > BIG_CLIP:
-        hint = "--mp4 (GitHub plays it inline) or --webm" if fmt == "gif" else "a shorter --from/--to, or a smaller --width"
+        # on the box, a 720p MP4 took ~0.13 MB a second and a 640-wide GIF ~1.9 MB
+        hint = ("--mp4, about 10 times smaller (GitHub plays it inline), or --webm" if fmt == "gif"
+                else "a shorter --from/--to, or a smaller --width")
         print(f"couchbox-record: that's over {BIG_CLIP >> 20} MB, big for a README: try {hint}", file=sys.stderr)
 
 

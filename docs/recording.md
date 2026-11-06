@@ -34,7 +34,7 @@ R=/usr/lib/couchbox/bin/couchbox-record
 
    - `--mp4` is the format to use: H.264 at 720p at most, which GitHub plays inline (drag it into the README or a release's notes).
    - `--webm` (VP9) is smaller still, but GitHub doesn't play it in Markdown.
-   - `--gif` (640 wide, 12 fps) suits only a few seconds. A GIF of moving video runs to tens of MB, and the export warns above 10 MB.
+   - `--gif` (480 wide, 10 fps) suits only a few seconds. A GIF of moving video takes about 1 MB a second, roughly 10 times what an `--mp4` takes. The export warns above 10 MB.
 3. **Copy it off the box.** The files are the TV user's: `ssh BOX sudo cat /home/tv/Videos/couchbox/…-small.mp4 > clip.mp4`.
 
 `export` is ffmpeg, so it also runs on a PC, which is faster: copy the recording over and run the same command with `bin/couchbox-record export` from a checkout.
@@ -66,8 +66,8 @@ Only one recording runs at a time. `start` refuses a second one, and `status` an
 | `export` option | | |
 |---|---|---|
 | `--mp4`, `--webm`, `--gif` | `--gif` | The format |
-| `--width W` | 1280 (GIF 640) | Never larger than the recording |
-| `--fps F` | the recording's (GIF 12) | |
+| `--width W` | 1280 (GIF 480) | Never larger than the recording |
+| `--fps F` | the recording's (GIF 10) | |
 | `--from S`, `--to S` or `--seconds N` | the whole file | The part to keep |
 | `OUT` | beside the recording | |
 
