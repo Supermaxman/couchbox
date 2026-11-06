@@ -125,8 +125,8 @@ FocusScope {
                 visible: Y.progressOf(big.it) > 0
                 anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                 height: 6 * Y.u
-                color: "#66ffffff"
-                Rectangle { width: parent.width * Math.min(1, Y.progressOf(big.it)); height: parent.height; gradient: Y.progress }
+                color: "transparent"
+                Rectangle { width: parent.width * Math.min(1, Y.progressOf(big.it)); height: parent.height; color: Y.red }
             }
             Ring { visible: cl.activeFocus && cl.cur === 0 }
         }
@@ -173,8 +173,8 @@ FocusScope {
                             visible: Y.progressOf(lc.modelData) > 0
                             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                             height: 5 * Y.u
-                            color: "#66ffffff"
-                            Rectangle { width: parent.width * Math.min(1, Y.progressOf(lc.modelData)); height: parent.height; gradient: Y.progress }
+                            color: "transparent"
+                            Rectangle { width: parent.width * Math.min(1, Y.progressOf(lc.modelData)); height: parent.height; color: Y.red }
                         }
                     }
                     Column {

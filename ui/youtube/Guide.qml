@@ -134,7 +134,7 @@ FocusScope {
                     Icon {
                         x: 58 * Y.u; y: 19 * Y.u
                         name: entry.modelData.key
-                        filled: entry.sel
+                        filled: entry.sel || entry.on       // (the focused one filled too, as YouTube's)
                         size: 40 * Y.u
                         color: entry.on ? Y.ink : Y.text
                     }

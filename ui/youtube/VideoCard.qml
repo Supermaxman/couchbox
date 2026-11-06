@@ -120,13 +120,12 @@ Item {
                 }
             }
         }
-        Item {                               // watched so far: red over a faint track
+        Item {                               // watched so far: solid #FF0033, 5 px, no track (YouTube's cards)
             id: progress
             visible: Y.progressOf(card.item) > 0
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 6 * Y.u
-            Rectangle { anchors.fill: parent; color: "#66ffffff" }
-            Rectangle { width: parent.width * Math.min(1, Y.progressOf(card.item)); height: parent.height; gradient: Y.progress }
+            height: 5 * Y.u
+            Rectangle { width: parent.width * Math.min(1, Y.progressOf(card.item)); height: parent.height; color: Y.red }
         }
     }
 

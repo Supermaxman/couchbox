@@ -30,7 +30,7 @@ FocusScope {
         x: Y.left; y: 52 * Y.u
         text: page.head.title || ""
         color: Y.text
-        font.family: Y.titleFont; font.pixelSize: 44 * Y.titleScale * Y.u; font.weight: Font.Bold
+        font.family: Y.font; font.pixelSize: 50 * Y.u; font.weight: Font.Medium   // (YouTube's: Roboto Medium, not the pages' heavy titles)
     }
     Rectangle {
         id: pill

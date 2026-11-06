@@ -622,7 +622,7 @@ FocusScope {
 
         // the scrim, as YouTube's TV app has it with the controls (or the related row) up: the
         // video dimmed by about half, and from y 560 down a dark blue-violet, #08051e at the bottom
-        Rectangle { anchors.fill: parent; color: "#85000000" }
+        Rectangle { anchors.fill: parent; color: player.mode === "related" ? "#c7000000" : "#85000000"; Behavior on color { ColorAnimation { duration: 220 } } }   // (the related row: all of it dimmed)
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             height: 520 * Y.u
@@ -715,7 +715,7 @@ FocusScope {
                     visible: !player.live
                     y: 55 * Y.u
                     width: parent.width
-                    height: 9 * Y.u
+                    height: 8 * Y.u
                     readonly property real frac: player.duration > 0 ? Math.min(1, player.shownPos / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
