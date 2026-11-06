@@ -19,8 +19,46 @@ QtObject {
     property bool videoSide: false            // the player's side panel is open: the video sits to its left
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
+    property bool queueAuto: false            // the queue is a playlist's rest (it ends with the player)
+    // a video from a playlist: the playlist's next videos play after it, in order
+    function playList(after, it) {
+        queue = (after || []).filter(x => x.type === "video" || x.type === "live");
+        queueAuto = true;
+        open(it);
+    }
     property bool shot: false                 // --shot: still (no blinking caret)
+    // the TV's settings (ytextras.Settings: SponsorBlock, DeArrow, dislikes, Hide Shorts, H.264 only)
+    property var settings: ({sponsorblock: true, skip: {sponsor: true}, dearrow: false, dislikes: false, hide_shorts: false, h264: true})
+    function setting(key, value, code, done) {
+        call("setting", {key: key, value: value, code: code || ""}, s => { y.settings = s; if (done) done(true); },
+             e => { y.toast(e); if (done) done(false); });
+    }
+    // SponsorBlock's colours for its kinds of segment (its own defaults; Endcards lighter, to show on
+    // the dark bar), for the progress bar
+    readonly property var segmentColors: ({sponsor: "#00d400", selfpromo: "#ffff00", interaction: "#cc00ff", intro: "#00ffff",
+                                           outro: "#4a5cff", preview: "#008fd6", hook: "#395699", filler: "#7300ff", music_offtopic: "#ff9900"})
     property bool dimmed: false               // the guide has the focus: the page behind it greys
+    property real lastKey: Date.now()         // the last key pressed (couchbox-yt's key filter)
+    property bool homeShown: false            // (the app's start: timing)
+    // how far each video was watched in this run (the cards' red bars, up to date on the way back
+    // from the player, before YouTube's pages say so): {id: fraction}
+    property var seen: ({})
+    // a focused card's "views • age" when YouTube's card left it out: {id: line} (asked for once)
+    property var stats: ({})
+    function wantStats(id) {
+        if (!id || stats[id] !== undefined) return;
+        const m = Object.assign({}, stats); m[id] = ""; stats = m;
+        call("cardStats", {id: id}, r => { const n = Object.assign({}, y.stats); n[id] = r.line || ""; y.stats = n; }, () => {});
+    }
+    function noteSeen(id, frac) { if (id && frac >= 0) { const m = Object.assign({}, seen); m[id] = Math.min(1, frac); seen = m; } }
+    function progressOf(it) { return it ? (seen[it.id] !== undefined ? seen[it.id] : it.progress || 0) : 0; }
+    // where a part-watched card starts: a few seconds before its red bar ends (0: from the start)
+    function resumeAt(progress, duration) {
+        const p = progress || 0, d = typeof duration === "string" ? String(duration).split(":").reduce((n, x) => n * 60 + (parseInt(x) || 0), 0) : duration || 0;
+        return p > 0.02 && p < 0.95 && d > 0 ? Math.max(0, Math.floor(p * d - 3)) : 0;
+    }
+    property Connections keyWatch: Connections { target: typeof keyfilter !== "undefined" ? keyfilter : null; ignoreUnknownSignals: true
+                                             function onPressed() { y.lastKey = Date.now(); } }
     property bool pushed: false               // the guide is open: the page is pushed right
 
     // ------------------------------------------------------------------ look
@@ -34,9 +72,19 @@ QtObject {
     readonly property color glass: "#1affffff"        // pills on the page: white at 10%
     readonly property color ink: "#0f0f0f"            // text on a focused (white) row
     readonly property color red: "#ff0033"            // progress, the logo
+    readonly property color magenta: "#ff2791"        // the progress's other end (red to magenta, as YouTube's)
+    readonly property Gradient progress: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0; color: y.red }
+        GradientStop { position: 1; color: y.magenta }
+    }
     readonly property color sponsor: "#00d400"
     readonly property color phone: "#121a2e"          // the "Type on your phone" card
     readonly property string font: "Roboto"
+    // page titles (Subscriptions, Settings and its panes', a list's): YouTube's are YouTube Sans
+    // (not ours to ship); Ubuntu's font is its closest (fonts-ubuntu), else Roboto
+    readonly property string titleFont: Qt.fontFamilies().indexOf("Ubuntu") >= 0 ? "Ubuntu" : font
+    readonly property real titleScale: titleFont === "Ubuntu" ? 1.04 : 1
 
     readonly property real left: 156 * u              // where pages start, right of the collapsed guide
     readonly property real guideOpen: 534 * u         // ... and with the guide open
@@ -83,7 +131,7 @@ QtObject {
     property var waiting: ({})
     function call(op, args, done, fail) {
         const id = nextId++;
-        waiting[id] = [done, fail];
+        waiting[id] = [done, fail, op];
         backend.call(id, op, JSON.stringify(args || {}));
     }
     property Connections replies: Connections {
@@ -97,7 +145,9 @@ QtObject {
             try {
                 if (r && r.error) { if (cb[1]) cb[1](r.error); else y.toast(r.error); }
                 else if (cb[0]) cb[0](r);
-            } catch (e) { console.log("youtube:", e); }
+            } catch (e) {                     // which answer, and where (QV4's stack: function@file:line)
+                console.log("youtube:", e, "| in the answer to", cb[2], "|", String(e.stack || "").split("\n").slice(0, 4).join(" < "));
+            }
         }
     }
 

@@ -20,10 +20,21 @@ Rectangle {
     function setSpeed(s) {}
     function togglePause() { paused = !paused; }
     function setPaused(p) { paused = p; }
+    property bool muted: false
+    function toggleMute() { muted = !muted; return muted; }
     function seek(d) { position = Math.max(0, Math.min(duration, position + d)); }
     function seekTo(p) { position = p; }
     function setSubtitle(s) { subtitle = s; }
     function stop() {}
+    function warmUp() {}
+    function preload(url, start, opts) {}
+    function cancelPreload() {}
+    function videoInfo() { return ""; }
+    function subText() { return ""; }
+    function setRatePolicy(p) {}
+    function setRateHold(on) {}
+    function setSubtitleShown(on) {}
+    function cacheTime() { return 0; }
     function setSubtitlePosition(p) {}
     function shutdown() {}
     Timer {

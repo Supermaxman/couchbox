@@ -152,6 +152,8 @@ ACCOUNTS_LIST = {
                                         "accountPhoto": {"thumbnails": [{"url": "https://yt3.example/r=s88-c-k", "width": 88}]},
                                         "channelHandle": {"simpleText": "@robinvale"},
                                         "accountByline": {"simpleText": "robin@example.com"},
+                                        "unlimitedStatus": [{"simpleText": "YouTube Premium"}],
+                                        "shouldShowPremiumLogo": True,
                                         "serviceEndpoint": {
                                             "selectActiveIdentityEndpoint": {"supportedTokens": [{"accountStateToken": {}}]}
                                         },
@@ -184,6 +186,8 @@ def test_accounts_list():
         ("Juniper Hollow", "@juniper", "page-9", False),
     ]
     assert chans[0]["email"] == "robin@example.com" and chans[0]["photo"] == "https://yt3.example/r=s352-c-k"
+    assert chans[0]["premium"] and chans[0]["membership"] == "YouTube Premium"
+    assert not chans[1]["premium"] and chans[1]["membership"] == ""
 
 
 # ------------------------------------------------------------------ InnerTube as a profile
@@ -452,3 +456,96 @@ def test_a_playlist_page_and_its_continuation():
     )
     more = {"continuationContents": {"playlistVideoListContinuation": {"contents": [video_tile("v7")]}}}
     assert [i["id"] for i in Y.parse_more_items(more)["items"]] == ["v7"]
+
+
+def test_a_bare_account_id_is_its_own_channel(tmp_path):
+    # couchbox-yt --profile ACCOUNT (the box check, playerProbe's profile): no picker, no colon needed
+    y, acct = client(tmp_path, {})
+    assert y.use(acct["id"])["profile"]["id"] == f"{acct['id']}:"
+    assert y.auth.last_profile() == f"{acct['id']}:"
+    assert y.find_profile(f"{acct['id']}:page-9")["pageId"] == "page-9"
+    assert y.find_profile("nobody") is None and y.find_profile("guest") is None
+
+
+def history_tile(vid, title, token):
+    menu = {
+        "menuRenderer": {
+            "items": [
+                {
+                    "menuServiceItemRenderer": {
+                        "text": {"runs": [{"text": "Remove from watch history"}]},
+                        "serviceEndpoint": {"feedbackEndpoint": {"feedbackToken": token}},
+                    }
+                }
+            ]
+        }
+    }
+    return {
+        "tileRenderer": {
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": vid,
+            "metadata": {"tileMetadataRenderer": {"title": {"simpleText": title}}},
+            "onSelectCommand": {"watchEndpoint": {"videoId": vid}},
+            "onLongPressCommand": {"showMenuCommand": {"menu": menu}},
+        }
+    }
+
+
+def test_the_check_removes_only_todays_entries_of_its_own_videos(tmp_path):
+    def shelf(title, tiles):
+        return {
+            "shelfRenderer": {
+                "headerRenderer": {"shelfHeaderRenderer": {"title": {"simpleText": title}}},
+                "content": {"horizontalListRenderer": {"items": tiles}},
+            }
+        }
+
+    history = {
+        "contents": {
+            "sectionListRenderer": {
+                "contents": [
+                    shelf(
+                        "Today",
+                        [
+                            history_tile("played00001", "Played by the check", "tok-1"),
+                            history_tile("family00001", "Watched by the family", "tok-2"),
+                        ],
+                    ),
+                    shelf("Yesterday", [history_tile("played00002", "Played yesterday", "tok-3")]),
+                ]
+            }
+        }
+    }
+    y, acct = client(tmp_path, {"browse": [history], "feedback": [{"feedbackResponses": [{"isProcessed": True}]}]})
+    y.use(acct["id"])
+    today = y.history_today()
+    assert [(e["id"], e["token"], e["label"]) for e in today] == [
+        ("played00001", "tok-1", "Remove from watch history"),
+        ("family00001", "tok-2", "Remove from watch history"),
+    ]
+    assert y.remove_from_history("tok-1")
+    _, body, headers = y.s.posts[-1]
+    assert body["feedbackTokens"] == ["tok-1"] and headers["Authorization"].startswith("Bearer ")
+
+
+def test_restricted_mode_goes_with_every_request(tmp_path):
+    y = Y.YouTube(data_dir=str(tmp_path))
+    seen = []
+
+    class S:
+        def post(self, url, json=None, headers=None, timeout=None):
+            seen.append(json["context"])
+
+            class R:
+                status_code = 200
+
+                def json(self):
+                    return {}
+
+            return R()
+
+    y.s = S()
+    y._post("browse", {"browseId": "FEwhat_to_watch"})
+    y.restricted = True
+    y._post("browse", {"browseId": "FEwhat_to_watch"})
+    assert "user" not in seen[0] and seen[1]["user"]["enableSafetyMode"] is True

@@ -48,15 +48,22 @@ class Unavailable(RuntimeError):
 
 
 # ------------------------------------------------------------------ yt-dlp
+def add_path() -> None:
+    """yt-dlp's release on Python's path (without importing it: its EJS scripts are enough for
+    the challenge solver)."""
+    for path in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP):
+        if path and os.path.exists(path):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            return
+
+
 def module():
     """The yt_dlp module (imported once), or None when there isn't one."""
     global _module
     if _module is not None:
         return _module or None
-    for path in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP):
-        if path and os.path.exists(path) and path not in sys.path:
-            sys.path.insert(0, path)
-            break
+    add_path()
     try:
         import yt_dlp
 
@@ -98,33 +105,66 @@ def about() -> dict[str, Any]:
     }
 
 
-def _downloader():
+# The quick way, as a TV app asks: the TV and visionOS clients' /player calls only, with the TV's
+# visitor data, without the watch webpage, the client configs or the /next call (the app has
+# its own) that yt-dlp otherwise fetches first (~1 s of the ~1.3): ~0.2-0.5 s a video. The JS
+# challenges are solved in node kept running (ytjs). yt-dlp's usual way is the fallback.
+FAST_CLIENTS = ["tv_samsung", "visionos"]
+_fast: dict[str, Any] = {}
+
+
+def _downloader(visitor: str = ""):
     global _ydl
-    if _ydl is None:
-        m = module()
-        if not m:
-            raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
-        _ydl = m.YoutubeDL(
-            {
-                "quiet": True,
-                "no_warnings": True,
-                "skip_download": True,
-                "noplaylist": True,
-                "js_runtimes": js_runtimes(),
-                "extractor_args": {"youtube": {"skip": ["translated_subs"]}},
+    m = module()
+    if not m:
+        raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
+    from couchbox.services import ytjs
+
+    ytjs.register()
+    base = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "js_runtimes": js_runtimes()}
+    if visitor:
+        if visitor not in _fast:
+            _fast.clear()
+            args = {
+                "skip": ["translated_subs"],
+                "player_client": FAST_CLIENTS,
+                "player_skip": ["webpage", "configs", "initial_data"],
+                "visitor_data": [visitor],
             }
-        )
+            _fast[visitor] = m.YoutubeDL(dict(base, extractor_args={"youtube": args}))
+        return _fast[visitor]
+    if _ydl is None:
+        _ydl = m.YoutubeDL(dict(base, extractor_args={"youtube": {"skip": ["translated_subs"]}}))
     return _ydl
 
 
-def extract(video_id: str) -> dict[str, Any]:
-    """yt-dlp's information about a video (formats not chosen yet)."""
+def extract(video_id: str, phases: Any = None, visitor: str = "") -> dict[str, Any]:
+    """yt-dlp's information about a video (formats not chosen yet): the quick way with the TV's
+    visitor data, else (or when that finds nothing to play) yt-dlp's usual way. phases
+    (yttiming.Phases) hears yt-dlp's progress messages: when each step began."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
     with _lock:
+        if visitor:
+            ydl = _downloader(visitor)
+            ydl.params["logger"] = phases
+            try:
+                info = ydl.extract_info(url, download=False, process=False)
+                if info.get("formats"):
+                    return info
+            except Exception:  # noqa: BLE001 - the usual way says why, if it fails too
+                pass
+            finally:
+                ydl.params["logger"] = None
+            if phases is not None:
+                phases.marks.append((phases.marks[-1][0] if phases.marks else 0, "fallback"))
         ydl = _downloader()
+        ydl.params["logger"] = phases
         try:
-            return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False, process=False)
+            return ydl.extract_info(url, download=False, process=False)
         except Exception as err:  # yt-dlp's DownloadError, ExtractorError, ...
             raise Unavailable(friendly(str(err))) from err
+        finally:
+            ydl.params["logger"] = None
 
 
 # yt-dlp's errors as the TV says them (the first that matches)
@@ -164,7 +204,9 @@ def _lines(f):
 
 
 def _hls(f):
-    return (f.get("protocol") or "").startswith("m3u8")
+    # (unprocessed information has no "protocol" yet: the address says)
+    url = f.get("url") or ""
+    return (f.get("protocol") or "").startswith("m3u8") or "/hls_" in url or ".m3u8" in url
 
 
 def ready(f: dict[str, Any], now: float | None = None) -> bool:
@@ -173,8 +215,14 @@ def ready(f: dict[str, Any], now: float | None = None) -> bool:
     return (f.get("available_at") or 0) <= (time.time() if now is None else now) + 1
 
 
+def upscaled(f: dict[str, Any]) -> bool:
+    """YouTube's "Super resolution" (AI-upscaled) copy of a format."""
+    note = (f.get("format_note") or "").lower()
+    return "upscaled" in note or "super resolution" in note
+
+
 def pick(
-    formats: list[dict[str, Any]], h264: bool = True, max_height: int = MAX_HEIGHT, now: float | None = None
+    formats: list[dict[str, Any]], h264: bool = True, max_height: int = MAX_HEIGHT, now: float | None = None, superres: bool = True
 ) -> tuple[dict | None, dict | None]:
     """(video, audio) formats to play: the best video at max_height or less (H.264 only when
     there is H.264 and h264 is on), and when it has no sound of its own, the best stereo AAC.
@@ -182,7 +230,7 @@ def pick(
     then plain downloads (DASH, "https") before HLS: they start faster and seek better."""
     formats = [f for f in formats if f.get("url") and (f.get("protocol") or "https") in ("https", "http", "m3u8", "m3u8_native")]
     # the short side counts: a Short's 1080x1920 is "1080p"
-    videos = [f for f in formats if (f.get("vcodec") or "none") != "none" and _lines(f) <= max_height]
+    videos = [f for f in formats if (f.get("vcodec") or "none") != "none" and _lines(f) <= max_height and (superres or not upscaled(f))]
     if h264 and any(_is_h264(f) for f in videos):
         videos = [f for f in videos if _is_h264(f)]
     if not videos:
@@ -226,14 +274,20 @@ def edl(*urls: str) -> str:
     return "edl://" + ";".join(parts)
 
 
-def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
-    """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}."""
+def playable(
+    info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, lead: float = 0.0
+) -> dict[str, Any]:
+    """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}.
+    lead: formats that open within this many seconds count as ready (the caller waits for them:
+    "probe" is the address to try meanwhile)."""
     formats = info.get("formats") or []
     live = info.get("live_status") in ("is_live", "post_live") or bool(info.get("is_live"))
-    video, audio = pick(formats, h264, max_height)
+    video, audio = pick(formats, h264, max_height, now=time.time() + lead, superres=superres)
     if video is None:
         raise Unavailable("YouTube didn't offer a format this TV can play.")
     out = {
+        "protocol": "hls" if _hls(video) else "dash" if audio else "https",
+        "itags": [f.get("format_id") for f in (video, audio) if f],
         "live": live,
         "width": video.get("width") or 0,
         "height": video.get("height") or 0,
@@ -251,8 +305,13 @@ def playable(info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIG
         out["url"] = edl(video["url"], audio["url"])
     else:
         out["url"] = video["url"]
+    if live:  # mpv calls a live stream unseekable: back into what it has read (its cache) and forward again
+        out["opts"] = ",".join(x for x in (out["opts"], "force-seekable=yes") if x)
     # nothing that plays now: wait until it does (the player says so meanwhile)
-    out["wait"] = max(0, round(max((f.get("available_at") or 0) for f in (video, audio) if f) - time.time()))
+    out["wait"] = max(0, round(max((f.get("available_at") or 0) for f in (video, audio) if f) - time.time(), 1))
+    if out["wait"]:
+        out["probe"] = video["url"]
+        out["until"] = max((f.get("available_at") or 0) for f in (video, audio) if f)
     return out
 
 
@@ -261,30 +320,63 @@ def chapters(info: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def captions(info: dict[str, Any], want: tuple[str, ...] = ("en",)) -> list[dict[str, Any]]:
-    """Captions to offer: the video's own (its languages, the wanted ones first), then YouTube's
-    automatic ones in the wanted languages: [{lang, name, url, auto}] (WebVTT, which mpv reads)."""
+    """Captions to offer, as YouTube's TV app does: the video's own (every language), its
+    automatic ones (whatever their language), and when nothing is in a wanted language, one
+    translated to it by YouTube ("auto-translated"): [{lang, name, url, auto, translated}]
+    (WebVTT, which mpv reads); the video's own first, the wanted languages first among them."""
     out = []
 
-    def add(subs, auto):
-        for lang, tracks in (subs or {}).items():
-            if auto and lang.split("-")[0] not in want:
-                continue
-            vtt = next((t for t in tracks if t.get("ext") == "vtt" and t.get("url")), None)
-            if vtt and lang != "live_chat":
-                name = vtt.get("name") or lang
-                out.append(
-                    {
-                        "lang": lang,
-                        "name": f"{name} (auto-generated)" if auto and "auto" not in name.lower() else name,
-                        "url": vtt["url"],
-                        "auto": auto,
-                    }
-                )
+    def vtt_of(tracks):
+        return next((t for t in tracks or [] if t.get("ext") == "vtt" and t.get("url")), None)
 
-    add(info.get("subtitles"), False)
-    add(info.get("automatic_captions"), True)
-    out.sort(key=lambda c: (c["auto"], c["lang"].split("-")[0] not in want, c["lang"]))
-    return out[:12]
+    def add(lang, vtt, auto, translated=False):
+        name = vtt.get("name") or lang
+        if auto and not translated and "auto" not in name.lower():
+            name = f"{name} (auto-generated)"
+        out.append({"lang": lang, "name": name, "url": vtt["url"], "auto": auto, "translated": translated})
+
+    for lang, tracks in (info.get("subtitles") or {}).items():
+        vtt = vtt_of(tracks)
+        if vtt and lang != "live_chat":
+            add(lang, vtt, False)
+    autos = info.get("automatic_captions") or {}
+    # yt-dlp lists YouTube's automatic captions in every language it translates them to, the
+    # spoken one as "xx-orig" (ours, from /player: the spoken one only, marked "orig")
+    for lang, tracks in autos.items():
+        vtt = vtt_of(tracks)
+        if not vtt:
+            continue
+        orig = lang.endswith("-orig") or vtt.get("orig")
+        if orig or lang.split("-")[0] in want:
+            spoken = lang.removesuffix("-orig")
+            translated = (
+                not orig
+                and any(k.endswith("-orig") for k in autos)
+                and not any(k.removesuffix("-orig").split("-")[0] == lang.split("-")[0] and k.endswith("-orig") for k in autos)
+            )
+            add(spoken, dict(vtt, name=(vtt.get("name") or spoken) + (" (auto-translated)" if translated else "")), True, translated)
+    # nothing in a wanted language: YouTube's translation of a track that offers one (tlang)
+    if not any(c["lang"].split("-")[0] in want for c in out):
+        src = next((t for t in info.get("_tracks") or [] if t.get("translatable")), None)
+        if src:
+            name = {"en": "English"}.get(want[0], want[0])
+            out.append(
+                {
+                    "lang": want[0],
+                    "name": f"{name} (auto-translated)",
+                    "url": src["url"] + "&tlang=" + want[0],
+                    "auto": True,
+                    "translated": True,
+                }
+            )
+    seen, uniq = set(), []
+    for c in out:
+        key = (c["lang"], c["auto"], c["translated"])
+        if key not in seen:
+            seen.add(key)
+            uniq.append(c)
+    uniq.sort(key=lambda c: (c["auto"], c["lang"].split("-")[0] not in want, c["translated"], c["lang"]))  # the video's own first
+    return uniq[:12]
 
 
 def heights(formats: list[dict[str, Any]], h264: bool = True) -> list[int]:
@@ -295,12 +387,62 @@ def heights(formats: list[dict[str, Any]], h264: bool = True) -> list[int]:
     return sorted({_lines(f) for f in vids if _lines(f) >= 144}, reverse=True)
 
 
-def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> dict[str, Any]:
+def storyboard(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The video's storyboard (the frames the bar shows while seeking): the largest of yt-dlp's
+    "storyboard" formats, as {width, height, cols, rows, sheets: [{url, start, end}]} (each sheet
+    a grid of cols x rows frames, in order, covering start..end seconds)."""
+    best = None
+    for f in formats:
+        if f.get("format_note") != "storyboard" and not str(f.get("format_id", "")).startswith("sb"):
+            continue
+        if not f.get("fragments") or not f.get("columns") or not f.get("rows"):
+            continue
+        if best is None or (f.get("width") or 0) > (best.get("width") or 0):
+            best = f
+    if best is None:
+        return None
+    sheets, at = [], 0.0
+    for frag in best["fragments"]:
+        d = float(frag.get("duration") or 0)
+        if not frag.get("url") or d <= 0:
+            continue
+        sheets.append({"url": frag["url"], "start": at, "end": at + d})
+        at += d
+    if not sheets:
+        return None
+    return {
+        "width": int(best.get("width") or 0),
+        "height": int(best.get("height") or 0),
+        "cols": int(best["columns"]),
+        "rows": int(best["rows"]),
+        "sheets": sheets,
+    }
+
+
+def protocol(url: str) -> str:
+    return "hls" if "m3u8" in url or "/hls_" in url else "dash" if url.startswith("edl://") else "https"
+
+
+def resolve(
+    video_id: str,
+    h264: bool = True,
+    max_height: int = MAX_HEIGHT,
+    superres: bool = True,
+    info: dict[str, Any] | None = None,
+    lead: float = 0.0,
+    visitor: str = "",
+) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
-    about it (title, channel, chapters, length, portrait for Shorts)."""
+    about it (title, channel, chapters, length, portrait for Shorts). info: yt-dlp's, from
+    before (ytworker's cache); else it's asked for now."""
+    from couchbox.services import yttiming
+
     t = time.monotonic()
-    info = extract(video_id)
-    out = playable(info, h264, max_height)
+    phases = yttiming.Phases()
+    if info is None:
+        info = extract(video_id, phases, visitor)
+    took = yttiming.ms(t)
+    out = playable(info, h264, max_height, superres, lead)
     out.update(
         {
             "id": info.get("id") or video_id,
@@ -313,10 +455,272 @@ def resolve(video_id: str, h264: bool = True, max_height: int = MAX_HEIGHT) -> d
             "likes": info.get("like_count") or 0,
             "timestamp": info.get("timestamp") or info.get("release_timestamp") or 0,
             "portrait": bool(out["height"] and out["width"] and out["height"] > out["width"]),
+            "dvr": float(info.get("dvr") or 0),  # a live stream's DVR window (seconds), when it's played from its segments
+            "behind": float(info.get("behind") or 0),
             "captions": captions(info),
-            "heights": [h for h in heights(info.get("formats") or [], h264) if h <= MAX_HEIGHT],
+            "storyboard": storyboard(info.get("formats") or []),
+            "heights": [h for h in heights(info.get("formats") or [], h264) if h <= max(max_height, MAX_HEIGHT)],
             "maxHeight": max_height,
             "took": round(time.monotonic() - t, 2),
         }
     )
+    spans = phases.spans(took)
+    out["timing"] = dict(spans, extract=took, protocol=out["protocol"])
     return out
+
+
+# ------------------------------------------------------------------ from our own /player call
+def _codecs(mime: str) -> tuple[str, str]:
+    """(vcodec, acodec) of 'video/mp4; codecs="avc1.4d401f"' (as yt-dlp names them)."""
+    import re
+
+    kind = mime.split("/")[0]
+    codec = (re.search(r'codecs="([^"]+)"', mime) or [None, ""])[1].split(",")[0].strip()
+    return (codec, "none") if kind == "video" else ("none", codec)
+
+
+def _storyboard_formats(pr: dict[str, Any], duration: float) -> list[dict[str, Any]]:
+    """The player response's storyboard spec as yt-dlp's storyboard formats (for storyboard())."""
+    spec = (((pr.get("storyboards") or {}).get("playerStoryboardSpecRenderer") or {}).get("spec")) or ""
+    parts = spec.split("|")
+    if len(parts) < 2:
+        return []
+    base, out = parts[0], []
+    for i, level in enumerate(parts[1:]):
+        f = level.split("#")
+        if len(f) < 8:
+            continue
+        w, h, count, cols, rows, interval = (int(x or 0) for x in f[:6])
+        name, sigh = f[6], f[7]
+        per = cols * rows or 1
+        sheets = -(-count // per) if count else 0
+        step = interval / 1000 if interval else (duration / count if count else 0)
+        url = base.replace("$L", str(i)).replace("$N", name) + f"&sigh={sigh}"
+        frags = [{"url": url.replace("$M", str(j)), "duration": step * min(per, count - j * per)} for j in range(sheets)]
+        out.append(
+            {
+                "format_id": f"sb{i}",
+                "format_note": "storyboard",
+                "width": w,
+                "height": h,
+                "columns": cols,
+                "rows": rows,
+                "fragments": frags,
+                "url": frags[0]["url"] if frags else "",
+                "vcodec": "none",
+                "acodec": "none",
+            }
+        )
+    return out
+
+
+def hls_formats(master: str) -> list[dict[str, Any]]:
+    """A live stream's HLS master playlist as yt-dlp's formats: each variant (its resolution, frame
+    rate, codecs: with sound of its own or not) and each sound rendition."""
+    import re
+
+    def attrs(line: str) -> dict[str, str]:
+        return {k: v.strip('"') for k, v in re.findall(r'([A-Z0-9-]+)=("[^"]*"|[^,]*)', line.split(":", 1)[1])}
+
+    out, lines = [], [ln.strip() for ln in master.splitlines()]
+    for i, ln in enumerate(lines):
+        if ln.startswith("#EXT-X-MEDIA:"):
+            a = attrs(ln)
+            if a.get("TYPE") == "AUDIO" and a.get("URI"):
+                note = ("Default, " if a.get("DEFAULT") == "YES" else "") + (a.get("NAME") or "")
+                out.append(
+                    {
+                        "format_id": f"hls-audio-{a.get('GROUP-ID', '')}",
+                        "url": a["URI"],
+                        "vcodec": "none",
+                        "acodec": "mp4a.40.2",
+                        "protocol": "m3u8_native",
+                        "format_note": note,
+                        "language_preference": 10 if a.get("DEFAULT") == "YES" else -1,
+                    }
+                )
+        elif ln.startswith("#EXT-X-STREAM-INF:") and i + 1 < len(lines) and lines[i + 1].startswith("http"):
+            a = attrs(ln)
+            codecs = [c.strip() for c in a.get("CODECS", "").split(",") if c.strip()]
+            w, _, h = a.get("RESOLUTION", "").partition("x")
+            fps = float(a.get("FRAME-RATE") or 0)
+            v = next((c for c in codecs if not c.startswith("mp4a")), "none")
+            muxed = any(c.startswith("mp4a") for c in codecs) and not a.get("AUDIO")
+            out.append(
+                {
+                    "format_id": f"hls-{h or '?'}p{round(fps) or ''}",
+                    "url": lines[i + 1],
+                    "vcodec": v,
+                    "acodec": next(c for c in codecs if c.startswith("mp4a")) if muxed else "none",
+                    "width": int(w) if w.isdigit() else None,
+                    "height": int(h) if h.isdigit() else None,
+                    "fps": fps or None,
+                    "tbr": int(a.get("BANDWIDTH") or 0) / 1000,
+                    "protocol": "m3u8_native",
+                }
+            )
+    return out
+
+
+def _deciphered(raw: list[dict[str, Any]], solve: Any) -> list[dict[str, Any]]:
+    """An InnerTube answer's formats as yt-dlp's, each address deciphered (its signature and
+    "n", solve(n, sig) -> ({n: answer}, {sig: answer})); those it can't are left out."""
+    from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+
+    pending = []
+    for f in raw:
+        if f.get("url"):
+            url, s, sp = f["url"], "", ""
+        else:
+            c = parse_qs(f.get("signatureCipher") or f.get("cipher") or "")
+            url, s, sp = (c.get("url") or [""])[0], (c.get("s") or [""])[0], (c.get("sp") or ["signature"])[0]
+        if not url:
+            continue
+        n = (parse_qs(urlparse(url).query).get("n") or [""])[0]
+        pending.append((f, url, s, sp, n))
+    n_ans, sig_ans = solve([p[4] for p in pending if p[4]], [p[2] for p in pending if p[2]])
+    formats = []
+    for f, url, s, sp, n in pending:
+        u = urlparse(url)
+        q = parse_qsl(u.query, keep_blank_values=True)
+        if n:
+            if n not in n_ans:
+                continue
+            q = [(k, n_ans[n] if k == "n" else v) for k, v in q]
+        if s:
+            if s not in sig_ans:
+                continue
+            q.append((sp, sig_ans[s]))
+        vcodec, acodec = _codecs(f.get("mimeType") or "")
+        track = f.get("audioTrack") or {}
+        formats.append(
+            {
+                "format_id": f"{f.get('itag')}" + ("-drc" if f.get("isDrc") else ""),
+                "url": urlunparse(u._replace(query=urlencode(q))),
+                "vcodec": vcodec,
+                "acodec": acodec,
+                "width": f.get("width"),
+                "height": f.get("height"),
+                "fps": f.get("fps"),
+                "tbr": (f.get("bitrate") or 0) / 1000,
+                "abr": (f.get("averageBitrate") or f.get("bitrate") or 0) / 1000 if vcodec == "none" else None,
+                "audio_channels": f.get("audioChannels"),
+                "format_note": f.get("qualityLabel") or "",
+                "language_preference": (10 if track.get("audioIsDefault") else -1) if track else None,
+            }
+        )
+    return formats
+
+
+def from_player(pr: dict[str, Any], solve: Any, get: Any = None, live_behind: float | None = None) -> dict[str, Any]:
+    """yt-dlp's information, as extract() gives it, from an InnerTube /player response (the TV
+    client, signed in: no ads, so DASH opens at once): every format's address deciphered (its
+    signature and "n", solve(n, sig) -> ({n: answer}, {sig: answer})). A live stream: its HLS,
+    its DASH manifest, or else its adaptive formats through ytlive's server. Unavailable when it
+    has nothing to play this way."""
+    status = (pr.get("playabilityStatus") or {}).get("status")
+    if status != "OK":
+        raise Unavailable((pr.get("playabilityStatus") or {}).get("reason") or "YouTube won't play this video here.")
+    vd = pr.get("videoDetails") or {}
+    sd = pr.get("streamingData") or {}
+    raw = (sd.get("adaptiveFormats") or []) + (sd.get("formats") or [])
+    if (vd.get("isLive") or not raw) and sd.get("hlsManifestUrl") and get is not None and live_behind is None:
+        # live: its HLS master playlist, the variants and the sound read from it (no challenges)
+        r = get(sd["hlsManifestUrl"], timeout=(8, 20))
+        formats = hls_formats(getattr(r, "text", "") or "")
+        if not formats:
+            raise Unavailable("no live variants: the usual way")
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": formats,
+            "subtitles": {},
+            "automatic_captions": {},
+        }
+    if vd.get("isLive") and sd.get("dashManifestUrl") and live_behind is None:  # live, only as DASH: the manifest, to mpv
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": [
+                {
+                    "format_id": "dash-live",
+                    "url": sd["dashManifestUrl"],
+                    "vcodec": "avc1",
+                    "acodec": "mp4a.40.2",
+                    "height": 1080,
+                    "fps": 30,
+                    "protocol": "https",
+                }
+            ],
+            "subtitles": {},
+            "automatic_captions": {},
+        }
+    # live from its adaptive formats: when it has nothing else, or to go back into its DVR window
+    # (live_behind seconds behind the newest segment: mpv can't seek back far in the HLS)
+    live_adaptive = bool(
+        vd.get("isLive") and raw and (live_behind is not None or (not sd.get("hlsManifestUrl") and not sd.get("dashManifestUrl")))
+    )
+    if not live_adaptive and (vd.get("isLive") or vd.get("isLiveContent") and sd.get("hlsManifestUrl") or not raw):
+        raise Unavailable("not a plain video (live): the usual way")
+    formats = _deciphered(raw, solve)
+    if live_adaptive:
+        # live, its adaptive formats only (the TV's clients signed in): each one's segments,
+        # one after another, from ytlive's server on this box (mpv reads them as one MP4)
+        from couchbox.services import ytlive
+
+        formats = [f for f in formats if not str(f["format_id"]).endswith("-drc")]
+        seconds = next((float(f["targetDurationSec"]) for f in raw if f.get("targetDurationSec")), 5.0)
+        window = next((float(f["maxDvrDurationSec"]) for f in raw if f.get("maxDvrDurationSec")), 0.0)
+        local = ytlive.PROXY.group({f["format_id"]: f["url"] for f in formats}, seconds, behind=live_behind or 0.0, window=window)
+        for f in formats:
+            f["url"] = local[f["format_id"]]
+            f["protocol"] = "http"  # (to 127.0.0.1)
+        return {
+            "id": vd.get("videoId") or "",
+            "title": vd.get("title") or "",
+            "channel": vd.get("author") or "",
+            "channel_id": vd.get("channelId") or "",
+            "duration": 0.0,
+            "live_status": "is_live",
+            "is_live": True,
+            "formats": formats,
+            "subtitles": {},
+            "automatic_captions": {},
+            "dvr": window,
+            "behind": live_behind or 0.0,
+        }
+    duration = float(vd.get("lengthSeconds") or 0)
+    subs: dict[str, list] = {}
+    auto: dict[str, list] = {}
+    tracks: list[dict[str, Any]] = []  # every track, for a translation when none is in English
+    for t in ((pr.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {}).get("captionTracks") or []:
+        lang = t.get("languageCode") or ""
+        name = "".join(r.get("text", "") for r in (t.get("name") or {}).get("runs") or []) or (t.get("name") or {}).get("simpleText", "")
+        entry = {"ext": "vtt", "url": (t.get("baseUrl") or "") + "&fmt=vtt", "name": name}
+        if t.get("kind") == "asr":
+            entry["orig"] = True  # (the spoken language's: translations come by tlang)
+        (auto if t.get("kind") == "asr" else subs).setdefault(lang, []).append(entry)
+        tracks.append({"url": entry["url"], "translatable": bool(t.get("isTranslatable")), "asr": t.get("kind") == "asr"})
+    return {
+        "id": vd.get("videoId") or "",
+        "title": vd.get("title") or "",
+        "channel": vd.get("author") or "",
+        "channel_id": vd.get("channelId") or "",
+        "duration": duration,
+        "view_count": int(vd.get("viewCount") or 0),
+        "live_status": "not_live",
+        "formats": formats + _storyboard_formats(pr, duration),
+        "subtitles": subs,
+        "automatic_captions": auto,
+        "_tracks": tracks,
+    }

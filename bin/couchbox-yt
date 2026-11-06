@@ -23,6 +23,7 @@ import locale
 import os
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
@@ -34,12 +35,35 @@ SITE = "yt"                                        # appctl socket, MPRIS name (
 # The Pi's build of ffmpeg (HEVC hardware decoding), as couchbox-streaming uses: libmpv picks it
 # up from LD_LIBRARY_PATH, which only counts at start, so start again with it.
 RPI_FFMPEG = "/opt/couchbox/ffmpeg-rpi/lib"
+os.environ.setdefault("COUCHBOX_YT_T0", str(time.time()))   # the app's start (timing; before the restart below)
+# glibc: 2 arenas, and big blocks (video frames, packets) mapped on their own so they go back to
+# the system when freed (its moving threshold kept them in a growing heap); for the restart
+# below and the stream worker too (environment), and for this process from here on (mallopt)
+os.environ.setdefault("GLIBC_TUNABLES", "glibc.malloc.arena_max=2:glibc.malloc.mmap_threshold=131072:glibc.malloc.trim_threshold=131072")
+try:
+    import ctypes
+    _libc = ctypes.CDLL("libc.so.6")
+    _libc.mallopt(-8, 2)                           # M_ARENA_MAX
+    _libc.mallopt(-3, 131072)                      # M_MMAP_THRESHOLD (fixed: no moving up)
+    _libc.mallopt(-1, 131072)                      # M_TRIM_THRESHOLD
+except (OSError, AttributeError):
+    pass
+# Qt's compiled QML, kept where this app surely may write (the box's default place stayed empty)
+os.environ.setdefault("QML_DISK_CACHE_PATH", os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "couchbox-yt", "qmlcache"))
+os.makedirs(os.environ["QML_DISK_CACHE_PATH"], exist_ok=True)
 if os.path.isdir(RPI_FFMPEG) and RPI_FFMPEG not in os.environ.get("LD_LIBRARY_PATH", ""):
     os.environ["LD_LIBRARY_PATH"] = RPI_FFMPEG + (":" + os.environ["LD_LIBRARY_PATH"] if os.environ.get("LD_LIBRARY_PATH") else "")
     os.execv(sys.executable, [sys.executable] + sys.argv)  # noqa: S606
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # the phone typing page's address
+os.environ.setdefault("COUCHBOX_MPV_SUB_BOX", "1")     # captions on YouTube's 75% black box
+os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # resumed starts and skips to a keyframe (player.KEYFRAMES)
+os.environ.setdefault("COUCHBOX_MPV_CACHE", "32MiB,8MiB")    # mpv's read-ahead (~1 min of 1080p) and back buffer: always full, so small
+# YouTube's servers send an open-ended range at about playing speed: asked for in 4 MB pieces
+# (the first 256 kB, to start sooner) they come at once. Seeking a DASH stream (and a resumed
+# start) took 2-4 s, mostly waiting to read up to the spot; 0.1-0.3 s so (measured, a PC)
+os.environ.setdefault("COUCHBOX_MPV_HTTP", "request_size=4194304,initial_request_size=262144")
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
@@ -47,10 +71,19 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import youtube, ytauth, ytstream  # noqa: E402
+from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming, ytworker  # noqa: E402
+
+
+def started(step):
+    """The app's start, step by step (timing): ms since the process began."""
+    yttiming.note("startup", step=step, ms=round((time.time() - float(os.environ["COUCHBOX_YT_T0"])) * 1000))
+
+
+started("imports")
 
 
 class Backend(QObject):
+    current = None                                   # (the one: for the memory report)
     """QML's way to youtube.py, ytauth.py and ytstream.py: call(id, op, args) answers later with
     reply(id, json); event(name, json) tells it what happened meanwhile (a code was used)."""
     reply = Signal(int, str)
@@ -59,11 +92,25 @@ class Backend(QObject):
     def __init__(self, demo, profile=None):
         super().__init__()
         self.demo = demo
-        self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube()
+        # yt-dlp runs in a worker process (ytworker): never in this one, where it held Qt's thread
+        self.worker = None if demo else ytworker.Client()
+        self.yt = youtube.Demo(profile if profile is not None else "demo1:") if demo else youtube.YouTube(client=youtube.TV_CLIENT)
         self.yt.on_event = lambda name, data: self.event.emit(name, json.dumps(data))
         self.pool = ThreadPoolExecutor(max_workers=6)
+        if demo:                                     # a made-up TV's settings, fresh each time
+            import tempfile
+            self.settings = ytextras.Settings(tempfile.mkdtemp(prefix="couchbox-yt-demo-"))
+        else:
+            self.settings = ytextras.Settings(self.yt.dir)
+        self.extras = ytextras.Extras()
+        self.yt.restricted = bool(self.settings.get().get("restricted"))   # Restricted mode, from the start
+        self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
+        Backend.current = self
+        self.home_lock = threading.Lock()
+        if not demo and self.settings.get()["cast"]:
+            start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
-            threading.Thread(target=ytstream.module, daemon=True).start()    # yt-dlp now: the first video starts sooner
+            self.warmed = False                          # the worker warms up once Home shows (not while the QML loads)
             self.yt.auth.resume()                    # a code shown before the app last quit may still be entered
             self.pool.submit(self.yt.refresh_channels)
 
@@ -85,20 +132,394 @@ class Backend(QObject):
             out["qr"] = path if os.path.exists(path) else ""
         return out
 
+    def warm(self):
+        try:
+            if not self.yt.visitor:                  # the TV's visitor data (a guest's first page brings it)
+                self.yt._post("browse", {"browseId": "FEtopics_music"})
+        except Exception:  # noqa: BLE001 (offline for now: yt-dlp's usual way meanwhile)
+            pass
+        # signed in, streams come from the app's own /player calls: the worker needs no yt-dlp (~20-25 MB)
+        # unless a guest's way is needed later; yt-dlp's TV client details are kept here (a week)
+        signed = bool(self.yt.profile)
+        try:
+            self.worker.call("warm", ytdlp=not signed, timeout=90)   # the solver up, the player read
+        except Exception as err:  # noqa: BLE001
+            print(f"stream worker: {err}", flush=True)
+        self.yt.set_client(self.kept_json("client.json", lambda: self.worker.call("client", timeout=60)))
+
+    def kept_json(self, name, fetch, days=7):
+        """A small answer of the worker's kept in the app's folder (asked again after `days`)."""
+        import time
+        path = os.path.join(self.yt.dir, name)
+        try:
+            if time.time() - os.path.getmtime(path) < days * 86400:
+                with open(path) as f:
+                    return json.load(f)
+        except (OSError, ValueError):
+            pass
+        try:
+            out = fetch()
+        except Exception as err:  # noqa: BLE001 (no yt-dlp yet: ours)
+            print(f"stream worker: {err}", flush=True)
+            return {}
+        try:
+            with open(path + ".tmp", "w") as f:
+                json.dump(out, f)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
+        return out
+
+    # ---------------------------------------------------------------- settings (a parent code locks Restricted mode)
+    @staticmethod
+    def code_hash(code):
+        import hashlib
+        return hashlib.sha256(("couchbox-yt-parent:" + code).encode()).hexdigest()
+
+    def shown_settings(self, st=None):
+        st = dict(st or self.settings.get())
+        st["parent_lock"] = bool(st.pop("parent_code", ""))   # (the code's hash stays here)
+        self.yt.restricted = bool(st.get("restricted"))
+        return st
+
+    def set_setting(self, key, value, code=""):
+        st = self.settings.get()
+        if key in ("restricted", "parent_code") and st.get("parent_code") and self.code_hash(code) != st["parent_code"]:
+            raise ValueError("That isn't the parent code.")
+        if key == "parent_code":
+            digits = str(value or "")
+            if digits and not (len(digits) == 4 and digits.isdigit()):
+                raise ValueError("A parent code is four digits.")
+            value = self.code_hash(digits) if digits else ""
+        out = self.settings.set(key, value)
+        if key == "restricted" and hasattr(self.yt, "cache"):
+            self.yt.cache.clear()                      # (pages asked for before: not restricted)
+        return self.shown_settings(out)
+
+    def stream_args(self, max_height=None):
+        st = self.settings.get()
+        cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
+        return {"h264": st["h264"], "max_height": int(max_height or cap), "superres": not st["remove_superres"],
+                "visitor": self.yt.visitor}         # the TV's visitor data: the quick way (no watch webpage)
+
+    def history_remove(self, ids, dry_run=True, profile=None):
+        """The box check's cleanup (ci/yt-box-check.py --clean-history): today's History entries of
+        the videos it played (ids), removed (dry_run: only listed), as the profile watching or
+        `profile`. Nothing else is touched."""
+        y = self.yt
+        if profile and not self.demo:
+            y = youtube.YouTube(self.yt.dir, client=dict(self.yt.client))
+            y.profile = y.find_profile(profile) or {}
+            if not y.profile:
+                raise youtube.YouTubeError(f"No profile {profile} on this TV.")
+        want = set(ids)
+        found = [e for e in y.history_today(newest=len(want) + 3) if e["id"] in want]
+        for e in found:
+            tok = e.pop("token")                     # (never in the answer)
+            e["removable"] = bool(tok)
+            e["removed"] = bool(tok) and not dry_run and y.remove_from_history(tok)
+        missing = sorted(want - {e["id"] for e in found})
+        return {"dryRun": dry_run, "entries": found, "notToday": missing}
+
+    def probe(self, vid, profile=None):
+        """playerProbe: as the profile watching, or as `profile` (an id) without switching the app's."""
+        y = self.yt
+        if profile and not self.demo:
+            y = youtube.YouTube(self.yt.dir, client=dict(self.yt.client))
+            y.profile = y.find_profile(profile) or {}
+            if not y.profile:
+                raise youtube.YouTubeError(f"No profile {profile} on this TV.")
+        return y.player_probe(vid, None if self.demo else self.worker.call("clients"))
+
+    # ---------------------------------------------------------------- streams signed in
+    # Signed in, the app asks /player itself, as YouTube's TV client (yt-dlp's tv_samsung, else
+    # tv_downgraded) with the profile's own sign-in: a Premium account gets no ads, so its DASH
+    # opens at once (a guest's waits ~3-6 s). The worker deciphers the addresses (the kept node)
+    # and keeps them per profile; on any trouble, a guest's way (yt-dlp).
+    SIGNED_CLIENTS = ("tv_samsung", "tv_downgraded")
+    LIVE_CLIENTS = ("visionos", "ios")   # a live stream's HLS (visionOS gives it to a guest)
+    KEEP_SIGNED = 3 * 3600
+
+    def live_dvr(self, vid, behind):
+        """A live stream from behind seconds back in its DVR window (Left, past what mpv has read):
+        the TV client's answer (its adaptive formats), through ytlive from that far back."""
+        import time
+        kept = getattr(self, "_dvr", {}).get(vid)
+        if not kept or kept[0] < time.time():
+            if not getattr(self, "clients", None):
+                self.clients = self.kept_json("clients-3.json", lambda: self.worker.call("clients", timeout=60))
+            if getattr(self, "player_js", (0, None))[0] < time.time():
+                self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
+            body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
+                    "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": self.player_js[1].get("sts") or 0,
+                                                                   "html5Preference": "HTML5_PREF_WANTS"}}}
+            c = self.clients.get("tv_samsung") or self.clients.get("tv")
+            resp = self.yt.call("player", body, cache=False, as_client=c) if self.yt.profile else self.yt._post("player", body, as_client=c)
+            sd = resp.get("streamingData") or {}
+            if not (resp.get("videoDetails") or {}).get("isLive") or not sd.get("adaptiveFormats"):
+                raise ValueError("This live stream can't go back that far here.")
+            keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
+            kept = (time.time() + 1800, {k: resp.get(k) for k in keep})
+            self._dvr = {vid: kept}                    # (one live stream at a time)
+        out = self.worker.call("resolve", id=vid, player=kept[1], live_behind=float(behind), **self.stream_args())
+        print(f"yt {vid}: live, {behind:.0f} s behind, from its segments (DVR window {out.get('dvr', 0) / 60:.0f} min)", flush=True)
+        return out
+
+    def signed_player(self, vid):
+        import time
+        if not getattr(self, "clients", None):            # yt-dlp's TV clients (kept a week: no yt-dlp needed for them)
+            self.clients = self.kept_json("clients-3.json", lambda: self.worker.call("clients", timeout=60))
+        if getattr(self, "player_js", (0, None))[0] < time.time():
+            self.player_js = (time.time() + 600, self.worker.call("player", timeout=60))
+        sts = self.player_js[1].get("sts") or 0
+        body = {"videoId": vid, "racyCheckOk": True, "contentCheckOk": True,
+                "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": sts, "html5Preference": "HTML5_PREF_WANTS"}}}
+        keep = ("playabilityStatus", "videoDetails", "streamingData", "captions", "storyboards")
+        dash_live = adaptive_live = None
+        live_seen = False
+        for name in self.SIGNED_CLIENTS + self.LIVE_CLIENTS:
+            if name in self.LIVE_CLIENTS and not live_seen:
+                break                                # (those only for live streams)
+            c = self.clients.get(name)
+            if not c:
+                print(f"yt {vid}: {name}: not among yt-dlp's clients here", flush=True)
+                continue
+            try:
+                if name in self.LIVE_CLIENTS:        # asked as a guest (the TV's sign-in is the TV clients' only:
+                    resp = self.yt._post("player", body, as_client=c)   # 400 with it), with the TV's visitor id
+                else:
+                    resp = self.yt.call("player", body, cache=False, as_client=c)
+            except youtube.YouTubeError as err:
+                print(f"yt {vid}: {name}: {err.args[0] if err.args else err}", flush=True)
+                continue
+            sd = resp.get("streamingData") or {}
+            ok = (resp.get("playabilityStatus") or {}).get("status") == "OK"
+            is_live = bool((resp.get("videoDetails") or {}).get("isLive")) or (live_seen and name in self.LIVE_CLIENTS)
+            live_seen = live_seen or is_live
+            if is_live:  # a live stream: its HLS from whichever client gives it (said in the log: what each gave)
+                print(f"yt {vid}: live, {name}{' (guest)' if name in self.LIVE_CLIENTS else ''}: {(resp.get('playabilityStatus') or {}).get('status')}, HLS {bool(sd.get('hlsManifestUrl'))}, "
+                      f"DASH {bool(sd.get('dashManifestUrl'))}, formats {len(sd.get('adaptiveFormats') or [])}", flush=True)
+                if ok and sd.get("hlsManifestUrl"):
+                    return {k: resp.get(k) for k in keep}
+                if ok and sd.get("dashManifestUrl") and dash_live is None:
+                    dash_live = {k: resp.get(k) for k in keep}
+                if ok and sd.get("adaptiveFormats") and adaptive_live is None and name in self.SIGNED_CLIENTS:
+                    adaptive_live = {k: resp.get(k) for k in keep}   # (the last resort: its segments, by ytlive)
+                continue
+            if name in self.LIVE_CLIENTS:
+                continue                             # (those only for live streams)
+            if resp.get("adPlacements") or resp.get("playerAds"):
+                return None                          # ads planned (not Premium): its DASH waits them out; a guest's way
+            if ok and sd.get("adaptiveFormats"):
+                return {k: resp.get(k) for k in keep}
+        if live_seen and not dash_live and adaptive_live:
+            print(f"yt {vid}: live, from {len(adaptive_live['streamingData'].get('adaptiveFormats') or [])} adaptive formats "
+                  "(their segments, through this box's ytlive server)", flush=True)
+        return dash_live or adaptive_live            # a live stream without HLS: its DASH manifest, else its segments
+
+    def signed_key(self, vid):
+        prof = self.yt.profile.get("id", "") if self.yt.profile else ""
+        return f"{vid}|{prof}" if prof else ""
+
+    # ---------------------------------------------------------------- Home at once
+    # Home as it was last time (per profile), shown while the new one comes (~1.3-1.8 s on the box)
+    def home_file(self):
+        prof = (self.yt.profile.get("id", "") if self.yt.profile else "") or "guest"
+        return os.path.join(self.yt.dir, "home-" + "".join(ch if ch.isalnum() else "_" for ch in prof) + ".json")
+
+    def home(self):
+        with self.home_lock:                         # Search's landing shelf asks too: once, then from the cache
+            out = self.page(self.yt.home())
+        if not self.demo and out.get("shelves"):
+            try:
+                path = self.home_file()
+                fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump(out, f)
+                os.replace(path + ".tmp", path)
+            except OSError:
+                pass
+        return out
+
+    def warm_once(self):
+        if not self.demo and not getattr(self, "warmed", True):
+            self.warmed = True
+            self.pool.submit(self.warm)
+
+    def home_copy_of_last(self):
+        """Home's copy for the profile the app starts as (the last one): in "status", so Home shows
+        with the first answer (no round trips more while the QML is busy starting)."""
+        if self.demo:
+            return None
+        last = self.yt.auth.last_profile() or "guest"
+        prof = self.yt.find_profile(last)
+        name = (prof.get("id") if prof else "") or "guest"
+        try:
+            with open(os.path.join(self.yt.dir, "home-" + "".join(ch if ch.isalnum() else "_" for ch in name) + ".json")) as f:
+                return {"profile": name, "page": json.load(f)}
+        except (OSError, ValueError):
+            return None
+
+    def home_cached(self):
+        if self.demo:
+            return {}
+        try:
+            with open(self.home_file()) as f:
+                return {"page": json.load(f)}
+        except (OSError, ValueError):
+            return {}
+
+    def card_stats(self, vid):
+        """A card's "views • age" when YouTube's card left it out (a part-watched one on Home):
+        from the video's watch page, kept for the session."""
+        if not hasattr(self, "_stats"):
+            self._stats = {}
+        if vid not in self._stats:
+            v = (self.yt.watch(vid) or {}).get("video") or {}
+            self._stats[vid] = " • ".join(x for x in (v.get("views", ""), v.get("date", "")) if x)
+            if len(self._stats) > 500:
+                self._stats.pop(next(iter(self._stats)))
+        return {"id": vid, "line": self._stats[vid]}
+
+    def share(self, vid):
+        """A video's link and its QR code (a phone's camera opens it), for a card menu's Share."""
+        import re
+        import tempfile
+
+        url = f"https://youtu.be/{vid}"
+        path = os.path.join(tempfile.gettempdir(), f"couchbox-yt-share-{os.getuid()}.png")
+        return {"url": url, "qr": qr_png(url, path) if re.fullmatch(r"[\w-]{1,20}", vid or "") else ""}
+
+    def captions(self, url):
+        """A caption track (WebVTT) as a local file for mpv: fetched here, again after 1 and 3 s when
+        YouTube says 429 (too many requests), kept for the session."""
+        import hashlib
+        import tempfile
+        import time
+
+        import requests
+        if self.demo or not url.startswith("https://"):
+            return {"path": url}
+        folder = os.path.join(tempfile.gettempdir(), f"couchbox-yt-captions-{os.getuid()}")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        path = os.path.join(folder, hashlib.sha256(url.encode()).hexdigest()[:20] + ".vtt")
+        if os.path.exists(path):
+            return {"path": path}
+        last = ""
+        for wait in (0, 1, 3):
+            time.sleep(wait)
+            try:
+                r = self.yt.s.get(url, timeout=(8, 20))
+            except requests.RequestException as err:
+                last = str(err)
+                continue
+            if r.status_code == 200 and r.text.lstrip().startswith("WEBVTT"):
+                with open(path + ".tmp", "w") as f:
+                    f.write(r.text)
+                os.replace(path + ".tmp", path)
+                return {"path": path}
+            last = f"YouTube said {r.status_code}"
+            if r.status_code not in (429, 500, 502, 503):
+                break
+        print(f"captions: {last}", flush=True)
+        return {"error": "Captions aren't available right now."}
+
+    def prefetch(self, vid):
+        """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
+        import time
+        if self.demo or not vid:
+            return {"ok": True}
+        key = self.signed_key(vid)
+        if not key:
+            self.worker.prefetch(vid, **self.stream_args())
+        elif self.kept.get(key, 0) < time.time():
+            self.pool.submit(self.prefetch_signed, vid, key)
+        return {"ok": True}
+
+    def prefetch_signed(self, vid, key):
+        import time
+        try:
+            pr = self.signed_player(vid)
+        except Exception as err:  # noqa: BLE001
+            print(f"yt {vid}: signed-in prefetch: {err}", flush=True)
+            return
+        if pr:
+            self.kept[key] = time.time() + self.KEEP_SIGNED
+            self.worker.prefetch(vid, key=key, player=pr, **self.stream_args())
+
     def stream(self, vid, max_height=None):
         if self.demo:
             return youtube.demo_stream(vid)
-        return ytstream.resolve(vid, max_height=int(max_height or ytstream.MAX_HEIGHT))
+        out = self._stream(vid, max_height)
+        c = out.get("captions") or []                # (always: an owner's "no captions" is traceable)
+        print(f"yt {vid}: captions: {len(c)} tracks (asr {sum(1 for x in c if x.get('auto') and not x.get('translated'))}, "
+              f"translated {sum(1 for x in c if x.get('translated'))}): {', '.join(x.get('lang', '') for x in c) or 'none'}", flush=True)
+        return out
+
+    def _stream(self, vid, max_height=None):
+        import time
+        key = self.signed_key(vid)
+        if key:
+            try:
+                t = yttiming.now()
+                kept = self.kept.get(key, 0) > time.time()
+                pr = None if kept else self.signed_player(vid)
+                player_ms = 0 if kept else yttiming.ms(t)
+                if kept or pr:
+                    out = self.worker.call("resolve", id=vid, key=key, **({"player": pr} if pr else {}), **self.stream_args(max_height))
+                    self.kept[key] = time.time() + self.KEEP_SIGNED
+                    yttiming.note("stream", id=vid, signed=True, player=player_ms, **(out.get("timing") or {}))
+                    return out
+            except Exception as err:  # noqa: BLE001 - a guest's way next
+                print(f"yt {vid}: signed in: {err}; a guest's way", flush=True)
+                self.kept.pop(key, None)
+        out = self.worker.call("resolve", id=vid, **self.stream_args(max_height))
+        yttiming.note("stream", id=vid, **(out.get("timing") or {}))
+        return out
+
+    # the extras (ytextras): made up in the demo, else SponsorBlock, DeArrow, Return YouTube Dislike
+    def segments(self, vid):
+        if self.demo:                                # a sponsor read and an intro, the screenshots' video
+            return {"segments": [{"category": "intro", "label": "Intro", "start": 0.0, "end": 12.0, "action": "skip"},
+                                 {"category": "sponsor", "label": "Sponsor", "start": 1800.0, "end": 1860.0, "action": "skip"}]}
+        segs = self.extras.segments(vid)
+        skip = self.settings.get()["skip"]
+        kinds = sorted({s["category"] for s in segs})
+        print(f"yt {vid}: SponsorBlock: {len(segs)} segments ({', '.join(kinds) or 'none'}); "
+              f"skipped here: {', '.join(k for k in kinds if skip.get(k)) or 'none'}", flush=True)
+        return {"segments": segs}
+
+    def branding(self, vid):
+        if not self.settings.get()["dearrow"]:
+            return {}
+        if self.demo:
+            return {"title": "A Made-Up Better Title"} if vid.endswith("3") else {}
+        return self.extras.branding(vid)
+
+    def votes(self, vid):
+        if not self.settings.get()["dislikes"]:
+            return {}
+        return {"likes": 4300, "dislikes": 210} if self.demo else self.extras.votes(vid)
+
+    def page(self, out):
+        """A page as the settings want it: without Shorts if they're hidden."""
+        return ytextras.hide_shorts(out) if self.settings.get()["hide_shorts"] else out
 
     def about(self):
-        a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else ytstream.about()
+        a = {"ytdlp": "demo", "ytdlpPath": "", "js": "demo"} if self.demo else self.worker.call("about", timeout=30)
         return dict(a, client=self.yt.client.get("clientVersion", ""))
 
     def run(self, op, a):
         y = self.yt
         ops = {
             "status": lambda: dict(y.profiles(), guide=[{"key": k, "label": label, "browse": b} for k, label, b in youtube.GUIDE],
-                                   demo=self.demo),
+                                   demo=self.demo, settings=self.shown_settings(), homeCopy=self.home_copy_of_last()),
+            "settings": lambda: self.shown_settings(),
+            "setting": lambda: self.set_setting(a["key"], a["value"], str(a.get("code") or "")),
+            "segments": lambda: self.segments(a["id"]),
+            "branding": lambda: self.branding(a["id"]),
+            "votes": lambda: self.votes(a["id"]),
+            "castCode": lambda: cast_code(self.demo),
             "profiles": lambda: y.profiles(),
             "use": lambda: y.use(a.get("id", "")),
             "signInStart": lambda: self.sign_in("start"),
@@ -106,24 +527,42 @@ class Backend(QObject):
             "signInCancel": lambda: (None if self.demo else y.auth.cancel(), {"ok": True})[1],
             "signOut": lambda: (None if self.demo else y.auth.remove(a["account"]), y.use("") if y.profile.get("account") == a["account"] else None,
                                 {"ok": True})[2],
-            "subscriptions": lambda: y.subscriptions(),
-            "library": lambda: y.library(),
+            "subscriptions": lambda: (lambda r: dict(r, page=self.page(r["page"])))(y.subscriptions()),
+            "library": lambda: self.page(y.library()),
             "like": lambda: y.like(a["id"], a["status"]),
             "subscribe": lambda: y.subscribe(a["id"], bool(a["on"])),
             "notify": lambda: y.notify(a["params"], a.get("level", "")),
             "saveOptions": lambda: y.save_options(a["id"]),
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
+            "feedback": lambda: y.feedback(a["token"]),
+            "cardStats": lambda: self.card_stats(a["id"]),
+            "liveBehind": lambda: self.live_dvr(a["id"], float(a.get("behind") or 0)),
+            "deletePlaylist": lambda: y.delete_playlist(a["id"]),
+            "editPlaylist": lambda: y.edit_playlist(a["edit"], bool(a.get("add", True))),
+            "menuProbe": lambda: y.menu_probe(),           # measuring: a Home card's menu and lines, as this profile gets them
+            "commentsProbe": lambda: y.comments_probe(a["id"]),   # measuring: a comment with replies, its shape
+            "shortProbe": lambda: y.short_probe(a["id"]),         # measuring: a Short's subscription state, its shape
+            "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
-            "home": lambda: y.home(),
-            "browse": lambda: y.browse(a["id"], a.get("params", "")),
-            "more": lambda: y.more(a["token"]),
-            "channel": lambda: y.channel(a["id"], a.get("params", "")),
-            "search": lambda: (y.remember_search(a["q"]), y.search(a["q"]))[1],
+            "home": self.home,
+            "homeCached": self.home_cached,
+            "browse": lambda: self.page(y.browse(a["id"], a.get("params", ""))),
+            "more": lambda: self.page(y.more(a["token"])),
+            "channel": lambda: self.page(y.channel(a["id"], a.get("params", ""))),
+            "search": lambda: self.page((y.remember_search(a["q"]), y.search(a["q"]))[1]),
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
             "watch": lambda: y.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
+            "prefetch": lambda: self.prefetch(a["id"]),
+            "captions": lambda: self.captions(a["url"]),
+            "mark": lambda: (started(a.get("step", "")), self.warm_once() if a.get("step") == "home-shown" else None, {"ok": True})[2],
+            "playerProbe": lambda: self.probe(a["id"], a.get("profile")),  # measuring (the control socket's call)
+            "historyRemove": lambda: self.history_remove(a.get("ids") or [], bool(a.get("dryRun", True)), a.get("profile")),
+            "pageProbe": lambda: y.page_probe(a.get("id") or "FEtopics_movies"),   # measuring: a page's outline
+            "premiumProbe": lambda: y.premium_probe(),   # measuring: where YouTube says this account has Premium
+            "historyToday": lambda: {"ids": [e["id"] for e in y.history_today(newest=60)]} if y.profile else {"ids": []},
             "comments": lambda: y.comments(a["token"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),
@@ -132,7 +571,12 @@ class Backend(QObject):
 
     @Slot(int, str, str)
     def call(self, rid, op, args):
+        asked = yttiming.now()
+        if op == "stream" and '"max_height"' not in (args or ""):     # a video starting: until its first frame
+            watch.play = {"id": json.loads(args or "{}").get("id", ""), "t0": watch.last_ok if asked - watch.last_ok < 2 else asked}
+
         def work():
+            started = yttiming.now()
             try:
                 out = self.run(op, json.loads(args or "{}"))
             except (ytstream.Unavailable, youtube.YouTubeError) as err:
@@ -142,8 +586,34 @@ class Backend(QObject):
             except Exception as err:
                 traceback.print_exc()
                 out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
+            yttiming.note("call", op=op, ms=yttiming.ms(asked), queued=round((started - asked) * 1000))
+            if op == "stream" and watch.play and isinstance(out, dict):
+                watch.play["stream"] = yttiming.ms(watch.play["t0"])
             self.reply.emit(rid, json.dumps(out))
         self.pool.submit(work)
+
+
+def start_cast():
+    """couchbox-yt-cast.service: the TV in the YouTube phone app's cast list. It keeps running
+    after the app quits, so a phone can launch it."""
+    import subprocess
+    try:
+        subprocess.run(["systemctl", "--user", "start", "--no-block", "couchbox-yt-cast.service"],  # noqa: S607
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def cast_code(demo):
+    """A "Link with TV code" (12 digits, in threes) from couchbox-yt-cast."""
+    if demo:
+        return {"code": "123 456 789 012", "name": "Couchbox YouTube (beta)"}
+    from couchbox import appctl
+    try:
+        return appctl.call("yt-cast", {"op": "code"}, timeout=25)
+    except appctl.NotRunning:
+        start_cast()
+        return {"error": "Casting is starting: try again in a moment."}
 
 
 def qr_png(text, path):
@@ -198,7 +668,11 @@ class Control(QObject):
         if op == "state":
             return dict(self.state, site="YouTube")
         if op == "focus":
-            return dict(self.focus, page=self.state.get("page", ""))
+            return dict(self.focus, page=self.state.get("page", ""), timing=yttiming.recent(40))
+        if op == "timing":
+            return {"timing": yttiming.recent()}
+        if op == "memory":                           # where the memory goes (the box check's perf mode)
+            return memory()
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):
@@ -289,6 +763,165 @@ class Shooter(QObject):
         return at
 
 
+def by_kind(pid):
+    """The app's proportional memory (MB) by what it's in: the heap and anonymous memory (Python,
+    Qt, mpv's buffers), the GPU's buffers mapped in (/dev/dri: textures, video frames), memfd and
+    shared memory, libraries."""
+    kinds, cur = {}, None
+    try:
+        with open(f"/proc/{pid}/smaps") as fh:
+            for ln in fh:
+                head = ln.split()
+                if head and "-" in head[0] and len(head) >= 5 and ":" in head[3]:
+                    name = head[5] if len(head) > 5 else ""
+                    cur = ("heap" if name == "[heap]" else "anonymous" if not name or name.startswith("[anon") else
+                           "gpu (/dev/dri)" if name.startswith("/dev/dri") else "memfd/shm" if name.startswith(("/memfd:", "/dev/shm", "/SYSV")) else
+                           "stack" if name.startswith("[stack") else "libraries" if ".so" in name else "files")
+                elif ln.startswith("Pss:") and cur:
+                    kinds[cur] = kinds.get(cur, 0) + int(ln.split()[1])
+    except (OSError, ValueError):
+        pass
+    return {k: round(v / 1024) for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])}
+
+
+def picture_census():
+    """The QML's items now, and its pictures shown (Images ready): how many, and how much their
+    decoded pixels take (width x height x 4: the copy in memory, and as much again as a texture)."""
+    win = Shooter.window
+    if win is None:
+        return {}
+    items = images = 0
+    pixels = 0
+    todo = [win.contentItem()]
+    while todo:
+        it = todo.pop()
+        items += 1
+        todo.extend(it.childItems())
+        if it.metaObject().className().startswith("QQuickImage"):
+            try:
+                if int(it.property("status") or 0) == 1:
+                    images += 1
+                    pixels += int(it.property("implicitWidth") or 0) * int(it.property("implicitHeight") or 0)
+            except (TypeError, ValueError):
+                pass
+    return {"items": items, "images": images, "image_mb": round(pixels * 4 / 2**20)}
+
+
+def memory():
+    """This app's memory in parts (MB): resident, anonymous (Python, Qt, mpv's buffers, textures in
+    system memory) and file-backed (libraries); mpv's demuxer cache; the stream worker and node."""
+    def rollup(pid):
+        out = {}
+        try:
+            with open(f"/proc/{pid}/smaps_rollup") as fh:
+                for ln in fh:
+                    k, _, v = ln.partition(":")
+                    if k in ("Rss", "Pss", "Anonymous", "Pss_File", "Shared_Clean", "Private_Dirty"):
+                        out[k] = round(int(v.split()[0]) / 1024)
+        except (OSError, ValueError):
+            pass
+        return out
+
+    import gc
+
+    from couchbox import player
+    out = {"app": rollup(os.getpid()), "python_objects": len(gc.get_objects()), "app_by_kind": by_kind(os.getpid())}
+    caches = []
+    for p in list(player._players):
+        try:
+            st = getattr(p.mpv, "demuxer_cache_state", None) or {}   # (the property: mpv[name] reads the option)
+            caches.append({"bytes_mb": round((st.get("total-bytes") or 0) / 2**20), "ahead_s": round(st.get("cache-duration") or 0, 1)})
+        except Exception:  # noqa: BLE001
+            pass
+    out["mpv_cache"] = caches
+    out["qml"] = picture_census()
+    kids = {}
+    try:
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                try:
+                    with open(f"/proc/{d}/stat") as fh:
+                        st = fh.read()
+                    ppid = int(st.rsplit(")", 1)[1].split()[1])
+                    with open(f"/proc/{d}/cmdline", "rb") as fh:
+                        cmd = fh.read().replace(b"\0", b" ").decode(errors="replace")
+                except (OSError, ValueError):
+                    continue
+                if ppid == os.getpid() or "couchbox.services.ytworker" in cmd:
+                    name = "worker" if "ytworker" in cmd else "node" if "node" in cmd.split(" ")[0] else cmd.split(" ")[0]
+                    kids.setdefault(name, []).append(rollup(int(d)))
+                elif "--permission" in cmd and "readline" in cmd:
+                    kids.setdefault("node", []).append(rollup(int(d)))
+                elif "qjs" in cmd and "--std" in cmd and not cmd.startswith(("bwrap", "/usr/bin/bwrap")):
+                    kids.setdefault("qjs", []).append(rollup(int(d)))
+    except OSError:
+        pass
+    out["processes"] = kids
+    try:  # the challenge solver as the worker sees it
+        out["solver"] = Backend.current.worker.call("solver", timeout=5) if Backend.current and Backend.current.worker else None
+    except Exception:  # noqa: BLE001
+        out["solver"] = None
+    return out
+
+
+class Watch(QObject):
+    """Timing (couchbox.services.yttiming): a key until the focus moved, OK on a video until its
+    first frame, frames that came late while the screen moved."""
+    window = None
+    last_key, last_key_name, last_ok, reported = 0.0, "", 0.0, True
+    play = None                                      # {id, t0, stream}: a video starting
+
+    def key(self, name):
+        self.last_key, self.last_key_name, self.reported = yttiming.now(), name, False
+        if name in ("Key_Return", "Key_Enter"):
+            self.last_ok = self.last_key
+
+    def attach(self, window):
+        from PySide6.QtCore import QTimer
+
+        self.window = window
+        window.activeFocusItemChanged.connect(self.moved)
+        if yttiming.ON:                              # the GUI thread held up: a 50 ms timer that fires late
+            self.beat = QTimer()
+            self.beat.setInterval(50)
+            self.beat.timeout.connect(self.tick)
+            self.last_tick = yttiming.now()
+            self.beat.start()
+
+    @Slot()
+    def tick(self):
+        t = yttiming.now()
+        late = t - self.last_tick - 0.05
+        self.last_tick = t
+        if late > 0.1:                               # (Qt draws on this thread: no frame meanwhile)
+            yttiming.note("stall", ms=round(late * 1000), after=self.last_key_name.removeprefix("Key_"),
+                          since_key=yttiming.ms(self.last_key) if self.last_key else -1)
+
+    @Slot()
+    def moved(self):
+        if self.reported or yttiming.now() - self.last_key > 3:
+            return
+        self.reported = True
+        names, it = [], self.window.activeFocusItem()
+        while it is not None:
+            if it.objectName():
+                names.insert(0, it.objectName())
+            it = it.parentItem()
+        yttiming.note("key", key=self.last_key_name.removeprefix("Key_"), ms=yttiming.ms(self.last_key), to="/".join(names[-3:]))
+
+    def frame(self, kind, **kw):
+        """The player's first picture of a file (couchbox.player's TIMING hook)."""
+        p, self.play = self.play, None
+        if p:
+            yttiming.note("play", id=p["id"], stream=p.get("stream", -1), open=kw.get("open"), frame=kw.get("frame"),
+                          total=yttiming.ms(p["t0"]), start=kw.get("start", 0))
+        else:
+            yttiming.note("frame", **kw)
+
+
+watch = Watch()
+
+
 class KeyFilter(QObject):
     """OK, Back and the other one-shot keys act once per press, on whatever had the focus when
     they went down: their repeats (held, or the compositor's) are dropped, and so is a release
@@ -297,7 +930,9 @@ class KeyFilter(QObject):
     ONCE = ("Key_Return", "Key_Enter", "Key_Select", "Key_Escape", "Key_Back", "Key_Menu", "Key_MediaTogglePlayPause",
             "Key_MediaPlay", "Key_MediaPause")
 
-    def __init__(self, window):
+    pressed = Signal()                               # any key (someone's there: no "Continue watching?")
+
+    def __init__(self, window=None):
         from PySide6.QtCore import Qt
 
         super().__init__()
@@ -306,8 +941,14 @@ class KeyFilter(QObject):
         self.down = {}
 
     def eventFilter(self, obj, ev):
-        from PySide6.QtCore import QEvent
+        from PySide6.QtCore import QEvent, Qt
 
+        if ev.type() == QEvent.KeyPress and not ev.isAutoRepeat():
+            self.pressed.emit()
+            try:
+                watch.key(Qt.Key(int(ev.key())).name)
+            except ValueError:                           # (a key Qt has no name for)
+                watch.key(str(int(ev.key())))
         if ev.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or int(ev.key()) not in self.keys:
             return False
         if ev.isAutoRepeat():
@@ -348,6 +989,7 @@ def main():
     if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
         QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
     app = QGuiApplication(sys.argv)
+    started("qt")
     locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
     if forward_to_running():
         sys.exit(0)
@@ -377,6 +1019,8 @@ def main():
     ctx.setContextProperty("backend", backend)
     ctx.setContextProperty("control", control)
     ctx.setContextProperty("shooter", shooter)
+    keyfilter = KeyFilter()
+    ctx.setContextProperty("keyfilter", keyfilter)
     ctx.setContextProperty("demo", demo)
     ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
     mpris = None
@@ -390,13 +1034,27 @@ def main():
     engine.load(QUrl.fromLocalFile(QML))
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
-    shooter.window = engine.rootObjects()[0]
-    keyfilter = KeyFilter(shooter.window)
+    started("qml")
+    shooter.window = Shooter.window = engine.rootObjects()[0]     # (the class's too: the memory report's census)
+    shooter.window.frameSwapped.connect(lambda: getattr(shooter, "_drawn", False) or (setattr(shooter, "_drawn", True), started("first-frame")))
+    keyfilter.window = shooter.window
     shooter.window.installEventFilter(keyfilter)
+    from PySide6.QtCore import QTimer
+
+    from couchbox import playback, player
+    trim = QTimer()                                  # what's been freed, back to the system once a minute
+    trim.setInterval(60000)
+    trim.timeout.connect(player._trim)
+    trim.start()
+    watch.attach(shooter.window)
+    player.TIMING = watch.frame
+    playback.ON_SWITCH = lambda took, mode: yttiming.note("rate", ms=took, mode=mode)
     code = app.exec()
     if control.server:
         control.server.close()
     backend.pool.shutdown(wait=False, cancel_futures=True)
+    if backend.worker:
+        backend.worker.close()
     os._exit(code)                                   # don't wait for requests in flight
 
 

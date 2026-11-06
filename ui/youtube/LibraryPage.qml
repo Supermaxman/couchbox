@@ -7,6 +7,7 @@ FocusScope {
     property bool loaded: false
     property string problem: ""
     readonly property string label: "Library"
+    function focusDetail() { return {loaded: loaded, rows: feed.count, row: feed.index, problem: problem}; }
     function load() {
         problem = "";
         Y.call("library", {}, r => {
@@ -18,7 +19,8 @@ FocusScope {
     onActiveFocusChanged: if (activeFocus && !feed.activeFocus) feed.forceActiveFocus()
     Feed {
         id: feed
-        y: 78 * Y.u
+        y: 78 * Y.u                            // the tiles' tops at 90, as YouTube's
+        rowGap: 74 * Y.u                       // (Watch later 24 lower than other pages' rows, as YouTube's)
         width: parent.width
         height: parent.height - y
         onOpen: it => Y.open(it)

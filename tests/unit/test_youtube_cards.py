@@ -58,3 +58,181 @@ def test_wormholes_are_the_hero_row():
     }
     (row,) = Y.parse_shelf(shelf)
     assert row["hero"] is True and row["items"][0]["title"] == "A show"
+
+
+def test_subscriptions_rail_all_first_and_a_heading_not_a_row():
+    from couchbox.services import youtube as Y
+
+    def tab(title, bid="", thumb=True):
+        tr = {"title": {"simpleText": title}, "endpoint": {"browseEndpoint": {"browseId": bid}}}
+        if thumb:
+            tr["thumbnail"] = {"thumbnails": [{"url": "https://yt3.ggpht.com/x=s88-c-k", "width": 88}]}
+        return {"tabRenderer": tr}
+
+    resp = {
+        "contents": {
+            "tvSecondaryNavRenderer": {
+                "sections": [
+                    {
+                        "tvSecondaryNavSectionRenderer": {
+                            "tabs": [
+                                tab("All", "FEsubscriptions", thumb=False),
+                                tab("Orbit Lab", "UCaaaaaaaaaaaaaaaaaaaaaa"),
+                                tab("A-Z", "FEsubscriptions_az", thumb=False),
+                                tab("Kettle & Crumb", "UCbbbbbbbbbbbbbbbbbbbbbb"),
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    chans = Y.parse_subscriptions(resp)["channels"]
+    assert [c["title"] for c in chans] == ["All", "Orbit Lab", "Kettle & Crumb"]
+    assert chans[0].get("all") and chans[2]["section"] == "A-Z" and not chans[1]["section"]
+
+
+def test_card_menu_feedback_options():
+    def opt(label, icon, token):
+        return {
+            "menuServiceItemRenderer": {
+                "text": {"runs": [{"text": label}]},
+                "icon": {"iconType": icon},
+                "serviceEndpoint": {"feedbackEndpoint": {"feedbackToken": token}},
+            }
+        }
+
+    cmd = {
+        "showMenuCommand": {
+            "menu": {
+                "menuRenderer": {
+                    "items": [
+                        opt("Not interested", "NOT_INTERESTED", "t1"),
+                        opt("Don't recommend channel", "REMOVE", "t2"),
+                        opt("Remove from watch history", "", "t3"),
+                        {"menuServiceItemRenderer": {"text": {"simpleText": "Save"}, "serviceEndpoint": {"playlistEditEndpoint": {}}}},
+                    ]
+                }
+            }
+        }
+    }
+    got = Y.menu_feedback(cmd)
+    assert [(o["kind"], o["token"]) for o in got] == [("not_interested", "t1"), ("no_channel", "t2"), ("remove_history", "t3")]
+    assert Y.menu_feedback(None) == []
+
+
+def test_movies_carousel_is_a_hero_row_even_with_its_title_in_the_menu():
+    tile = {
+        "tileRenderer": {
+            "style": "TILE_STYLE_YTLR_CAROUSEL",
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": "carousel001",
+            "header": {
+                "tileHeaderRenderer": {"thumbnail": {"thumbnails": [{"url": "https://i.example/c.jpg", "width": 1280, "height": 720}]}}
+            },
+            "onSelectCommand": {"watchEndpoint": {"videoId": "carousel001"}},
+            "onLongPressCommand": {"showMenuCommand": {"title": {"simpleText": "A Made-up Show"}}},
+        }
+    }
+    shelf = {
+        "shelfRenderer": {
+            "tvhtml5ShelfRendererType": "TVHTML5_SHELF_RENDERER_TYPE_CAROUSEL",
+            "content": {"horizontalListRenderer": {"items": [tile]}},
+        }
+    }
+    got = Y.parse_shelf(shelf)
+    assert len(got) == 1 and got[0]["hero"] and got[0]["items"][0]["title"] == "A Made-up Show"
+    assert Y.outline({"a": [{"b": "x"}], "trackingParams": "t"}) == {"a": [{"b": "str"}, 1]}
+
+
+def test_card_menu_reads_any_entry_renderer():
+    cmd = {
+        "showMenuCommand": {
+            "menu": {
+                "menuRenderer": {
+                    "items": [
+                        {
+                            "menuServiceItemRenderer": {
+                                "text": {"simpleText": "Save to Watch later"},
+                                "icon": {"iconType": "WATCH_LATER"},
+                                "serviceEndpoint": {
+                                    "playlistEditEndpoint": {
+                                        "playlistId": "WL",
+                                        "params": "p",
+                                        "actions": [{"addedVideoId": "vid00000001", "action": "ACTION_ADD_VIDEO"}],
+                                    }
+                                },
+                            }
+                        },
+                        {
+                            "tvMenuItemRenderer": {
+                                "title": {"simpleText": "Not interested"},
+                                "icon": {"iconType": "NOT_INTERESTED"},
+                                "command": {"commandExecutorCommand": {"commands": [{"feedbackEndpoint": {"feedbackToken": "tok"}}]}},
+                            }
+                        },
+                        {
+                            "tvMenuItemRenderer": {
+                                "title": {"simpleText": "Go to channel"},
+                                "command": {"browseEndpoint": {"browseId": "UCdemo0000000000000orbit"}},
+                            }
+                        },
+                    ]
+                }
+            }
+        }
+    }
+    assert Y.menu_watch_later(cmd) == {
+        "playlistId": "WL",
+        "params": "p",
+        "actions": [{"addedVideoId": "vid00000001", "action": "ACTION_ADD_VIDEO"}],
+    }
+    assert [(f["kind"], f["token"]) for f in Y.menu_feedback(cmd)] == [("not_interested", "tok")]
+    assert Y._menu_channel(cmd) == "UCdemo0000000000000orbit"
+
+
+def test_a_carousel_tiles_spotlight_gives_the_hero_its_badges_and_synopsis():
+    spot = {
+        "entityMetadataRenderer": {
+            "title": {"runs": [{"text": "A Made-up Film"}]},
+            "description": {"runs": [{"text": "A lighthouse keeper and a very long winter."}]},
+            "bylines": [
+                {
+                    "lineRenderer": {
+                        "items": [
+                            {"lineItemRenderer": {"text": {"simpleText": "Primetime show"}}},
+                            {
+                                "lineItemRenderer": {
+                                    "badge": {"metadataBadgeRenderer": {"label": "Pay to watch", "style": "BADGE_STYLE_TYPE_YPC"}}
+                                }
+                            },
+                            {
+                                "lineItemRenderer": {
+                                    "badge": {"metadataBadgeRenderer": {"label": "TV-PG", "style": "BADGE_STYLE_TYPE_SIMPLE"}}
+                                }
+                            },
+                        ]
+                    }
+                }
+            ],
+        }
+    }
+    tile = {
+        "tileRenderer": {
+            "style": "TILE_STYLE_YTLR_CAROUSEL",
+            "contentType": "TILE_CONTENT_TYPE_VIDEO",
+            "contentId": "carousel002",
+            "onSelectCommand": {"watchEndpoint": {"videoId": "carousel002"}},
+            "onFocusCommand": {"commandExecutorCommand": {"commands": [{"updateCarouselHeaderCommand": {"spotlight": spot}}]}},
+        }
+    }
+    it = Y.parse_shelf(
+        {
+            "shelfRenderer": {
+                "tvhtml5ShelfRendererType": "TVHTML5_SHELF_RENDERER_TYPE_CAROUSEL",
+                "content": {"horizontalListRenderer": {"items": [tile]}},
+            }
+        }
+    )[0]["items"][0]
+    assert it["title"] == "A Made-up Film" and it["badges"] == ["Pay to watch", "TV-PG"] and it["pay"] == ["Pay to watch"]
+    assert it["lines"] == ["Primetime show", "A lighthouse keeper and a very long winter."]

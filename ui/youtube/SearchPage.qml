@@ -11,7 +11,7 @@ FocusScope {
     function focusDetail() {
         const it = area === "list" ? "suggestion:" + (suggestions[li] || "")
                  : area === "keys" ? "key:" + (r === 4 ? buttons[c] : letters[r][c]) : area;
-        return {results: results, area: results ? "results" : area, item: results ? "" : it, query: query};
+        return {results: results, area: results ? "results" : area, item: results ? "" : it, query: query, suggestions: suggestions.length};
     }
     property string query: ""
     property bool results: false              // the results are showing (else the keys)
@@ -45,6 +45,11 @@ FocusScope {
         if (page.activeFocus) keys.forceActiveFocus();   // (moving through the guide only shows it)
         if (!landing.loaded) landing.load();
     }
+    function reset() {                        // another profile: nothing of the last one's (its results, its shelf)
+        results = false; query = ""; searched = ""; suggestions = []; problem = "";
+        feed.rows = [];
+        landing.loaded = false; landing.row = ({title: "", items: []});
+    }
     function search(q) {
         q = (q || "").trim();
         if (!q) return;
@@ -62,7 +67,7 @@ FocusScope {
             feed.setPage(r, extra);
             if (!feed.count) problem = "No results for “" + q + "”.";
             if (page.activeFocus || page.results) feed.forceActiveFocus();
-        }, e => { loading = false; problem = e; });
+        }, e => { if (page) { page.loading = false; page.problem = e; } });
         feed.forceActiveFocus();
     }
     function press(k) {
@@ -84,7 +89,12 @@ FocusScope {
             Y.call("searches", {}, s => { if (!page.query.trim()) { page.recent = true; page.suggestions = (s.items || []).slice(0, 5); page.settle(); } }, () => {});
             return;
         }
-        Y.call("suggest", {q: q}, s => { if (s.q === page.query) { page.recent = false; page.suggestions = (s.items || []).slice(0, 9); page.settle(); } }, () => {});
+        Y.call("suggest", {q: q}, s => {
+            if (s.q !== page.query) return;
+            // the first row repeats what's typed, as YouTube's (then its suggestions)
+            const typed = page.query.trim(), rest = (s.items || []).filter(x => x.toLowerCase() !== typed.toLowerCase());
+            page.recent = false; page.suggestions = [typed].concat(rest).slice(0, 9); page.settle();
+        }, () => {});
     }
     function settle() {                       // the suggestions came: the first takes the focus, if nothing's been pressed
         if (fresh && area !== "landing") area = suggestions.length ? "list" : "keys";
@@ -214,7 +224,11 @@ FocusScope {
                     width: parent.width; height: 54 * Y.u
                     radius: 14 * Y.u
                     color: on ? Y.text : "transparent"
-                    Icon { x: 14 * Y.u; anchors.verticalCenter: parent.verticalCenter; name: page.recent ? "history" : "search"; size: 32 * Y.u; color: sug.on ? Y.ink : Y.text }
+                    Icon {                        // history 33 px, the magnifier 29 px, drawn heavier
+                        x: (page.recent ? 2 : 8) * Y.u; anchors.verticalCenter: parent.verticalCenter
+                        name: page.recent ? "history" : "search"; size: (page.recent ? 46 : 40) * Y.u; weight: 2.3
+                        color: sug.on ? Y.ink : Y.text
+                    }
                     Text {
                         x: 66 * Y.u
                         width: parent.width - x - 12 * Y.u
@@ -236,7 +250,7 @@ FocusScope {
         }
 
         Item {                                 // the letter keys
-            x: 714 * Y.u; y: 168 * Y.u
+            x: 714 * Y.u; y: 166 * Y.u
             Repeater {
                 model: 4
                 Repeater {
@@ -260,7 +274,7 @@ FocusScope {
                             visible: key.modelData.length <= 1
                             anchors.centerIn: parent
                             text: key.modelData
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                             font.family: Y.font; font.pixelSize: 36 * Y.u
                         }
                         Icon {
@@ -268,20 +282,20 @@ FocusScope {
                             anchors.centerIn: parent
                             name: key.modelData === "del" ? "backspace" : "globe"
                             size: 36 * Y.u
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                         }
                         Text {
                             visible: key.modelData === "sym"
                             anchors.centerIn: parent
                             text: page.symbols ? "ABC" : "&123"
-                            color: key.on ? Y.ink : "#cccccc"
+                            color: key.on ? Y.ink : Y.dim
                             font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium
                         }
                     }
                 }
             }
             Row {
-                x: 21 * Y.u; y: 270 * Y.u
+                x: 21 * Y.u; y: 272 * Y.u
                 spacing: 13 * Y.u
                 Repeater {
                     model: page.buttons
@@ -292,7 +306,7 @@ FocusScope {
                         width: 132 * Y.u; height: 54 * Y.u
                         radius: 8 * Y.u
                         color: on ? Y.text : Y.raised
-                        Text { anchors.centerIn: parent; text: parent.modelData; color: parent.on ? Y.ink : "#bbbbbb"; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
+                        Text { anchors.centerIn: parent; text: parent.modelData; color: parent.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
                     }
                 }
             }
@@ -304,7 +318,9 @@ FocusScope {
             property bool loaded: false
             function load() {
                 loaded = true;
+                const who = Y.profile ? Y.profile.id : "";
                 Y.call("home", {}, r => {
+                    if ((Y.profile ? Y.profile.id : "") !== who) return;   // (asked as the profile before)
                     const sh = (r.shelves || []).find(x => (x.items || []).length && !x.grid && !x.hero);
                     if (sh) landing.row = Object.assign({}, sh, {title: sh.title || "Recommended", subtitle: "", pill: null, more: ""});
                 }, () => { landing.loaded = false; });
@@ -338,7 +354,7 @@ FocusScope {
     }
 
     // ready before Search is opened: the recent searches, the shelf under the keys
-    Component.onCompleted: { refreshSuggestions(); landing.load(); }
+    Component.onCompleted: refreshSuggestions()           // (the landing shelf loads when Search opens: begin())
 
     // coming back (from a video): the results keep the focus, else the keys
     onActiveFocusChanged: {

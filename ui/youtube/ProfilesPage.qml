@@ -14,6 +14,8 @@ FocusScope {
     readonly property int count: profiles.length + 1        // + Add account
     readonly property bool onAdd: index === profiles.length
     readonly property var focused: onAdd ? null : profiles[index]
+    function focusDetail() { return {count: profiles.length, brands: profiles.filter(p => !!p.pageId).length, index: index, area: area,
+                                      id: onAdd ? "add" : (focused ? focused.id : ""), ids: profiles.map(p => p.id)}; }
     signal chosen(var profile)                // null: watch as a guest
     signal addAccount()
     signal signOut(var profile)
@@ -21,18 +23,23 @@ FocusScope {
 
     function load(focusId) {
         Y.call("profiles", {}, r => {
-            page.profiles = r.profiles || [];
-            const want = focusId || r.last || r.current || "";
-            const i = page.profiles.findIndex(p => p.id === want);
+            const all = r.profiles || [];
+            const last = r.last || r.current || "";       // the one last watched as comes first (YouTube's order)
+            const k = all.findIndex(p => p.id === last);
+            page.profiles = k > 0 ? [all[k]].concat(all.slice(0, k), all.slice(k + 1)) : all;
+            const i = page.profiles.findIndex(p => p.id === (focusId || last));
             page.index = Math.max(0, i);
+            page.loaded = true;
             page.area = "row";
             list.currentIndex = page.index;
             list.positionViewAtIndex(page.index, ListView.Beginning);
-        });
+        }, () => { page.loaded = true; });   // (no profiles to show: Add account and Watch as guest still work)
     }
 
+    property bool loaded: false               // (until the profiles come, OK would be on Add account: nothing)
     Keys.onPressed: e => {
         const k = e.key;
+        if (!loaded && k !== Qt.Key_Escape && k !== Qt.Key_Back) { e.accepted = true; return; }
         if (k === Qt.Key_Escape || k === Qt.Key_Back) {
             if (area === "menu") area = "gear"; else closed();
         } else if (area === "menu") {
@@ -62,27 +69,30 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0; color: "#130d0f" }
-            GradientStop { position: 0.6; color: "#2a0d15" }
-            GradientStop { position: 1; color: "#4a0c1c" }
+            GradientStop { position: 0; color: "#120d0e" }
+            GradientStop { position: 0.6; color: "#1a0e11" }
+            GradientStop { position: 1; color: "#221013" }
         }
     }
-    Repeater {                                 // soft shapes, bottom right
-        model: [{x: 1430, y: 790, w: 520, h: 640, r: -28, a: "#d04a6a", b: "#7a1830"},
-                {x: 1720, y: 850, w: 360, h: 520, r: -18, a: "#e36f8f", b: "#a0244a"},
-                {x: 1190, y: 990, w: 760, h: 360, r: -8, a: "#c8405a", b: "#5a1020"}]
-        Rectangle {
-            id: blob
+    Repeater {                                 // rounded blobs, bottom right (soft gradients, drawn here)
+        model: [{x: 1380, y: 700, w: 560, h: 560, r: -20, a: "#d04a6a", b: "#6a1428", k: "petal"},
+                {x: 1660, y: 800, w: 420, h: 420, r: 25, a: "#e8789a", b: "#a0244a", k: "petal"},
+                {x: 1060, y: 900, w: 980, h: 300, r: -12, a: "#c8405a", b: "#4a0c1c", k: "ribbon"}]
+        Image {
             required property var modelData
             x: modelData.x * Y.u; y: modelData.y * Y.u
             width: modelData.w * Y.u; height: modelData.h * Y.u
-            radius: width / 2
+            sourceSize: Y.sz(width, height)
             rotation: modelData.r
-            opacity: 0.85
-            gradient: Gradient {
-                GradientStop { position: 0; color: blob.modelData.a }
-                GradientStop { position: 1; color: blob.modelData.b }
-            }
+            opacity: 0.7
+            smooth: true
+            source: "data:image/svg+xml;utf8," + encodeURIComponent(
+                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>"
+                + "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='" + modelData.a + "'/>"
+                + "<stop offset='1' stop-color='" + modelData.b + "'/></linearGradient></defs><path fill='url(#g)' d='"
+                + (modelData.k === "petal" ? "M52 3C78 4 97 24 96 50S74 98 46 96 3 74 4 48 26 2 52 3Z"     // a rounded blob
+                                           : "M8 52C10 30 34 18 56 22S96 36 94 58 66 90 42 86 6 74 8 52Z")
+                + "'/></svg>")
         }
     }
     Logo {
@@ -101,10 +111,10 @@ FocusScope {
         spacing: 55 * Y.u
         model: page.count
         highlightRangeMode: ListView.ApplyRange
-        preferredHighlightBegin: 71 * Y.u
+        preferredHighlightBegin: 95 * Y.u
         preferredHighlightEnd: parent.width - 420 * Y.u
         highlightMoveDuration: 200
-        header: Item { width: 71 * Y.u; height: 1 }
+        header: Item { width: 95 * Y.u; height: 1 }
         delegate: Item {
             id: cell
             required property int index
@@ -112,9 +122,8 @@ FocusScope {
             readonly property var p: add ? ({}) : page.profiles[index]
             readonly property bool on: page.index === index && page.activeFocus
             readonly property real d: on ? 342 * Y.u : 296 * Y.u
-            width: on ? 342 * Y.u : 296 * Y.u
+            width: 296 * Y.u                   // the focused one grows past its cell (the next one stays put)
             height: list.height
-            Behavior on width { NumberAnimation { duration: 140 } }
             Item {
                 id: face
                 width: cell.d; height: cell.d
@@ -136,7 +145,7 @@ FocusScope {
                     visible: cell.add
                     anchors { fill: parent; margins: cell.on && page.area === "row" ? 8 * Y.u : 0 }
                     radius: width / 2
-                    color: "#33ffffff"
+                    color: "#3b272c"                 // opaque: inside the white ring when focused, the plus still shows
                     Rectangle { anchors.centerIn: parent; width: parent.width * 0.3; height: 6 * Y.u; radius: 3 * Y.u; color: Y.text }
                     Rectangle { anchors.centerIn: parent; width: 6 * Y.u; height: parent.height * 0.3; radius: 3 * Y.u; color: Y.text }
                 }
@@ -145,13 +154,13 @@ FocusScope {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 372 * Y.u
                 spacing: 4 * Y.u
-                width: Math.max(cell.width + 40 * Y.u, 340 * Y.u)
+                width: cell.width                // names ellipsized to the tile
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     text: cell.add ? "Add account" : cell.p.name || ""
                     color: cell.on ? Y.text : "#c9c4c6"
-                    font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: cell.on ? Font.Bold : Font.Medium
+                    font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: cell.on ? Font.Bold : Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Text {
@@ -159,14 +168,16 @@ FocusScope {
                     visible: cell.on && !cell.add && !!cell.p.handle
                     horizontalAlignment: Text.AlignHCenter
                     text: cell.p.handle || ""
+                    elide: Text.ElideRight
                     color: "#c9c4c6"
                     font.family: Y.font; font.pixelSize: 24 * Y.u
                 }
                 Text {
                     width: parent.width
-                    visible: cell.on && !cell.add && !!cell.p.premium
+                    visible: cell.on && !cell.add && !!(cell.p.membership || cell.p.premium)
                     horizontalAlignment: Text.AlignHCenter
-                    text: "YouTube Premium"
+                    text: cell.p.membership || "YouTube Premium"
+                    elide: Text.ElideRight
                     color: "#c9c4c6"
                     font.family: Y.font; font.pixelSize: 24 * Y.u
                 }
@@ -187,8 +198,8 @@ FocusScope {
         readonly property bool on: page.area === "guest" && page.activeFocus
         anchors.horizontalCenter: parent.horizontalCenter
         y: 912 * Y.u
-        width: guestT.implicitWidth + 74 * Y.u; height: 72 * Y.u; radius: height / 2
-        color: on ? Y.text : "#33ffffff"
+        width: guestT.implicitWidth + 58 * Y.u; height: 72 * Y.u; radius: height / 2
+        color: on ? Y.text : "#1fffffff"
         Text { id: guestT; anchors.centerIn: parent; text: "Watch as guest"; color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium }
     }
 

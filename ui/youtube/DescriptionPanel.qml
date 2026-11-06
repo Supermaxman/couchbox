@@ -57,7 +57,7 @@ FocusScope {
         Behavior on contentY { NumberAnimation { duration: 160 } }
         Column {
             id: col
-            y: 40 * Y.u
+            y: 35 * Y.u
             width: panel.width
             spacing: 12 * Y.u
             Text {
@@ -65,23 +65,22 @@ FocusScope {
                 text: panel.v.title || ""
                 color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
                 wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
-                lineHeight: 1.1
+                lineHeightMode: Text.FixedHeight; lineHeight: 48 * Y.u
             }
-            Item { width: 1; height: 18 * Y.u }
-            Row {                              // 46K Likes · 2,088,453 Views · Nov 4 2026
-                width: parent.width
+            Item { width: 1; height: 14 * Y.u }
+            Row {                              // 46K Likes · 2,088,453 Views · Nov 4 2026 (188 apart)
+                anchors.horizontalCenter: parent.horizontalCenter
                 Repeater {
-                    model: (panel.d.facts || []).slice(0, 3)
+                    model: (panel.d.facts || []).slice(0, 4)
                     Column {
                         required property var modelData
-                        width: panel.width / Math.max(1, Math.min(3, (panel.d.facts || []).length))
-                        spacing: 6 * Y.u
-                        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.value; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Bold }
-                        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.label; color: Y.dim; font.family: Y.font; font.pixelSize: 23 * Y.u }
+                        width: Math.min(188 * Y.u, panel.width / Math.max(1, Math.min(4, (panel.d.facts || []).length)))
+                        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.value; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Bold; height: 36 * Y.u; verticalAlignment: Text.AlignVCenter }
+                        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: parent.modelData.label; color: Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u; height: 36 * Y.u; verticalAlignment: Text.AlignVCenter }
                     }
                 }
             }
-            Item { width: 1; height: 12 * Y.u }
+            Item { width: 1; height: 10 * Y.u }
             Card {
                 id: chanCard
                 on: panel.index === 0 && panel.activeFocus
@@ -91,7 +90,7 @@ FocusScope {
                     x: 96 * Y.u; width: parent.width - 170 * Y.u
                     anchors.verticalCenter: parent.verticalCenter
                     text: panel.v.channel || ""
-                    color: chanCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium
+                    color: chanCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Icon {
@@ -108,13 +107,15 @@ FocusScope {
                     id: descCol
                     x: 24 * Y.u; y: 24 * Y.u; width: parent.width - 48 * Y.u
                     spacing: 12 * Y.u
-                    Text { text: "Description"; color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Bold }
+                    Text { text: "Description"; color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 24.5 * Y.u; font.weight: Font.Bold }
                     Text {
                         width: parent.width
-                        text: panel.d.text || ""
-                        color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 25 * Y.u
-                        wrapMode: Text.Wrap; maximumLineCount: panel.expanded && panel.index === 1 ? 40 : 3; elide: Text.ElideRight
-                        lineHeight: 1.1
+                        // folded: its first three lines as running text; opened: as written
+                        readonly property bool open: panel.expanded && panel.index === 1
+                        text: open ? panel.d.text || "" : (panel.d.text || "").replace(/\s+/g, " ").trim()
+                        color: descCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u
+                        wrapMode: Text.Wrap; maximumLineCount: open ? 40 : 3; elide: Text.ElideNone   // cut off, no "…"
+                        lineHeightMode: Text.FixedHeight; lineHeight: 33 * Y.u
                     }
                 }
             }
@@ -131,9 +132,9 @@ FocusScope {
                     Text {
                         width: parent.width
                         text: panel.d.summary || ""
-                        color: sumCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 25 * Y.u
-                        wrapMode: Text.WordWrap; maximumLineCount: panel.expanded && panel.index === 2 ? 20 : 3; elide: Text.ElideRight
-                        lineHeight: 1.1
+                        color: sumCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u
+                        wrapMode: Text.WordWrap; maximumLineCount: panel.expanded && panel.index === 2 ? 20 : 3; elide: Text.ElideNone   // cut off, no "…" (YouTube's)
+                        lineHeightMode: Text.FixedHeight; lineHeight: 33 * Y.u
                     }
                 }
                 Icon {
@@ -164,7 +165,7 @@ FocusScope {
                             textFormat: Text.StyledText
                             text: panel.d.teaser ? "<b>" + Y.html(panel.d.teaser.author) + "</b> • " + Y.html(panel.d.teaser.text) : ""
                             color: comCard.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 25 * Y.u
-                            wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                            wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideNone
                         }
                     }
                 }

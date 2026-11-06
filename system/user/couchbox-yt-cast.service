@@ -1,0 +1,10 @@
+[Unit]
+Description=Couchbox: the TV in the YouTube phone app's cast list (DIAL and YouTube's Lounge)
+# couchbox-yt starts it (Settings: Cast from phones); it stays to launch the app for a phone
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-yt-cast
+Restart=on-failure
+RestartSec=15
+Nice=5
+MemoryMax=120M

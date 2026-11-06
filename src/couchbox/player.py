@@ -26,7 +26,7 @@ import time
 import weakref
 
 import mpv
-from PySide6.QtCore import Property, Qt, Signal, Slot
+from PySide6.QtCore import Property, Qt, QTimer, Signal, Slot
 from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat
 from PySide6.QtQuick import QQuickFramebufferObject
 
@@ -58,6 +58,22 @@ _egl.eglGetProcAddress.argtypes = [ctypes.c_char_p]
 _FenceSyncFn = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint)
 _DeleteSyncFn = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 _gl = {"fence": None, "delete": None, "last": None}
+
+# glibc keeps memory freed by mpv's threads (each video's packets and frames) in per-thread
+# arenas, fragmented, rather than giving it back: measured, a player's resident memory grew
+# from 224 to 395 MB over 8 videos. Fewer arenas, and a trim as each new file starts: it
+# stays at ~210-320.
+try:
+    _libc = ctypes.CDLL("libc.so.6")
+    _libc.mallopt(-8, 2)  # M_ARENA_MAX (for arenas made from now on)
+except (OSError, AttributeError):
+    _libc = None
+
+
+def _trim():
+    """Give the memory freed since back to the system (in a thread: it can take a while)."""
+    if _libc is not None:
+        threading.Thread(target=_libc.malloc_trim, args=(0,), daemon=True).start()
 
 
 def _fence_sync(condition, flags):
@@ -101,7 +117,13 @@ FAST = {
     "sigmoid-upscaling": "no",
     "hdr-compute-peak": "no",
 }
+_DEBUG = bool(os.environ.get("COUCHBOX_MPV_LOG"))  # also: what draws after a seek (MpvVideo._debug)
 _players = weakref.WeakSet()
+# Seeks to the keyframe at or before the spot (COUCHBOX_MPV_KEYFRAME_SEEKS=1, the YouTube app): a
+# precise one decodes from that keyframe up to the second asked for, in software on the Pi
+# (H.264): 1.5-2 s more for a resumed start or a 10 s skip. Back to 0 stays exact.
+KEYFRAMES = os.environ.get("COUCHBOX_MPV_KEYFRAME_SEEKS") == "1"
+TIMING = None  # an app's timing hook (couchbox-yt: yttiming.note): how long a file takes to show
 _live = {}  # the playback settings (playback.LIVE), followed while the app runs
 
 
@@ -151,9 +173,17 @@ class _Renderer(QQuickFramebufferObject.Renderer):
     def render(self):
         if self.ctx is None:
             self.ctx = mpv.MpvRenderContext(self.item.mpv, "opengl", opengl_init_params={"get_proc_address": _proc_fn})
-            self.ctx.update_cb = self.item.frameReady.emit
+            self.ctx.update_cb = self.item._on_update
         fbo = self.framebufferObject()
         _gl["last"] = None
+        # render.h: mpv_render_context_update() after each update callback, before rendering
+        new = self.ctx.update()
+        self.item._debug(f"render {fbo.width()}x{fbo.height()} new-frame={new}")
+        it = self.item
+        if TIMING and new and it._t_loaded:  # the file's first picture
+            t = time.monotonic()
+            TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000), start=it._t_start)
+            it._t_load = it._t_loaded = 0.0
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
         _drop_frame_fence()
         if QQuickOpenGLUtils:
@@ -189,14 +219,17 @@ class MpvVideo(QQuickFramebufferObject):
             # local playlists (nebula.py writes one with the streams it picked) may
             # point at https segments
             demuxer_lavf_o="protocol_whitelist=[file,http,https,tcp,tls,crypto,data]",
+            # HTTP: an app's own options (COUCHBOX_MPV_HTTP, ffmpeg's: the YouTube app's ranged requests)
+            **({"stream_lavf_o": os.environ["COUCHBOX_MPV_HTTP"]} if os.environ.get("COUCHBOX_MPV_HTTP") else {}),
             keep_open="yes",
             idle="yes",
             osc="no",
+            osd_bar="no",  # the apps draw their own progress bars (mpv's showed on seeks, mid-screen)
             input_default_bindings="no",
             ytdl="no",
             cache="yes",
-            demuxer_max_bytes="120MiB",
-            demuxer_max_back_bytes="30MiB",
+            demuxer_max_bytes=(os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0],
+            demuxer_max_back_bytes=(os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[-1],
             hls_bitrate="max",
             sub_auto="no",
             slang="en,eng",
@@ -212,6 +245,22 @@ class MpvVideo(QQuickFramebufferObject):
             if os.environ.get("COUCHBOX_MPV_LOG")
             else None,
         )
+        if os.environ.get("COUCHBOX_MPV_SUB_BOX") == "1":  # an app's caption look (the YouTube app): on a 75% black box
+            try:
+                self.mpv["sub-border-style"] = "background-box"
+                self.mpv["sub-back-color"] = "#BF000000"
+                self.mpv["sub-shadow-offset"] = 0
+            except Exception:  # noqa: BLE001  (an mpv without these: as before)
+                pass
+        self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)
+        self._t_load = 0.0  # loadfile (TIMING): until the file is loaded, then its first picture
+        self._t_loaded = 0.0
+        self._t_start = 0
+        self._loads = 0  # files loaded (loadWith)
+        self._preloaded = None  # (url, start) of the file preload() opened, paused
+        self._rate_was = True
+        self._mute_was = False
+        self._pos_pending = False  # a position update is due (they're passed on 10 times a second)
         self._pos = 0.0
         self._dur = 0.0
         self._paused = False
@@ -243,6 +292,11 @@ class MpvVideo(QQuickFramebufferObject):
         for name in ("time-pos", "duration", "pause", "paused-for-cache", "eof-reached", "track-list", "sid"):
             self.mpv.observe_property(name, lambda n, v: self._prop.emit(n, v))
 
+        @self.mpv.event_callback("file-loaded")
+        def _loaded(ev):
+            if self._t_load and not self._t_loaded:
+                self._t_loaded = time.monotonic()
+
         @self.mpv.event_callback("end-file")
         def _end(ev):
             # reason 4 is an error (0 EOF, 2 stop, 3 quit, 5 redirect)
@@ -254,11 +308,28 @@ class MpvVideo(QQuickFramebufferObject):
         self._renderer = _Renderer(self)  # kept alive for Qt Quick (it owns it in C++)
         return self._renderer
 
+    @Slot()
+    def _quiet(self):
+        try:
+            self.mpv["msg-level"] = "all=warn"
+        except Exception:  # noqa: BLE001
+            pass
+
+    @Slot()
+    def _emit_pos(self):
+        self._pos_pending = False
+        self.positionChanged.emit()
+
     @Slot(str, object)
     def _on_prop(self, name, value):
         if name == "time-pos":
+            # every frame's position, passed on at most every 100 ms (each one re-evaluates the
+            # player's clock, bar and SponsorBlock check: dozens a second while a start decodes)
             self._pos = float(value or 0)
-            self.positionChanged.emit()
+            if not self._pos_pending:
+                self._pos_pending = True
+                QTimer.singleShot(100, self._emit_pos)
+            self._debug("time-pos")
         elif name == "duration":
             self._dur = float(value or 0)
             self.durationChanged.emit()
@@ -331,14 +402,27 @@ class MpvVideo(QQuickFramebufferObject):
     @Slot(str, float, str)
     def loadWith(self, url, start, options):
         """load() with mpv options for this file only, in mpv's syntax ("a=1,b=%5%x,y,z"): the
-        YouTube app gives a live stream's sound as audio-file=%LEN%URL."""
+        YouTube app gives a live stream's sound as audio-file=%LEN%URL. The file preload() has
+        ready: it just plays (from start)."""
+        if self._preloaded and self._preloaded[0] == url:
+            return self._play_preloaded(start)
+        self._cancel_preload()
         self._live_cam = False
         self._ended = False
         self._error = ""
         self.endedChanged.emit()
-        opts = [f"start={int(start)}"] if start > 0 else []
+        opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
+        self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)
+        self._loads += 1
+        if TIMING and _DEBUG:  # what mpv does while it opens the file (connecting, reading, probing): 4 s of it
+            try:
+                self.mpv["msg-level"] = "all=warn,cplayer=v,stream=v,demux=v,ffmpeg=v,lavf=v"
+                QTimer.singleShot(4000, self._quiet)
+            except Exception:  # noqa: BLE001
+                pass
+        QTimer.singleShot(2000, _trim)  # the file before's buffers, freed by now
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 
@@ -351,6 +435,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._error = ""
         self.endedChanged.emit()
         opts = "cache=no,demuxer-readahead-secs=0,demuxer-lavf-analyzeduration=0.5,demuxer-lavf-probesize=65536,video-latency-hacks=yes"
+        self._loads += 1
         self.mpv.command("loadfile", url, "replace", -1, opts)
         self.mpv.pause = False
 
@@ -384,32 +469,202 @@ class MpvVideo(QQuickFramebufferObject):
     def setPaused(self, p):
         self.mpv.pause = p
 
+    @Slot(result=bool)
+    def toggleMute(self):
+        """Sound off or on again (a keyboard's M); returns whether it's off now."""
+        try:
+            self.mpv.mute = not self.mpv.mute
+            return bool(self.mpv.mute)
+        except Exception:  # noqa: BLE001
+            return False
+
     @Slot(float)
     def seek(self, delta):
+        # back past the start: to 0 exactly (a relative seek before the start of a stream made of
+        # a video and a sound track, the YouTube app's EDL, can leave no picture while paused)
         try:
-            self.mpv.command("seek", delta, "relative+exact" if abs(delta) < 15 else "relative")
+            if self._pos + delta < 0.5:
+                self.mpv.command("seek", 0, "absolute+exact")
+            else:
+                exact = "relative+keyframes" if KEYFRAMES else "relative+exact"
+                self.mpv.command("seek", delta, exact if abs(delta) < 15 else "relative+keyframes" if KEYFRAMES else "relative")
         except Exception:
             pass
+        self._after_seek(f"seek {delta:+g} from {self._pos:.1f}")
 
     @Slot(float)
     def seekTo(self, pos):
         try:
-            self.mpv.command("seek", pos, "absolute")
+            self.mpv.command("seek", pos, "absolute+keyframes" if KEYFRAMES else "absolute")
         except Exception:
             pass
+        self._after_seek(f"seek to {pos:.1f} from {self._pos:.1f}")
+
+    def _after_seek(self, what):
+        """Paused, nothing plays on to draw the new picture: ask Qt to draw it again a few times
+        while mpv decodes it (the TV showed black after a paused seek). COUCHBOX_MPV_LOG=1: log
+        what happens for the next 4 s (mpv's update calls, our renders, the position)."""
+        self._dbg_until = time.monotonic() + 4
+        self._debug(f"{what} paused={self._paused}")
+        if self._paused:
+            for ms in (60, 200, 450, 900, 1600, 2500):
+                QTimer.singleShot(ms, self.update)
+
+    def _on_update(self):
+        """mpv's render update callback (from mpv's thread): Qt draws the next frame."""
+        self._debug("update-cb")
+        self.frameReady.emit()
+
+    def _debug(self, msg):
+        if _DEBUG and time.monotonic() < self._dbg_until:
+            print(f"mpv-debug {time.monotonic():.3f} pos={self._pos:.2f} {msg}", flush=True)
 
     @Slot(int)
     def setSubtitle(self, sid):
         self.mpv.sid = sid if sid > 0 else "no"
+
+    @Slot(str)
+    def setRatePolicy(self, policy):
+        """An app's frame rate matching: "off", "film" (24 and 25 fps films only) or "always"
+        (the default, for the apps that don't say)."""
+        self._rate.set_policy(policy)
+
+    @Slot(bool)
+    def setRateHold(self, on):
+        """An app's player is open (on) or closed: while open, the TV keeps its rate between
+        videos; closed, Settings' mode comes back a few seconds later."""
+        self._rate.set_hold(on)
+
+    @Slot(result=float)
+    def cacheTime(self):
+        """How far mpv has read ahead (demuxer-cache-time, the video's seconds; 0 when nothing)."""
+        try:
+            return float(self.mpv.demuxer_cache_time or 0)
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    @Slot(bool)
+    def setSubtitleShown(self, on):
+        """Captions shown (or kept, hidden, under something drawn over them)."""
+        try:
+            self.mpv.sub_visibility = bool(on)
+        except Exception:  # noqa: BLE001
+            pass
 
     @Slot(int)
     def setSubtitlePosition(self, percent):
         """Where subtitles sit (100: the bottom); raised while the controls are showing."""
         self.mpv.sub_pos = max(0, min(150, percent))
 
+    @Slot(result=str)
+    def subText(self):
+        """The caption on screen now ("" when none): the box check's proof that captions show."""
+        try:
+            return str(self.mpv.sub_text or "")[:200]
+        except Exception:  # noqa: BLE001
+            return ""
+
+    # ---------------------------------------------------------------- one file ready to play
+    PRELOAD_CACHE = "4MiB"  # what's read ahead of a preloaded file (no more: it may never play)
+
+    @Slot(result=str)
+    def videoInfo(self):
+        """What mpv decodes now: "1920x1080@24 h264" ("" when nothing): checks and reports."""
+        try:
+            vp = self.mpv.video_params or {}
+            fps = self.mpv.container_fps or self.mpv.estimated_vf_fps or 0
+            if not vp.get("w"):
+                return ""
+            return f"{vp.get('w')}x{vp.get('h')}@{round(fps)} {self.mpv.video_codec or ''}".strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    @Slot(str, float, str)
+    def preload(self, url, start, options):
+        """Open url (paused, muted, from start, reading little ahead), so loadWith() of the same
+        url only has to play it: the YouTube app's focused card, before OK. The TV's refresh rate
+        isn't followed meanwhile. One file at most; a real load replaces it."""
+        if self._preloaded and self._preloaded[0] == url:
+            return
+        if not self._preloaded and not self._ended and not self._paused and self._pos > 0:
+            return  # something plays: leave it
+        if not self._preloaded:
+            self._rate.suspend(True)  # (not looked at, and the TV not put back for it either)
+            try:
+                self._mute_was = bool(self.mpv.mute)
+            except Exception:  # noqa: BLE001
+                self._mute_was = False
+        opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
+        opts += ["pause=yes", "mute=yes", f"demuxer-max-bytes={self.PRELOAD_CACHE}"]
+        if options:
+            opts.append(options)
+        try:
+            self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
+            self._preloaded = (url, float(start))
+            self._loads += 1
+        except Exception:  # noqa: BLE001
+            self._preloaded = None
+
+    @Slot()
+    def cancelPreload(self):
+        self._cancel_preload(stop=True)
+
+    def _cancel_preload(self, stop=False):
+        if not self._preloaded:
+            return
+        self._preloaded = None
+        self._rate.suspend(False)
+        if stop:
+            try:
+                self.mpv.command("stop")
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _play_preloaded(self, start):
+        _, at = self._preloaded
+        self._preloaded = None
+        self._ended = False
+        self._error = ""
+        self.endedChanged.emit()
+        self._t_load, self._t_loaded, self._t_start = time.monotonic(), time.monotonic(), int(start)
+        try:
+            self.mpv["demuxer-max-bytes"] = (os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0]
+            self.mpv.mute = self._mute_was
+            if abs(start - at) > 5:
+                self.mpv.command("seek", start, "absolute+keyframes" if KEYFRAMES else "absolute")
+            self.mpv.pause = False
+        except Exception:  # noqa: BLE001
+            pass
+        self._rate.suspend(False)
+        self.frameReady.emit()
+
+    @Slot()
+    def warmUp(self):
+        """A moment of black and silence, muted, while nothing plays: mpv's video output and render
+        context, its decoders and the sound output made before the first real video needs them
+        (its first open on the box took 1.1 s, later ones ~0.26)."""
+        a = "av://lavfi:anullsrc=d=0.5"
+        try:
+            self.mpv.command("loadfile", "av://lavfi:color=c=black:s=16x16:r=10:d=0.5", "replace", -1, f"audio-file=%{len(a)}%{a},mute=yes")
+            self.mpv.pause = False
+            self._warm_at = self._loads
+            QTimer.singleShot(2500, self._warm_done)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @Slot()
+    def _warm_done(self):
+        if self._loads == getattr(self, "_warm_at", -1):  # (no real video since)
+            try:
+                self.mpv.command("stop")
+            except Exception:  # noqa: BLE001
+                pass
+
     @Slot()
     def stop(self):
+        self._cancel_preload()
         self.mpv.command("stop")
+        QTimer.singleShot(1000, _trim)
 
     @Slot()
     def shutdown(self):

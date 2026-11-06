@@ -162,6 +162,11 @@ shot yt-player-description-back couchbox-yt --open video:demo0000003 --keys left
 shot yt-player-related-up couchbox-yt --open video:demo0000003 --keys down,up
 shot yt-shorts-tab couchbox-yt --keys left,down,ok
 shot yt-library-guest couchbox-yt --profile guest --open library
+# ... M4: Settings' SponsorBlock rows (switches), the player skipping a sponsor (the notice, OK to
+# undo) and the bar with the segments in SponsorBlock's colours
+shot yt-settings-sponsorblock couchbox-yt --open settings --keys down,down,down,ok
+shot yt-player-sponsor-skip couchbox-yt --open video:demo0000003@1799 --keys wait:3
+shot yt-player-segments couchbox-yt --open video:demo0000003@1700 --keys up
 # focus at the edges: the first, last and bottom cards and rows (each shot also fails if a
 # focused card grows past whatever clips it)
 d13=down,down,down,down,down,down,down,down,down,down,down,down,down

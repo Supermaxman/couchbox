@@ -11,6 +11,8 @@ FocusScope {
     property var items: []                     // [{id, thumb, color}]
     property string more: ""
     property int index: 0
+    property string problem: ""                // nothing to play: why
+    property int emptyTries: 0                 // batches in a row with no new Shorts
     property var info: ({})                    // the current Short's title, channel... (short)
     property var nextInfo: ({})
     property var s: null                       // its stream
@@ -20,8 +22,9 @@ FocusScope {
     readonly property var cur: items[index] || ({})
     readonly property string label: info.title || "Shorts"
     readonly property bool watching: !!s && !video.paused
-    readonly property rect place: Qt.rect(596 * Y.u, 8 * Y.u, 604 * Y.u, 1064 * Y.u)
+    readonly property rect place: Qt.rect(592 * Y.u, 8 * Y.u, 609 * Y.u, 1064 * Y.u)
     readonly property string videoId: cur.id || ""
+    function focusDetail() { return {videoId: videoId, index: index, area: area}; }
     signal closed()
 
     Component.onCompleted: {
@@ -30,14 +33,20 @@ FocusScope {
         loadMore();
     }
     Component.onDestruction: { Y.videoRect = Qt.rect(0, 0, 0, 0); video.stop(); }
+    // A batch can come back empty with more to follow (signed in, the first one often does): ask
+    // again a few times before saying there's nothing.
     function loadMore() {
         Y.call("shorts", {token: more}, r => {
+            if (!page) return;
             const add = (r.items || []).filter(x => !items.some(y => y.id === x.id));
             items = items.concat(add);
             more = r.more || "";
+            emptyTries = add.length ? 0 : emptyTries + 1;
             if (!s && items.length) play(0);
+            else if (!items.length && more && emptyTries < 4) loadMore();
+            else if (!items.length) problem = "No Shorts to show right now.";
             fetchNext();
-        }, e => { if (!items.length) Y.toast(e); });
+        }, e => { if (page && !items.length) problem = e; });
     }
     function play(i) {
         if (i < 0 || i >= items.length) return;
@@ -45,15 +54,16 @@ FocusScope {
         s = null;
         info = {};
         const id = items[i].id;
-        Y.call("stream", {id: id}, r => { if (page.videoId !== id) return; page.s = r; video.loadWith(r.url, 0, "loop-file=inf"); });
-        Y.call("short", {id: id}, r => { if (page.videoId === id) page.info = r; }, () => {});
+        Y.call("stream", {id: id}, r => { if (!page || page.videoId !== id) return; page.s = r; video.loadWith(r.url, 0, "loop-file=inf"); });
+        Y.call("short", {id: id}, r => { if (page && page.videoId === id) page.info = r; }, () => {});
         fetchNext();
         if (items.length - i < 4 && more) loadMore();
     }
     function fetchNext() {
         const n = items[index + 1];
         nextInfo = {};
-        if (n) Y.call("short", {id: n.id}, r => { if (page.items[page.index + 1] && page.items[page.index + 1].id === n.id) page.nextInfo = r; }, () => {});
+        if (n) Y.call("prefetch", {id: n.id}, () => {}, () => {});          // Down plays it: its stream now
+        if (n) Y.call("short", {id: n.id}, r => { if (page && page.items[page.index + 1] && page.items[page.index + 1].id === n.id) page.nextInfo = r; }, () => {});
     }
 
     Keys.onPressed: e => {
@@ -80,11 +90,11 @@ FocusScope {
         if (side === 0) {
             if (!Y.signedIn) return Y.toast("Sign in to subscribe: the guide's picture, then Add account.");
             const on = !info.subscribed;
-            Y.call("subscribe", {id: info.channelId, on: on}, () => { page.info = Object.assign({}, page.info, {subscribed: on}); });
+            Y.call("subscribe", {id: info.channelId, on: on}, () => { if (page) page.info = Object.assign({}, page.info, {subscribed: on}); });
         } else if (side === 1) {
             if (!Y.signedIn) return Y.toast("Sign in to like Shorts.");
             const now = info.like === "like" ? "none" : "like";
-            Y.call("like", {id: videoId, status: now}, () => { page.info = Object.assign({}, page.info, {like: now}); });
+            Y.call("like", {id: videoId, status: now}, () => { if (page) page.info = Object.assign({}, page.info, {like: now}); });
         } else if (side === 2) Y.toast("Comments on Shorts come in a later update.");
         else if (side === 3) Y.toast("Remixing isn't on TVs.");
         else Y.toast("More options come in a later update.");
@@ -104,10 +114,16 @@ FocusScope {
             x: modelData.x; y: modelData.y; width: modelData.width; height: Math.max(0, modelData.height)
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: index === 1 ? Qt.darker(page.tint, 1.15) : index === 0 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
-                GradientStop { position: 1; color: index === 0 ? Qt.darker(page.tint, 1.15) : index === 1 ? Qt.darker(page.tint, 2.4) : Qt.darker(page.tint, 1.15) }
+                GradientStop { position: 0; color: index === 1 ? Qt.lighter(page.tint, 1.07) : index === 0 ? Qt.darker(page.tint, 1.5) : Qt.lighter(page.tint, 1.07) }
+                GradientStop { position: 1; color: index === 0 ? Qt.lighter(page.tint, 1.07) : index === 1 ? Qt.darker(page.tint, 1.5) : Qt.lighter(page.tint, 1.07) }
             }
         }
+    }
+    Corners {                                  // the ambient colour into the frame's rounded corners
+        x: page.place.x - 8 * Y.u; y: page.place.y - 8 * Y.u
+        width: page.place.width + 16 * Y.u; height: page.place.height + 16 * Y.u
+        r: 36 * Y.u
+        color: Qt.lighter(page.tint, 1.07)
     }
     Rectangle {                                // the frame (white with the focus)
         id: frame
@@ -116,7 +132,7 @@ FocusScope {
         radius: 36 * Y.u
         color: "transparent"
         border.width: 8 * Y.u
-        border.color: page.area === "video" && page.activeFocus ? Y.text : "#7a6f69"
+        border.color: page.area === "video" && page.activeFocus ? Y.text : "#717171"   // (unfocused: grey, as YouTube's)
     }
     Rectangle {                                // while it starts: its picture (or its colours, the demo)
         x: page.place.x; y: page.place.y; width: page.place.width; height: page.place.height
@@ -135,7 +151,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             visible: !page.s && !page.cur.thumb
-            text: page.items.length ? "Loading…" : "Finding Shorts…"
+            text: page.problem || (page.items.length ? "Loading…" : "Finding Shorts…")
             color: Y.dim; font.family: Y.font; font.pixelSize: 30 * Y.u
         }
     }
@@ -147,47 +163,54 @@ FocusScope {
     }
 
     Column {                                   // the right: title, next, channel, Subscribe, buttons
-        x: 1286 * Y.u
+        x: 1278 * Y.u
         width: 580 * Y.u
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 96 * Y.u
-        spacing: 34 * Y.u
+        spacing: 0                             // (the rows' middles 102 apart, as YouTube's: 650, 752, 854, 948)
         Text {
             width: parent.width
             text: page.info.title || ""
-            color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
+            color: Y.text; font.family: Y.font; font.pixelSize: 32 * Y.u; font.weight: Font.Bold
+            lineHeightMode: Text.FixedHeight; lineHeight: 48 * Y.u
             wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
-            lineHeight: 1.12
         }
+        Item { width: 1; height: 34 * Y.u }
         Row {
             visible: !!page.nextInfo.title
+            height: 40 * Y.u
+            x: 7 * Y.u                         // (YouTube's sits a little right of the title)
             spacing: 22 * Y.u
             Icon { name: "play"; size: 40 * Y.u; color: Y.text; anchors.verticalCenter: parent.verticalCenter }
             Text { width: 500 * Y.u; text: page.nextInfo.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter }
         }
+        Item { width: 1; height: 55 * Y.u }
         Row {
+            height: 54 * Y.u
             spacing: 18 * Y.u
             RoundImage { width: 54 * Y.u; height: width; source: page.info.avatar || ""; fallback: page.info.handle ? page.info.handle.slice(1) : ""; anchors.verticalCenter: parent.verticalCenter }
             Text { text: page.info.handle || ""; color: Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
         }
+        Item { width: 1; height: 39 * Y.u }
         Rectangle {                            // Subscribe / Subscribed
             readonly property bool on: page.area === "side" && page.side === 0 && page.activeFocus
             width: subRow.implicitWidth + 44 * Y.u; height: 72 * Y.u; radius: height / 2
-            x: -22 * Y.u
+            x: -13 * Y.u
             color: on ? Y.text : "transparent"
             Row {
                 id: subRow
                 anchors.centerIn: parent
-                spacing: 22 * Y.u
+                spacing: 26 * Y.u
                 Icon { name: page.info.subscribed ? "check" : "plus"; size: 38 * Y.u; color: parent.parent.on ? Y.ink : Y.text; anchors.verticalCenter: parent.verticalCenter }
                 Text { text: page.info.subscribed ? "Subscribed" : "Subscribe"; color: parent.parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
             }
         }
+        Item { width: 1; height: 22 * Y.u }
         Row {
-            x: -14 * Y.u
+            x: -8 * Y.u
             spacing: 24 * Y.u
             Repeater {
-                model: [page.info.like === "like" ? "heart-filled" : "heart", "comments", "remix", "more"]
+                model: [page.info.like === "like" ? "heart-filled" : "heart", "comments-round", "remix", "more"]
                 CtlButton {
                     required property string modelData
                     required property int index

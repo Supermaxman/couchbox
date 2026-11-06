@@ -10,6 +10,7 @@ FocusScope {
     property string problem: ""
     property bool loaded: false
     readonly property string label: title
+    function focusDetail() { return {browseId: browseId, loaded: loaded, rows: feed.count, problem: problem}; }
     signal closed()
     Component.onCompleted: Y.call("browse", {id: browseId}, r => {
         loaded = true;
@@ -25,7 +26,7 @@ FocusScope {
         height: 72 * Y.u
         verticalAlignment: Text.AlignVCenter
         text: page.title
-        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.titleFont; font.pixelSize: 44 * Y.titleScale * Y.u; font.weight: Font.Bold
     }
     Feed {
         id: feed
@@ -34,7 +35,7 @@ FocusScope {
         height: parent.height - y
         perRow: 3
         focus: true
-        onOpen: it => Y.open(it)
+        onOpen: it => Y.playList(feed.itemsAfter(it), it)      // the list's next videos after it
     }
     Text {
         visible: !!page.problem

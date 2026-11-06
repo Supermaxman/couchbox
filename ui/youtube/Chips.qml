@@ -43,7 +43,7 @@ FocusScope {
                 anchors.centerIn: parent
                 text: parent.modelData
                 color: parent.on ? Y.ink : Y.text
-                font.family: Y.font; font.pixelSize: 28 * Y.u; font.weight: Font.Medium
+                font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium   // (YouTube's: about 22-24 px)
             }
         }
     }

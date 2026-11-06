@@ -16,13 +16,22 @@ FocusScope {
     property real bottomRoom: 0
     property real cardW: Y.cardW
     property real metaSize: Y.tMeta              // the cards' grey lines (search results: 22)
+    property bool dimIdle: false                 // the headers grey while the focus is elsewhere on the page
     property bool fixed: false
     property int perRow: 3                   // a grid (History, Watch later) in rows of this many
+    property real rowGap: 50 * Y.u               // between rows
     property bool gridScroll: false          // its rows scroll under the focus like shelves (Subscriptions)
     property bool gridMore: false            // "more" continues a grid (items), not the page (shelves)
     property real topRoom: 12 * Y.u              // room above the current row (its focus ring)
     signal atTop()
     signal open(var item)
+    // the cards after this one, through the following rows (a playlist's order)
+    function itemsAfter(it) {
+        const all = [];
+        for (const r of rows) for (const x of r.items || []) all.push(x);
+        const i = all.findIndex(x => x.id === it.id);
+        return i < 0 ? [] : all.slice(i + 1);
+    }
     // the focus goes down to the current row's cards: a row hidden meanwhile (the player's, while
     // a panel or the bar was up) can have lost its place in the chain, and keys then went nowhere
     onActiveFocusChanged: if (activeFocus) Qt.callLater(focusRow)
@@ -59,8 +68,8 @@ FocusScope {
         focus: true
         clip: true
         model: feed.rows
-        spacing: 50 * Y.u
-        cacheBuffer: Math.round(1600 * Y.u)
+        spacing: feed.rowGap
+        cacheBuffer: Math.round(700 * Y.u)     // rows kept made off screen (each with its pictures): a little
         highlightRangeMode: ListView.StrictlyEnforceRange
         preferredHighlightBegin: feed.topRoom
         preferredHighlightEnd: feed.topRoom + 200 * Y.u
@@ -95,6 +104,7 @@ FocusScope {
                     baseW: feed.cardW
                     fixed: feed.fixed || !!cell.modelData.fixedRow
                     metaSize: feed.metaSize
+                    dim: feed.dimIdle && !feed.activeFocus
                     focus: true
                     onOpen: it => feed.open(it)
                 }
@@ -110,7 +120,7 @@ FocusScope {
             }
             Component {
                 id: tilesC
-                Tiles { tiles: cell.modelData.tiles || []; indent: feed.indent; focus: true }
+                Tiles { tiles: cell.modelData.tiles || []; indent: feed.indent; focus: true; room: Math.max(0, 95 * Y.u - feed.rowGap) }
             }
             Component {
                 id: nudgeC
@@ -125,6 +135,7 @@ FocusScope {
         loading = true;
         const token = more;
         Y.call("more", {token: token}, r => {
+            if (!feed) return;                 // (gone meanwhile: its page was left)
             loading = false;
             if (more !== token) return;
             const i = list.currentIndex;
@@ -137,6 +148,6 @@ FocusScope {
             more = r.more || "";
             list.currentIndex = i;
             list.positionViewAtIndex(i, ListView.Beginning);
-        }, () => loading = false);
+        }, () => { if (feed) feed.loading = false; });
     }
 }

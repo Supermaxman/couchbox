@@ -17,6 +17,7 @@ FocusScope {
     property real baseW: Y.cardW
     property bool fixed: false                // a row that doesn't scroll (the player's rows of three)
     property real metaSize: Y.tMeta
+    property bool dim: false                  // the header grey (the guide open, the focus elsewhere)
     readonly property real cardW: row.hero ? 288 * Y.u : grow && current ? Y.bigW : baseW
     readonly property bool hasHead: !row.hero && !!(row.title || row.pill)    // a hero's title is the focused card's
     readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 106 : 70) * Y.u : 0) + (row.hero ? 468 * Y.u : 0)
@@ -34,11 +35,15 @@ FocusScope {
     Column {
         visible: !!shelf.row.hero
         x: shelf.indent
-        y: (shelf.hasHead ? 70 * Y.u : 0) + 180 * Y.u
+        // its foot 74 above the row: a title without badges or a synopsis sits down by the row
+        y: (shelf.hasHead ? 70 * Y.u : 0) + 468 * Y.u - 74 * Y.u - height
         width: shelf.width - shelf.indent - 280 * Y.u
-        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 56 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
-        Item { width: 1; height: 14 * Y.u }
+        Text { text: shelf.focused.title || ""; color: Y.text; font.family: Y.font; font.pixelSize: 48 * Y.u; font.weight: Font.Bold; elide: Text.ElideRight; width: parent.width; height: 66 * Y.u; verticalAlignment: Text.AlignVCenter }
+        readonly property bool hasLine: !!((shelf.focused.lines || [])[0] || (shelf.focused.badges || []).length)
+        readonly property bool hasText: (shelf.focused.lines || []).length > 1
+        Item { width: 1; height: 14 * Y.u; visible: parent.hasLine }
         Row {
+            visible: parent.hasLine
             height: 34 * Y.u
             spacing: 8 * Y.u
             Text { text: (shelf.focused.lines || [])[0] || ""; color: Y.dim; font.family: Y.font; font.pixelSize: 24 * Y.u; height: parent.height; verticalAlignment: Text.AlignVCenter }
@@ -53,8 +58,9 @@ FocusScope {
                 }
             }
         }
-        Item { width: 1; height: 20 * Y.u }
+        Item { width: 1; height: 20 * Y.u; visible: parent.hasText }
         Text {
+            visible: parent.hasText
             width: Math.min(parent.width, 830 * Y.u)
             text: (shelf.focused.lines || []).slice(1).join(" • ")
             color: Y.text; font.family: Y.font; font.pixelSize: 28 * Y.u
@@ -69,7 +75,8 @@ FocusScope {
         visible: !shelf.row.pill && shelf.hasHead
         Text {
             text: shelf.row.title || ""
-            color: Y.dimmed ? Y.dim : Y.text
+            // the current row's white; the others' (and all with the guide open) grey
+            color: Y.dimmed || shelf.dim ? Y.dim : shelf.current ? Y.text : "#b7b7b7"
             font.family: Y.font; font.pixelSize: Y.tShelf; font.weight: Font.Medium
             height: 36 * Y.u
         }
@@ -119,7 +126,7 @@ FocusScope {
         id: list
         y: shelf.headH
         width: parent.width
-        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 201) * Y.u
+        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 198) * Y.u
         orientation: ListView.Horizontal
         spacing: Y.gap
         clip: false
@@ -173,12 +180,13 @@ FocusScope {
         loading = true;
         const token = row.more;
         Y.call("more", {token: token}, r => {
+            if (!shelf) return;                // (gone meanwhile: its row was rebuilt or left)
             loading = false;
             if (row.more !== token) return;
             const i = list.currentIndex;
             row = Object.assign({}, row, {items: (row.items || []).concat(r.items || []), more: r.more || ""});
             list.currentIndex = i;
             list.positionViewAtIndex(i, ListView.Beginning);
-        }, () => loading = false);
+        }, () => { if (shelf) shelf.loading = false; });
     }
 }

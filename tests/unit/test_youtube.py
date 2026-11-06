@@ -370,7 +370,13 @@ def test_guest_searches_are_remembered(tmp_path):
     for q in ("paper", "trail", "Paper", " "):
         y.remember_search(q)
     assert y.searches() == ["Paper", "trail"]
-    assert (tmp_path / "searches.json").stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "searches-guest.json").stat().st_mode & 0o777 == 0o600
+    # an account's are its own (a guest never sees them, nor the account a guest's)
+    y.profile = {"id": "acct:", "account": "acct"}
+    assert y.searches() == []
+    y.remember_search("private")
+    y.profile = {}
+    assert y.searches() == ["Paper", "trail"]
 
 
 def test_guest_home_fills_from_the_tabs(monkeypatch, tmp_path):
@@ -456,7 +462,7 @@ def test_playable_live_plays_the_video_playlist_with_its_sound():
     ]
     out = S.playable({"formats": live, "live_status": "is_live"})
     assert out["live"] and out["url"] == "https://media.example/270"
-    assert out["opts"] == "audio-file=%25%https://media.example/234" and out["acodec"] == ""
+    assert out["opts"] == "audio-file=%25%https://media.example/234,force-seekable=yes" and out["acodec"] == ""
 
 
 def test_formats_that_play_now_beat_ones_waiting_out_ads():
@@ -487,7 +493,7 @@ def test_resolve_reports_chapters_and_portrait(monkeypatch):
         "chapters": [{"start_time": 0, "title": "Start"}, {"start_time": 30, "title": "Middle"}, {"start_time": 40}],
         "formats": [fmt("18", "avc1.42001E", "mp4a.40.2", 1920, 30, width=1080)],
     }
-    monkeypatch.setattr(S, "extract", lambda vid: info)
+    monkeypatch.setattr(S, "extract", lambda vid, phases=None, visitor="": info)
     out = S.resolve("vid00000018")
     assert out["portrait"] and out["chapters"] == [{"start": 0.0, "title": "Start"}, {"start": 30.0, "title": "Middle"}]
     assert out["url"] == "https://media.example/18" and out["title"] == "Tall"

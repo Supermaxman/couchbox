@@ -11,6 +11,9 @@ Sources, each only while its app is on the home row (as couchboxd last wrote it,
   nebula          its Continue Watching and search (nebula.py)
   twitch          followed channels live now (signed in), and channel / category search (twitch.py)
   movies          search only: TMDB through Seerr or a TMDB key (movies.py)
+  youtube-beta    Couchbox's own YouTube app (couchbox-yt, the YouTube (beta) tile): the part-watched
+                  videos of its History, as the profile it last watched as (its own sign-in,
+                  ~/.local/share/couchbox-yt; a guest has none); OK starts it where it was left
   youtube         search only: one card that opens YouTube's own search. YouTube isn't in
                   Continue watching: its history lives in VacuumTube's page, which is only there
                   while YouTube runs (couchbox-memory closes it when idle), and reading it means
@@ -25,7 +28,7 @@ Items are plain dicts, the same for both lists:
 Targets name the app and what its --open takes:
   dropout:play:123  dropout:series:45  nebula:play:<id>  twitch:play:live:<login>
   twitch:series:<login>  twitch:category:<name>  movies:movie:603  movies:tv:1399
-  jellyfin:<item id>  youtube:search:<text>
+  jellyfin:<item id>  youtube:search:<text>  youtube-beta:video:<id>[@<seconds>]
 open_target() opens one as the TV user: the streaming apps and Movies & TV through their control
 socket when they run (and KWin raises the window), else started with --open; Jellyfin and
 YouTube through couchbox-voice (127.0.0.1:8790 /play/jellyfin, /search/youtube), which drives
@@ -47,7 +50,7 @@ from typing import Any
 from couchbox import apps, paths, settings
 
 STREAMING = ("dropout", "2ndtry", "nebula", "twitch")  # app id = couchbox-streaming --site
-CONTINUE_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch")
+CONTINUE_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch", "youtube-beta")
 SEARCH_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch", "movies", "youtube")
 NAMES = {
     "jellyfin": "Jellyfin",
@@ -57,8 +60,12 @@ NAMES = {
     "twitch": "Twitch",
     "movies": "Movies & TV",
     "youtube": "YouTube",
+    "youtube-beta": "YouTube (beta)",
 }
-DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {"youtube": "rocks.shy.VacuumTube.desktop"}
+DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {
+    "youtube": "rocks.shy.VacuumTube.desktop",
+    "youtube-beta": "couchbox-yt.desktop",
+}
 
 # each app's colour, as its home tile's glow (shell/theme/tiles): where home.json isn't at hand
 GLOW = {
@@ -69,6 +76,7 @@ GLOW = {
     "twitch": "#9146ff",
     "movies": "#f5b301",
     "youtube": "#ff1f1f",
+    "youtube-beta": "#ff1f1f",
 }
 
 MAX_ITEMS = 20  # the row
@@ -77,6 +85,7 @@ PER_SOURCE = 8  # search: matches per app
 DONE = 0.97  # watched this much: finished, not "continue"
 KEEP = {"twitch": 15 * 60}  # a source that can't be reached keeps its last items this long (live: briefly)
 KEEP_DEFAULT = 6 * 3600
+YOUTUBE_MAX = 4  # YouTube's History is long: its newest few, among the other apps' (by when)
 FORGET = 30 * 86400  # remembered positions of items gone from every list
 VOICE = "http://127.0.0.1:8790"
 JELLYFIN_DEVTOOLS = 9224  # Jellyfin Desktop (couchbox-jellyfin)
@@ -341,6 +350,46 @@ def movies_items(found: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def length(d: str) -> int:
+    """Seconds of a card's "1:02:03" or "12:34" (0 if it has none)."""
+    try:
+        n = 0
+        for part in d.split(":"):
+            n = n * 60 + int(part)
+        return n if ":" in d else 0
+    except ValueError:
+        return 0
+
+
+def youtube_continue(page: dict[str, Any], limit: int = 12) -> list[dict[str, Any]]:
+    """The part-watched videos of couchbox-yt's History page, most recent first, each opening where
+    it was left (a few seconds before). YouTube gives no times, so the position the service
+    remembers is how far each was watched (place())."""
+    out = []
+    for shelf in page.get("shelves") or []:
+        for c in shelf.get("items") or []:
+            p = c.get("progress") or 0.0
+            key = f"youtube-beta:{c.get('id')}"
+            if c.get("type") != "video" or not c.get("id") or not 0.01 < p < DONE or any(it["key"] == key for it in out):
+                continue
+            total = length(c.get("duration") or "")
+            at = max(0, int(total * p) - 3) if total else 0
+            out.append(
+                item(
+                    "youtube-beta",
+                    c["id"],
+                    c.get("title") or "",
+                    f"youtube-beta:video:{c['id']}" + (f"@{at}" if at else ""),
+                    subtitle=(c.get("lines") or [""])[0],
+                    art=c.get("thumb") or "",
+                    progress=round(p, 3),
+                    left=minutes_left(total, total * p) if total else "",
+                    position=round(p, 2),
+                )
+            )
+    return out[:limit]
+
+
 def youtube_item(query: str) -> dict[str, Any]:
     return item(
         "youtube", "search", f"Search YouTube for “{query.strip()}”", f"youtube:search:{query.strip()}", subtitle="Opens in YouTube"
@@ -507,6 +556,8 @@ class Clients:
     def get(self, site: str) -> Any:
         from couchbox.services import vhx
 
+        if site == "youtube-beta":
+            return self.youtube()
         mtime = self._mtime(site)
         if site in self.made and self.made[site][0] == mtime:
             return self.made[site][1]
@@ -524,6 +575,22 @@ class Clients:
         self.made[site] = (mtime, c)
         return c
 
+    def youtube(self) -> Any:
+        """couchbox-yt's YouTube (its own sign-in) as the profile it last watched as; NotSignedIn for
+        a guest. Made once: it reads the app's files each time."""
+        from couchbox.services import youtube
+
+        if "youtube-beta" not in self.made:  # the TV client as it's known here: no yt-dlp in this service
+            self.made["youtube-beta"] = (None, youtube.YouTube(client=youtube.TV_CLIENT))
+        yt = self.made["youtube-beta"][1]
+        prof = yt.find_profile(yt.auth.last_profile())
+        if not prof:
+            raise NotSignedIn("YouTube (beta): watching as a guest (nothing to continue)")
+        with yt.lock:
+            yt.profile = prof
+            yt.cache.clear()
+        return yt
+
 
 def fetch_continue(source: str, clients: Clients) -> list[dict[str, Any]]:
     """One app's part of the row (NotSignedIn, or the app's own errors, when it can't)."""
@@ -534,6 +601,13 @@ def fetch_continue(source: str, clients: Clients) -> list[dict[str, Any]]:
         if not j:
             raise NotSignedIn("Jellyfin: open it once on the TV, signed in, so its sign-in can be read")
         return j.resume()
+    if source == "youtube-beta":
+        from couchbox.services import ytauth
+
+        try:
+            return youtube_continue(clients.get("youtube-beta").browse("FEhistory"), limit=YOUTUBE_MAX)
+        except ytauth.SignedOut:
+            raise NotSignedIn("YouTube (beta): the account was signed out; sign in again from Who's watching") from None
     c = clients.get(source)
     if source == "twitch" and not c.signed_in:
         raise NotSignedIn("Twitch: not signed in")
@@ -586,16 +660,23 @@ def split_target(target: str) -> tuple[str, str]:
         raise ValueError(f"not something {NAMES[app]} opens: {rest!r}")
     if app == "movies" and not re.fullmatch(r"(movie|tv):\d+", rest):
         raise ValueError(f"not a title: {rest!r}")
+    if app == "youtube-beta" and not re.fullmatch(r"video:[\w-]{11}(@\d{1,6})?", rest):
+        raise ValueError(f"not a video: {rest!r}")
     if app == "youtube" and not rest.startswith("search:"):
         raise ValueError(f"YouTube only opens a search: {rest!r}")
     return app, rest
 
 
+SITE = {"youtube-beta": "yt"}  # control socket names that aren't the app's id
+EXE = {"youtube-beta": "couchbox-yt"}
+
+
 def launch_command(app: str, rest: str, unit: str = "") -> list[str]:
     """How to start an app on rest (when it isn't running): in a unit of its own, named like
     the home screen's (app-<desktop name>@...), so couchbox-memory treats it as any app."""
-    exe = f"/usr/lib/couchbox/bin/couchbox-{app}"
-    unit = unit or f"app-couchbox-{app}@ontv-{uuid.uuid4().hex[:8]}.service"
+    name = EXE.get(app, f"couchbox-{app}")
+    exe = f"/usr/lib/couchbox/bin/{name}"
+    unit = unit or f"app-{name}@ontv-{uuid.uuid4().hex[:8]}.service"
     return ["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}", "--", exe, "--open", rest]
 
 
@@ -656,9 +737,10 @@ def open_target(target: str) -> str:
         r = requests.post(VOICE + path, json=body, headers={"X-Couchbox": "1"}, timeout=10)
         r.raise_for_status()
         return f"{NAMES[app]}: asked couchbox-voice ({path})"
-    if appctl.running(app):
-        appctl.call(app, {"op": "open", "target": rest}, timeout=10)
-        kwin_raise(f"couchbox-{app}")
+    site = SITE.get(app, app)
+    if appctl.running(site):
+        appctl.call(site, {"op": "open", "target": rest}, timeout=10)
+        kwin_raise(EXE.get(app, f"couchbox-{app}"))
         return f"{NAMES[app]}: opened {rest} in the running app"
     cmd = launch_command(app, rest)
     try:
@@ -724,6 +806,16 @@ def demo_continue(now: float | None = None) -> list[dict[str, Any]]:
             when=now - 2 * 86400,
         ),
         item("2ndtry", "55", "Ultimate Pie", "2ndtry:play:55", subtitle="S1 · E2", progress=0.55, left="8 min left", when=now - 3 * 86400),
+        item(
+            "youtube-beta",
+            "demo0000006",
+            "How Tides Really Work",
+            "youtube-beta:video:demo0000006@1257",
+            subtitle="Orbit Lab",
+            progress=0.35,
+            left="39 min left",
+            when=now - 3.5 * 86400,
+        ),
         item(
             "dropout",
             "102",

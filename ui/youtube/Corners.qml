@@ -7,7 +7,8 @@ Shape {
     id: c
     property real r: Y.radius
     property color color: Y.bg
-    property bool lower: true                 // the boxed cards' pictures only round their top
+    property bool lower: true                 // the lower corners too
+    property bool upper: true                 // the upper corners (a boxed card's: two Corners, the top in the page's colour)
     preferredRendererType: Shape.CurveRenderer
     ShapePath {
         fillColor: c.color
@@ -17,8 +18,8 @@ Shape {
             readonly property real w: c.width
             readonly property real h: c.height
             readonly property real r: c.r
-            path: "M0 0H" + r + "A" + r + " " + r + " 0 0 0 0 " + r + "Z"
-                + "M" + w + " 0V" + r + "A" + r + " " + r + " 0 0 0 " + (w - r) + " 0Z"
+            path: (c.upper ? "M0 0H" + r + "A" + r + " " + r + " 0 0 0 0 " + r + "Z"
+                + "M" + w + " 0V" + r + "A" + r + " " + r + " 0 0 0 " + (w - r) + " 0Z" : "")
                 + (c.lower ? "M0 " + h + "V" + (h - r) + "A" + r + " " + r + " 0 0 0 " + r + " " + h + "Z"
                             + "M" + w + " " + h + "H" + (w - r) + "A" + r + " " + r + " 0 0 0 " + w + " " + (h - r) + "Z" : "")
         }

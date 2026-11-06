@@ -47,7 +47,7 @@ FocusScope {
         height: 72 * Y.u
         verticalAlignment: Text.AlignVCenter
         text: page.title
-        color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+        color: Y.text; font.family: Y.titleFont; font.pixelSize: 44 * Y.titleScale * Y.u; font.weight: Font.Bold
     }
     Column {
         x: 172 * Y.u; y: (page.tiles.length ? 330 : 190) * Y.u

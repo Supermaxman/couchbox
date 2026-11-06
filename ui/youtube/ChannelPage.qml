@@ -30,7 +30,7 @@ FocusScope {
         x: Y.left; y: 52 * Y.u
         text: page.head.title || ""
         color: Y.text
-        font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold
+        font.family: Y.font; font.pixelSize: 50 * Y.u; font.weight: Font.Medium   // (YouTube's: Roboto Medium, not the pages' heavy titles)
     }
     Rectangle {
         id: pill
@@ -68,7 +68,8 @@ FocusScope {
         width: parent.width
         height: parent.height - y
         boxed: true
-        onOpen: it => Y.open(it)
+        rowGap: 106 * Y.u                      // 115 px from a focused row to the next, as YouTube's
+        onOpen: it => page.channelId.indexOf("VL") === 0 ? Y.playList(feed.itemsAfter(it), it) : Y.open(it)   // a playlist: in order
     }
     Connections {                             // Left off the first card: the back button, not the guide
         target: Y

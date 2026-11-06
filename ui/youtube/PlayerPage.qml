@@ -15,6 +15,8 @@
 // bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
 // profile left off, and reports what's watched (History, resume on every device).
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Effects
 
 FocusScope {
     id: player
@@ -22,18 +24,61 @@ FocusScope {
     // the controls' keys land here (the player handles them): the focus comes back to it, not
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
-    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), row: related.index, rows: related.count}; }
+    function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), scrub: Math.round(scrub), dvrBehind: Math.round(dvrBehind), liveTarget: Math.round(liveTarget), paused: !!video.paused, row: related.index, rows: related.count,
+                                          captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
+                                          card: panel === "description" ? description.index : -1,
+                                          subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
+                                          height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
+                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer,
+                                          panelItem: panel && panel !== "description" && panel !== "comments" ? ((optionsFor(panel)[sidePanel.index] || {}).label || "") : "",
+                                          comments: panel === "comments" ? comments.focusDetail() : null, subText: video.subText ? video.subText() : ""}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
-    Timer { interval: 250; repeat: true; running: player.visible && !!player.s; onTriggered: player.pos = video.position }
-    Connections { target: video; function onPositionChanged() { player.pos = video.position; } }
+    Timer { interval: 250; repeat: true; running: player.visible && !!player.s
+            onTriggered: { player.pos = video.position; if (player.mode !== "hidden") player.cached = video.cacheTime(); } }
+    property real cached: 0                    // how far mpv has read ahead (the bar's lighter part)
+    Connections { target: video; function onPositionChanged() { player.pos = video.position; player.sponsorCheck(); } }
+
+    // ------------------------------------------------------------------ SponsorBlock
+    // The video's marked parts (ytextras: all kinds; the bar shows them); the kinds chosen in
+    // Settings are skipped once each as playback enters them, with a notice and OK to undo.
+    property var segments: []
+    property var skippedOnce: ({})
+    property var skipNotice: null              // {label, from} while the notice shows
+    function sponsorCheck() {
+        const st = Y.settings;
+        if (!st.sponsorblock || !segments.length || video.paused || !s || live) return;
+        for (let i = 0; i < segments.length; i++) {
+            const g = segments[i];
+            if (g.action !== "skip" || !(st.skip || {})[g.category] || skippedOnce[i]) continue;
+            if (pos >= g.start && pos < g.end - 0.5) {
+                skippedOnce[i] = true;
+                skipNotice = {label: g.label, from: pos};
+                video.seekTo(g.end);
+                noticeTimer.restart();
+                return;
+            }
+        }
+    }
+    function undoSkip() {
+        if (!skipNotice) return;
+        video.seekTo(skipNotice.from);
+        skipNotice = null;
+    }
+    Timer { id: noticeTimer; interval: 6000; onTriggered: player.skipNotice = null }
+    // DeArrow's title for this video, when that's on (ytextras.branding)
+    property string brandTitle: ""
+    // Return YouTube Dislike's count, when that's on
+    property int dislikes: -1
     property string videoId: ""
     property real startAt: 0
     property var seed: ({})                    // the card it was opened from (title while loading)
     property var meta: ({})                    // watch: {video, related, next}
     property var s: null                       // stream: {url, live, duration, chapters, ...}
     property string message: ""
+    // a guest YouTube won't play to (its bot check, "sign in"): OK offers Who's watching
+    readonly property bool signInOffer: !Y.signedIn && /\bbot\b|sign in|signed in|login/i.test(message)
     property string mode: "controls"           // hidden | bar | controls | related
     property int button: 4                     // the focused control (index into controls)
     readonly property var video: Y.video
@@ -49,9 +94,29 @@ FocusScope {
     // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
     // chapters' pictures over it and the hint show, as on YouTube's TV app
     readonly property bool seeking: mode === "bar" || mode === "chapters"
-    readonly property int chapter: Y.chapterAt(chapters, pos)
+    // scrubbing (Left / Right on the bar, not live): where it would go, shown on the bar and in
+    // the frame; OK goes there, as does a moment's pause (as YouTube's: a tap of Right skips on);
+    // Up (no chapters) and Back leave it where it was (-1: nothing pending)
+    property real scrub: -1
+    readonly property real shownPos: scrub >= 0 ? scrub : pos
+    Timer { id: scrubCommit; interval: 2000; onTriggered: player.commitScrub() }
+    function scrubBy(d) {
+        scrub = Math.max(0, Math.min(Math.max(0, duration - 1), (scrub >= 0 ? scrub : pos) + d));
+        scrubCommit.restart();
+        if (mode === "hidden") mode = "bar";
+        hide.restart();
+    }
+    function commitScrub() {
+        scrubCommit.stop();
+        if (scrub < 0) return;
+        const to = scrub;
+        scrub = -1;
+        video.seekTo(to);
+    }
+    function cancelScrub() { scrubCommit.stop(); scrub = -1; }
+    readonly property int chapter: Y.chapterAt(chapters, shownPos)
     readonly property bool watching: !!s && !video.paused && !video.ended   // keeps the app from idling out
-    readonly property string label: v.title || (s ? s.title : "") || seed.title || ""
+    readonly property string label: brandTitle || v.title || (s ? s.title : "") || seed.title || ""
     property string panel: ""                  // "" | channel | notify | save: a panel beside the video
     property var saveOptions: []
     property string cpn: ""                    // this playback's id in YouTube's reports
@@ -65,24 +130,31 @@ FocusScope {
         videoId = id;
         startAt = at || 0;
         s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
+        related.rows = []; related.index = 0; cancelScrub(); dvrBehind = -1; liveTarget = -1; liveGo.stop();   // (not the last video's row while this one's comes: it was, for a live one)
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
-        mode = "controls"; button = 4; ending = false; captionsOn = "";
+        mode = "controls"; button = 4; ending = false; captionsOn = ""; captionsOffHere = false; autoCaptionsDone = false;
+        // the next video (Up next's countdown, a card): the controls take the focus back from the
+        // end screen, which hides (focus left on it went nowhere: the box check's steps 26-27)
+        if (player.activeFocus && !ctl.activeFocus) ctl.forceActiveFocus();
         if (speed !== 1) video.setSpeed(speed);
         showControls();
         Y.call("stream", {id: id}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             // where this profile left off: the card's (a part-watched card's red bar) unless told
-            const p = player.seed.progress || 0;
-            if (!player.startAt && p > 0.02 && p < 0.95 && r.duration && !r.live) player.startAt = Math.max(0, p * r.duration - 3);
+            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(Y.progressOf(player.seed), r.duration || player.seed.duration);
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
             if (waitLeft <= 0) begin();
             showControls();
-        }, e => { if (player.videoId === id) message = e || "This video can't be played."; });
+        }, e => { if (player && player.videoId === id) message = e || "This video can't be played."; });
+        segments = []; skippedOnce = ({}); skipNotice = null; brandTitle = ""; dislikes = -1;
+        Y.call("segments", {id: id}, r => { if (player && player.videoId === id) player.segments = r.segments || []; }, () => {});
+        if (Y.settings.dearrow) Y.call("branding", {id: id}, r => { if (player && player.videoId === id) player.brandTitle = r.title || ""; }, () => {});
+        if (Y.settings.dislikes) Y.call("votes", {id: id}, r => { if (player && player.videoId === id && r.dislikes !== undefined) player.dislikes = r.dislikes; }, () => {});
         Y.call("watch", {id: id}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             meta = r;
             // YouTube's own resume point for this profile, when the card didn't have one
             if (r.start > 0 && !player.startAt) {
@@ -94,19 +166,34 @@ FocusScope {
             for (let i = 0; i < rel.length; i += 3) rows.push({kind: "shelf", title: "", items: rel.slice(i, i + 3), more: ""});
             related.rows = rows;
             mprisUpdate();
+            const n = upNext();                // what plays next: its stream ready for the end
+            if (n && !n.item.live) Y.call("prefetch", {id: n.item.id}, () => {}, () => {});
         }, () => {});
     }
     function begin() {
         if (s.url.indexOf("demo://") === 0) video.load(s.url, startAt);
         else video.loadWith(s.url, startAt, s.opts || "");
+        autoCaptionsLater.restart();
+        begin2();
     }
     property int waitLeft: 0
     Timer {
         interval: 1000; repeat: true; running: player.waitLeft > 0
         onTriggered: { player.waitLeft--; if (player.waitLeft <= 0) player.begin(); }
     }
-    Component.onCompleted: start(videoId, startAt)
+    // a page opened over the player (its channel): the video paused where it is, playing again on
+    // the way back if it was (the same file: nothing reloaded)
+    property bool resumeOnReturn: false
+    function leaveFor() { resumeOnReturn = !video.paused && !video.ended; video.setPaused(true); }
+    StackView.onActivated: { if (resumeOnReturn) { resumeOnReturn = false; video.setPaused(false); } showControls(); }
+    Component.onCompleted: { video.setRateHold(true); start(videoId, startAt); }   // (the TV's rate kept between videos)
+    function noteSeen() {                       // the cards' red bars, for the way back
+        if (videoId && s && !s.live && duration > 0 && pos > 0) Y.noteSeen(videoId, video.ended ? 1 : pos / duration);
+    }
     Component.onDestruction: {
+        video.setRateHold(false);
+        video.setSubtitleShown(true);
+        noteSeen();
         if (s && reported) report(video.ended ? "end" : "pause");
         Y.videoSide = false;
         video.stop();
@@ -122,10 +209,16 @@ FocusScope {
     function playNext() {
         const n = upNext();
         if (!n) { finished(); return; }
+        noteSeen();
         if (n.queued) Y.queue = Y.queue.slice(1);
         seed = n.item;
+        // YouTube's "Video paused. Continue watching?": autoplay, and no key for 2 hours (not with
+        // VacuumTube's "Block continue watching")
+        askContinue = !Y.settings.block_continue && Date.now() - Y.lastKey > 2 * 3600 * 1000;
         start(n.item.id, 0);
     }
+    property bool askContinue: false
+    function begin2() { if (askContinue) video.setPaused(true); }
     function showEnd() {
         const n = upNext();
         if (!n) { mode = "controls"; showControls(); return; }
@@ -161,7 +254,16 @@ FocusScope {
         target: video
         function onPausedChanged() { player.mprisUpdate(); if (video.paused) player.showControls(); }
         function onEndedChanged() { if (video.ended && !player.live) player.showEnd(); }
-        function onErrorChanged() { if (video.error) player.message = video.error; }
+        function onErrorChanged() {
+            if (video.error && player.dvrBehind >= 0) {   // back in the DVR window didn't open: the live stream again
+                player.dvrBehind = -1;
+                Y.toast("Can't go back that far: live again");
+                const id = player.videoId;
+                Y.call("stream", {id: id}, r => { if (player && player.videoId === id) { player.s = r; video.loadWith(r.url, 0, r.opts || ""); } }, e => { player.message = e; });
+                return;
+            }
+            if (video.error) player.message = video.error;
+        }
     }
 
     // ------------------------------------------------------------------ history (signed in)
@@ -200,7 +302,7 @@ FocusScope {
     function openPanel(which) {
         if (which === "save") {
             if (!Y.signedIn) return signInFirst("save videos");
-            Y.call("saveOptions", {id: videoId}, r => { player.saveOptions = r.playlists || []; player.panel = "save"; });
+            Y.call("saveOptions", {id: videoId}, r => { if (player) { player.saveOptions = r.playlists || []; player.panel = "save"; } });
             return;
         }
         if (which === "notify" && !Y.signedIn) return signInFirst("choose notifications");
@@ -209,7 +311,7 @@ FocusScope {
     }
     onPanelChanged: {
         Y.videoSide = !!panel;
-        const checked = panelOptions.findIndex(o => o.checked);     // the current choice, as YouTube's does
+        const checked = optionsFor(panel).findIndex(o => o.checked);     // the current choice, as YouTube's does
         sidePanel.index = checked >= 0 && panel !== "save" ? checked : 0;
         // the panel takes the focus now (keys pressed right after go to it), and again once it's
         // surely shown (an item can't take it while hidden); closed, the controls have it again, on
@@ -220,30 +322,32 @@ FocusScope {
         else { ctl.forceActiveFocus(); mode = "controls"; hide.restart(); }
     }
     readonly property var notifyLevels: [
-        {level: "all", label: "All", icon: "bell-all"}, {level: "personalized", label: "Personalized", icon: "bell"},
+        {level: "all", label: "All", icon: "bell-all-filled"}, {level: "personalized", label: "Personalized", icon: "bell"},
         {level: "none", label: "None", icon: "bell-off"}
     ]
-    readonly property var panelOptions: {
-        if (panel === "channel")
+    // the panel's rows (a function, so onPanelChanged reads them for the new panel, not the last)
+    readonly property var panelOptions: optionsFor(panel)
+    function optionsFor(p) {
+        if (p === "channel")
             return [{label: v.subscribed ? "Subscribed" : "Subscribe", trailing: v.subscribed ? ({all: "bell-all", none: "bell-off"})[v.notify] || "bell" : ""},
                     {label: "Go to channel"}];
-        if (panel === "notify") {
+        if (p === "notify") {
             const have = (v.notifyOptions || []).map(o => o.level);
             return notifyLevels.filter(l => have.length === 0 || have.indexOf(l.level) >= 0)
                 .map(l => ({label: l.label, icon: l.icon, checked: v.notify === l.level, level: l.level}))
                 .concat([{label: "Unsubscribe", icon: "unsubscribe", level: "unsubscribe"}]);
         }
-        if (panel === "save")
+        if (p === "save")
             return saveOptions.map(o => ({label: o.title, icon: o.id === "WL" ? "history" : "list", checked: o.saved, id: o.id}));
-        if (panel === "settings")
+        if (p === "settings")
             return [{label: "Quality", value: qualityLabel, icon: "settings"}, {label: "Playback speed", value: speed === 1 ? "Normal" : speed + "×", icon: "speed"},
                     {label: "Captions", value: captionsOn || "Off", icon: "cc"}];
-        if (panel === "quality")
+        if (p === "quality")
             return [{label: "Auto", checked: !s || !s.maxHeight || s.maxHeight >= 1080, h: 1080}]
                 .concat(((s && s.heights) || []).map(h => ({label: h + "p", checked: s.maxHeight === h && h < 1080, h: h})));
-        if (panel === "speed")
+        if (p === "speed")
             return [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(x => ({label: x === 1 ? "Normal" : x + "×", checked: speed === x, x: x}));
-        if (panel === "captions")
+        if (p === "captions")
             return [{label: "Off", checked: !captionsOn}].concat(((s && s.captions) || []).map(c => ({label: c.name, checked: captionsOn === c.name, c: c})));
         return [];
     }
@@ -251,30 +355,58 @@ FocusScope {
     function setQuality(h) {
         const id = videoId, at = video.position;
         Y.call("stream", {id: id, max_height: h}, r => {
-            if (player.videoId !== id) return;
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             if (r.url.indexOf("demo://") === 0) video.load(r.url, at); else video.loadWith(r.url, at, r.opts || "");
-            if (captionsOn) { const c = (r.captions || []).find(x => x.name === captionsOn); if (c) video.addSubtitleTrack(c.url, c.name); }
+            if (captionsOn) { const c = (r.captions || []).find(x => x.name === captionsOn); if (c) player.addCaptions(c); }
         }, e => Y.toast(e));
     }
+    // a caption track, fetched by the app (with retries: YouTube answers "429 Too Many Requests" at
+    // times) and given to mpv as a file
+    function addCaptions(c) {
+        const id = videoId;
+        Y.call("captions", {url: c.url}, r => { if (player && player.videoId === id && r.path) video.addSubtitleTrack(r.path, c.name); },
+               e => { if (player && player.videoId === id) { Y.toast("Captions aren't available right now."); if (captionsOn === c.name) captionsOn = ""; } });
+    }
+    // captions, as Settings → Captions has them: English first (the video's own, automatic, then
+    // translated), else the video's language; turned off with CC, off for the rest of the video
+    property bool captionsOffHere: false
+    property bool autoCaptionsDone: false
+    function preferredCaptions(list) {
+        const en = c => String(c.lang || "").split("-")[0] === "en";
+        return list.find(c => en(c) && !c.auto) || list.find(c => en(c) && c.auto && !c.translated) || list.find(c => en(c) && c.translated)
+            || list.find(c => !c.auto) || list.find(c => c.auto && !c.translated) || null;
+    }
+    function autoCaptions() {
+        if (autoCaptionsDone || !s || s.live || captionsOn || captionsOffHere || Y.settings.captions_always === false) return;
+        autoCaptionsDone = true;
+        const c = preferredCaptions(s.captions || []);
+        if (c) setCaptions(c);
+    }
+    Connections {                              // once the video has opened (mpv takes a caption file then)
+        target: video
+        function onDurationChanged() { if (video.duration > 0) player.autoCaptions(); }
+    }
+    Timer { id: autoCaptionsLater; interval: 1500; onTriggered: if (video.duration > 0) player.autoCaptions() }   // (a preloaded one: opened already)
     function setCaptions(c) {
         if (!c) { video.setSubtitle(0); captionsOn = ""; return; }
         const have = video.subtitles.find(t => t.title === c.name);
-        if (have) video.setSubtitle(have.id); else video.addSubtitleTrack(c.url, c.name);
+        if (have) video.setSubtitle(have.id); else addCaptions(c);
         captionsOn = c.name;
     }
     function toggleCaptions() {
-        if (captionsOn) return setCaptions(null);
-        const c = (s && s.captions) || [];
-        if (!c.length) return Y.toast("No captions for this video.");
-        setCaptions(c[0]);
-        Y.toast("Captions: " + c[0].name);
+        if (captionsOn) { captionsOffHere = true; return setCaptions(null); }
+        const c = preferredCaptions((s && s.captions) || []);
+        if (!c) return Y.toast("No captions for this video.");
+        captionsOffHere = false;
+        setCaptions(c);
+        Y.toast("Captions: " + c.name);
     }
     function panelPick(i) {
         const o = panelOptions[i];
         if (panel === "channel") {
             if (i === 0) { if (v.subscribed) openPanel("notify"); else subscribe(true); }
-            else { panel = ""; video.setPaused(true); player.openChannel(v.channelId); }
+            else { panel = ""; leaveFor(); player.openChannel(v.channelId); }
         } else if (panel === "notify") {
             if (o.level === "unsubscribe") { subscribe(false); return; }
             const opt = (v.notifyOptions || []).find(x => x.level === o.level);
@@ -289,6 +421,7 @@ FocusScope {
         } else if (panel === "speed") {
             speed = o.x; video.setSpeed(o.x); panel = "";
         } else if (panel === "captions") {
+            captionsOffHere = !o.c;
             setCaptions(o.c || null); panel = "";
         } else if (panel === "save") {
             const add = !o.checked;
@@ -305,10 +438,45 @@ FocusScope {
         if (mode === "hidden") { mode = "controls"; }
         hide.restart();
     }
-    Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending) player.mode = "hidden" }
+    Timer { id: hide; interval: 5000; onTriggered: if (!video.paused && player.mode !== "related" && player.mode !== "chapters" && !!player.s && !player.ending && !player.panel) player.mode = "hidden" }
+    // a live stream: Left / Right 10 s back and on. Near the edge mpv goes back into what it has
+    // read; further back the stream comes from its segments, that far back in its DVR window
+    // (ytlive), a moment after the last press; back near the edge, the live stream again
+    property real dvrBehind: -1                // playing from the segments, this far behind live (-1: the live stream)
+    property real liveTarget: -1               // where Left / Right are taking it (-1: nowhere)
+    readonly property real behindLive: dvrBehind >= 0 ? dvrBehind : Math.max(0, duration - pos)
+    Timer { id: liveGo; interval: 1200; onTriggered: player.liveApply() }
+    function liveSkip(d) {
+        if (!s) return;
+        const base = liveTarget >= 0 ? liveTarget : behindLive;
+        const t = Math.max(0, base - d);
+        if (dvrBehind < 0 && liveTarget < 0 && t <= 25) { skip(d); return; }   // within what mpv has: at once
+        liveTarget = (s.dvr > 0 ? Math.min(s.dvr - 30, t) : t);
+        Y.toast(liveTarget > 15 ? Y.clock(liveTarget) + " behind live" : "Live");
+        if (mode === "hidden") mode = "bar";
+        hide.restart();
+        liveGo.restart();
+    }
+    function liveApply() {
+        const id = videoId, t = liveTarget;
+        liveTarget = -1;
+        if (t < 0) return;
+        if (t <= 15) {                         // back to the live stream (its HLS, as it began)
+            if (dvrBehind < 0) return;
+            Y.call("stream", {id: id}, r => { if (player && player.videoId === id) { s = r; dvrBehind = -1; video.loadWith(r.url, 0, r.opts || ""); } }, e => Y.toast(e));
+            return;
+        }
+        Y.call("liveBehind", {id: id, behind: t}, r => {
+            if (!player || player.videoId !== id) return;
+            s = Object.assign({}, s, {url: r.url, opts: r.opts, dvr: r.dvr});
+            dvrBehind = t;
+            video.loadWith(r.url, 0, r.opts || "");
+        }, e => Y.toast(e));
+    }
     function skip(d) {
-        if (live || !s) return;
-        video.seek(d);
+        if (!s) return;
+        video.seek(d);                         // a live stream too: back into its DVR window and forward again
+        if (live && duration > 0) Y.toast(duration - pos - d > 8 ? Y.clock(duration - pos - d) + " behind live" : "Live");   // (the edge itself is a few seconds behind)
         if (mode === "hidden") mode = "bar";
         hide.restart();
     }
@@ -316,14 +484,21 @@ FocusScope {
         if (panel === "quality" || panel === "speed" || panel === "captions") { panel = "settings"; return; }
         if (panel) { panel = ""; return; }
         if (mode === "chapters") { mode = "bar"; hide.restart(); return; }
+        if (scrub >= 0) { cancelScrub(); mode = "hidden"; return; }   // Back: the scrub undone, the video where it was
         if (mode === "related") { mode = "controls"; hide.restart(); return; }
         // the controls up: Back only hides them (still loading, they can't hide: it leaves)
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
         finished();
     }
+    // captions above the controls while they're up (YouTube's: never under the scrim or the related row)
+    readonly property bool captionsHigh: mode !== "hidden" || !!panel
+    onCaptionsHighChanged: video.setSubtitlePosition(captionsHigh ? 58 : 100)
+    // ...and out of the way of the related row and the seek frames (they'd sit over them)
+    readonly property bool captionsShown: mode !== "related" && !seeking
+    onCaptionsShownChanged: video.setSubtitleShown(captionsShown)
     onModeChanged: {
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
-        else { ctl.forceActiveFocus(); related.index = 0; }      // the row folds back to its first line
+        else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
     }
     Connections {
         target: related
@@ -334,7 +509,7 @@ FocusScope {
     readonly property var controls: [
         {key: "channel"}, {key: "description", label: "Description"}, {key: "bell", icon: "bell"},
         {key: "prev", icon: "prev"}, {key: "play"}, {key: "next", icon: "next"},
-        {key: "like", icon: "like"}, {key: "dislike", icon: "dislike"}, {key: "comments", icon: "comments"},
+        {key: "like", icon: "like"}, {key: "dislike", icon: "dislike"}, {key: "comments", icon: "comments-round"},
         {key: "ask", icon: "sparkle"}, {key: "save", icon: "save"}, {key: "thanks", icon: "thanks"},
         {key: "cc", icon: "cc"}, {key: "settings", icon: "settings"}
     ]
@@ -355,7 +530,26 @@ FocusScope {
 
     Keys.onPressed: e => {
         const k = e.key;
+        if (askContinue) {                     // "Continue watching?": OK plays on; Back leaves
+            if (k === Qt.Key_Return || k === Qt.Key_Enter) { askContinue = false; video.setPaused(false); showControls(); }
+            else if (k === Qt.Key_Escape || k === Qt.Key_Back) { askContinue = false; finished(); }
+            e.accepted = true;
+            return;
+        }
         if (k === Qt.Key_Escape || k === Qt.Key_Back) { if (!e.isAutoRepeat) back(); e.accepted = true; return; }
+        if (signInOffer && (k === Qt.Key_Return || k === Qt.Key_Enter)) { if (!e.isAutoRepeat) Y.whoIsWatching(); e.accepted = true; return; }
+        // a keyboard's (VacuumTube's) keys: P / D faster and slower, A normal speed, C captions, M sound
+        const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+        if ((k === Qt.Key_P || k === Qt.Key_D || k === Qt.Key_A) && !(e.modifiers & Qt.ControlModifier)) {
+            const i = speeds.indexOf(speed);
+            speed = k === Qt.Key_A ? 1 : speeds[Math.max(0, Math.min(speeds.length - 1, (i < 0 ? 3 : i) + (k === Qt.Key_P ? 1 : -1)))];
+            video.setSpeed(speed);
+            Y.toast("Playback speed: " + (speed === 1 ? "Normal" : speed + "×"));
+            e.accepted = true;
+            return;
+        }
+        if (k === Qt.Key_C && !(e.modifiers & Qt.ControlModifier)) { toggleCaptions(); e.accepted = true; return; }
+        if (k === Qt.Key_M && !(e.modifiers & Qt.ControlModifier)) { Y.toast(video.toggleMute() ? "Sound off" : "Sound on"); e.accepted = true; return; }
         if (k === Qt.Key_MediaTogglePlayPause || k === Qt.Key_MediaPlay || k === Qt.Key_MediaPause || k === Qt.Key_Space) {
             video.togglePause(); showControls();
         } else if (k === Qt.Key_AudioRewind || k === Qt.Key_MediaPrevious) {
@@ -363,25 +557,31 @@ FocusScope {
         } else if (k === Qt.Key_AudioForward || k === Qt.Key_MediaNext) {
             skip(10);
         } else if (mode === "hidden") {
-            if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
-            else if (k === Qt.Key_Left) skip(-10);
-            else if (k === Qt.Key_Right) skip(10);
+            if ((k === Qt.Key_Return || k === Qt.Key_Enter) && skipNotice) undoSkip();       // the notice's undo
+            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { mode = "controls"; button = 4; hide.restart(); }
+            else if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
             else if (k === Qt.Key_Up) { mode = "bar"; hide.restart(); }
             else if (k === Qt.Key_Down) { mode = "controls"; button = 4; hide.restart(); }
             else return;
         } else if (mode === "bar") {
-            if (k === Qt.Key_Left) skip(-10);
-            else if (k === Qt.Key_Right) skip(10);
+            if (k === Qt.Key_Left) { if (live) liveSkip(-10); else scrubBy(-10); }
+            else if (k === Qt.Key_Right) { if (live) liveSkip(10); else scrubBy(10); }
+            else if ((k === Qt.Key_Return || k === Qt.Key_Enter) && scrub >= 0) { commitScrub(); mode = "hidden"; }   // there, playing
             else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.togglePause(); hide.restart(); }
-            else if (k === Qt.Key_Down) { mode = "controls"; hide.restart(); }
-            else if (k === Qt.Key_Up) { if (chapters.length > 1) { chapterPick = Math.max(0, chapter); mode = "chapters"; } hide.restart(); }
+            else if (k === Qt.Key_Down) { commitScrub(); mode = "controls"; hide.restart(); }
+            // Up: the chapters (when it has some: "Press up to view chapters"), else back to the video
+            else if (k === Qt.Key_Up) {
+                if (chapters.length > 1) { scrubCommit.stop(); chapterPick = Math.max(0, chapter); mode = "chapters"; hide.restart(); }
+                else { cancelScrub(); mode = "hidden"; }
+            }
             else return;
         } else if (mode === "chapters") {
             hide.restart();
             if (k === Qt.Key_Left) chapterPick = Math.max(0, chapterPick - 1);
             else if (k === Qt.Key_Right) chapterPick = Math.min(chapters.length - 1, chapterPick + 1);
-            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { video.seekTo(chapters[chapterPick].start); mode = "bar"; }
-            else if (k === Qt.Key_Down) mode = "bar";
+            else if (k === Qt.Key_Return || k === Qt.Key_Enter) { cancelScrub(); video.seekTo(chapters[chapterPick].start); mode = "bar"; }
+            else if (k === Qt.Key_Down) { mode = "bar"; if (scrub >= 0) scrubCommit.restart(); }
             else return;
         } else if (mode === "controls") {
             hide.restart();
@@ -427,9 +627,12 @@ FocusScope {
         objectName: "description"
         visible: player.panel === "description"
         v: player.v
-        d: player.meta.details || {}
+        // with Return YouTube Dislike on: the dislikes beside the likes
+        d: player.dislikes < 0 ? player.meta.details || {} : Object.assign({}, player.meta.details || {}, {
+            facts: ((player.meta.details || {}).facts || []).slice(0, 1).concat([{value: Y.count(player.dislikes) || "0", label: "Dislikes"}],
+                                                                              ((player.meta.details || {}).facts || []).slice(1))})
         chapters: player.chapters
-        onOpenChannel: { player.panel = ""; video.setPaused(true); player.openChannel(player.v.channelId); }
+        onOpenChannel: { player.panel = ""; player.leaveFor(); player.openChannel(player.v.channelId); }
         onOpenComments: player.openPanel("comments")
         onSeekTo: t => { video.seekTo(t); player.panel = ""; }
         onClosed: player.panel = ""
@@ -450,9 +653,9 @@ FocusScope {
         line: player.panel === "channel" ? [player.v.handle || "", player.v.subscribers || ""].filter(x => !!x).join(" · ") : ""
         title: ({notify: "Notifications", save: "Save video to…", settings: "Settings", quality: "Quality", speed: "Playback speed", captions: "Captions"})[player.panel] || ""
         subtitle: player.panel === "notify" ? "You'll get notified in the mobile app or on YouTube.com based on your account settings"
-                : player.panel === "quality" ? "H.264, the Pi's best: Auto picks up to 1080p60" : ""
+                : player.panel === "quality" ? "Auto picks the best this TV plays smoothly, up to 1080p at 60 frames a second" : ""
         onPicked: i => player.panelPick(i)
-        onClosed: player.panel = ""
+        onClosed: player.back()                // Quality, speed or captions: back to the settings menu; else closed
     }
 
     Item {
@@ -463,15 +666,15 @@ FocusScope {
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
         // the scrim, as YouTube's TV app has it with the controls (or the related row) up: the
-        // video dimmed by about 45%, and from y 600 down a dark blue-violet
-        Rectangle { anchors.fill: parent; color: "#73000000" }
+        // video dimmed by about half, and from y 560 down a dark blue-violet, #08051e at the bottom
+        Rectangle { anchors.fill: parent; color: player.mode === "related" ? "#c7000000" : "#85000000"; Behavior on color { ColorAnimation { duration: 220 } } }   // (the related row: all of it dimmed)
         Rectangle {
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 480 * Y.u
+            height: 520 * Y.u
             gradient: Gradient {
-                GradientStop { position: 0; color: "#00100c2c" }
-                GradientStop { position: 0.55; color: "#b3100c2c" }
-                GradientStop { position: 1; color: "#f2100c2c" }
+                GradientStop { position: 0; color: "#0008051e" }
+                GradientStop { position: 0.5; color: "#c708051e" }
+                GradientStop { position: 1; color: "#ff08051e" }
             }
         }
 
@@ -536,15 +739,21 @@ FocusScope {
                 }
                 Text {
                     visible: !player.seeking
-                    text: player.live ? "" : Y.clock(player.pos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
-                    color: Y.text
+                    x: player.live ? liveBar.implicitWidth + 34 * Y.u : 0      // (beside the LIVE badge)
+                    y: 5 * Y.u
+                    text: player.live ? ((player.liveTarget >= 0 ? player.liveTarget : player.behindLive) > 8
+                                         ? Y.clock(player.liveTarget >= 0 ? player.liveTarget : player.behindLive) + " behind live" : "")
+                                      : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
+                    color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
                 Text {
                     visible: !player.seeking
                     anchors.right: parent.right
-                    text: player.live ? "" : Y.clock(player.duration)
-                    color: Y.text
+                    y: 5 * Y.u
+                    // VacuumTube's "Show remaining time": the time left instead of the length
+                    text: player.live ? "" : Y.settings.remaining_time ? "-" + Y.clock(Math.max(0, player.duration - player.pos)) : Y.clock(player.duration)
+                    color: Y.dim
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
                 }
                 Item {                         // the bar, cut at the chapters
@@ -553,7 +762,7 @@ FocusScope {
                     y: 55 * Y.u
                     width: parent.width
                     height: 8 * Y.u
-                    readonly property real frac: player.duration > 0 ? Math.min(1, player.pos / player.duration) : 0
+                    readonly property real frac: player.duration > 0 ? Math.min(1, player.shownPos / player.duration) : 0
                     readonly property var cuts: {
                         const d = player.duration, c = player.chapters;
                         if (!(d > 0) || c.length < 2) return [{a: 0, b: 1}];
@@ -572,12 +781,31 @@ FocusScope {
                             width: Math.max(1, (modelData.b - modelData.a) * bar.width - gapPx)
                             height: bar.height
                             Rectangle { anchors.fill: parent; radius: height / 2; color: "#5affffff" }
+                            Rectangle {        // read ahead: lighter, after the playhead
+                                width: Math.max(0, Math.min(parent.width, (player.duration > 0 ? Math.min(1, player.cached / player.duration) : 0) * bar.width - parent.x))
+                                height: parent.height
+                                radius: height / 2
+                                color: "#59ffffff"
+                                visible: !player.live
+                            }
                             Rectangle {
                                 width: Math.max(0, Math.min(parent.width, bar.frac * bar.width - parent.x))
                                 height: parent.height
                                 radius: height / 2
-                                color: player.mode === "bar" || player.mode === "chapters" ? Y.red : Y.text
+                                color: player.mode === "bar" || player.mode === "chapters" ? Y.red : Y.text   // (solid: YouTube's seek bar)
                             }
+                        }
+                    }
+                    Repeater {                 // SponsorBlock's parts, in its colours
+                        model: Y.settings.sponsorblock && player.duration > 0 ? player.segments : []
+                        Rectangle {            // (at least 8 px wide, inside the bar, its end rounded at the bar's end)
+                            required property var modelData
+                            readonly property real w: Math.max(8 * Y.u, (Math.min(modelData.end, player.duration) - modelData.start) / player.duration * bar.width)
+                            x: Math.max(0, Math.min(modelData.start / player.duration * bar.width, bar.width - w))
+                            width: w
+                            height: bar.height
+                            radius: x + width >= bar.width - 1 || x <= 0 ? height / 2 : 0
+                            color: Y.segmentColors[modelData.category] || Y.sponsor
                         }
                     }
                     Rectangle {                // the playhead while seeking
@@ -594,6 +822,49 @@ FocusScope {
             // A strip of the chapters' pictures over the bar, the current one over the playhead (its
             // title white and bold, its time under it; the others' titles grey, cut short); Up
             // picks one (Left / Right, OK plays from it).
+            // Without chapters: the storyboard's frame at the playhead (when YouTube has one) and the
+            // time under it.
+            Item {
+                id: frameAt
+                visible: player.seeking && player.chapters.length <= 1 && !player.live
+                width: parent.width; height: parent.height
+                readonly property var sb: player.s ? player.s.storyboard : null
+                readonly property real cardW: 336 * Y.u
+                readonly property real anchorX: Math.max(96 * Y.u + cardW / 2, Math.min(width - 96 * Y.u - cardW / 2, barArea.x + bar.frac * bar.width))
+                readonly property var sheet: sb ? sb.sheets.find(g => player.shownPos >= g.start && player.shownPos < g.end) || sb.sheets[sb.sheets.length - 1] : null
+                readonly property int tile: sheet && sb ? Math.min(sb.cols * sb.rows - 1, Math.floor((player.shownPos - sheet.start) / Math.max(0.001, sheet.end - sheet.start) * sb.cols * sb.rows)) : 0
+                Item {
+                    visible: !!frameAt.sheet && !!frameAt.sb
+                    x: frameAt.anchorX - frameAt.cardW / 2; y: 387 * Y.u
+                    width: frameAt.cardW; height: 189 * Y.u
+                    clip: true
+                    layer.enabled: visible             // its corners rounded (8 px), as YouTube's
+                    layer.effect: MultiEffect { maskEnabled: true; maskSource: frameMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                    Image {
+                        source: frameAt.sheet ? frameAt.sheet.url : ""
+                        width: frameAt.sb ? frameAt.sb.cols * parent.width : 0
+                        height: frameAt.sb ? frameAt.sb.rows * parent.height : 0
+                        x: frameAt.sb ? -(frameAt.tile % frameAt.sb.cols) * parent.width : 0
+                        y: frameAt.sb ? -Math.floor(frameAt.tile / frameAt.sb.cols) * parent.height : 0
+                        asynchronous: true
+                        cache: true
+                        smooth: true
+                    }
+                }
+                Rectangle {
+                    id: frameMask
+                    width: frameAt.cardW; height: 189 * Y.u; radius: 8 * Y.u
+                    visible: false
+                    layer.enabled: true
+                }
+                Text {
+                    x: frameAt.anchorX - width / 2
+                    y: 649 * Y.u - height / 2
+                    text: Y.clock(player.shownPos)
+                    color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium
+                    style: Text.Raised; styleColor: "#60000000"
+                }
+            }
             Item {
                 id: strip
                 visible: player.seeking && player.chapters.length > 1
@@ -658,7 +929,7 @@ FocusScope {
                             y: 262 * Y.u - height / 2
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : player.pos)
+                            text: Y.clock(player.mode === "chapters" ? chap.modelData.start : player.shownPos)
                             color: Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u
                             style: Text.Raised; styleColor: "#60000000"
                         }
@@ -744,7 +1015,7 @@ FocusScope {
                         color: "#1fffffff"
                         Row {
                             id: tools
-                            CtlButton { icon: player.captionsOn ? "cc-filled" : "cc"; on: row.on(12); plain: true }
+                            CtlButton { icon: "cc"; on: row.on(12); plain: true; marked: !!player.captionsOn }   // (outlined; on: a bar under it)
                             CtlButton { icon: "settings"; on: row.on(13); plain: true }
                         }
                     }
@@ -767,17 +1038,61 @@ FocusScope {
             }
         }
 
+        Rectangle {                            // why it won't play: a card over the picture, not bare text
+            visible: !!player.message
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.66, whyText.paintedWidth + 120 * Y.u)
+            height: whyText.paintedHeight + 90 * Y.u
+            radius: 24 * Y.u
+            color: "#e6121212"
+            border.color: "#33ffffff"; border.width: 2 * Y.u
+        }
         Text {                                 // loading, or why it won't play
+            id: whyText
             visible: !player.s || !!player.message || player.waitLeft > 0
             anchors.centerIn: parent
             width: parent.width * 0.6
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
-            text: player.message ? player.message + "\nBack to go back."
+            text: player.signInOffer ? "YouTube wants you signed in to play this.\nOK: sign in or choose an account · Back to go back."
+                : player.message ? player.message + "\nBack to go back."
                 : player.waitLeft > 0 ? "Starting in " + player.waitLeft + " s (YouTube holds it back as long as its ads would play)" : "Loading…"
             color: Y.text
             font.family: Y.font; font.pixelSize: 32 * Y.u
             style: Text.Raised; styleColor: "#80000000"
+        }
+    }
+    Rectangle {                                // "Video paused. Continue watching?"
+        visible: player.askContinue
+        anchors.fill: parent
+        color: "#b3000000"
+        Column {
+            anchors.centerIn: parent
+            spacing: 36 * Y.u
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Video paused. Continue watching?"; color: Y.text; font.family: Y.font; font.pixelSize: 44 * Y.u; font.weight: Font.Bold }
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: yesT.implicitWidth + 96 * Y.u; height: 80 * Y.u; radius: height / 2
+                color: Y.text
+                Text { id: yesT; anchors.centerIn: parent; text: "Yes"; color: Y.ink; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium }
+            }
+        }
+    }
+    Rectangle {                                // SponsorBlock: what was skipped, OK (controls hidden) undoes it
+        visible: !!player.skipNotice && !player.panel && !player.ending
+        anchors { right: parent.right; rightMargin: 96 * Y.u; top: parent.top; topMargin: 96 * Y.u }
+        height: 72 * Y.u
+        width: noticeRow.implicitWidth + 56 * Y.u
+        radius: height / 2
+        color: "#e6212121"
+        Row {
+            id: noticeRow
+            anchors.centerIn: parent
+            spacing: 16 * Y.u
+            Rectangle { width: 16 * Y.u; height: width; radius: width / 2; anchors.verticalCenter: parent.verticalCenter
+                        color: player.skipNotice ? Y.segmentColors[(player.segments.find(g => g.label === player.skipNotice.label) || {}).category] || Y.sponsor : Y.sponsor }
+            Text { text: player.skipNotice ? "Skipped: " + player.skipNotice.label : ""; color: Y.text; font.family: Y.font; font.pixelSize: 26 * Y.u; font.weight: Font.Medium; anchors.verticalCenter: parent.verticalCenter }
+            Text { visible: player.mode === "hidden"; text: "OK to undo"; color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u; anchors.verticalCenter: parent.verticalCenter }
         }
     }
     EndScreen {
@@ -785,7 +1100,7 @@ FocusScope {
         objectName: "endscreen"
         anchors.fill: parent
         visible: player.ending
-        onPlayNow: { player.ending = false; player.playNext(); }
+        onPlayNow: { player.ending = false; ctl.forceActiveFocus(); player.playNext(); }
         onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; ctl.forceActiveFocus(); player.showControls(); }
     }
     Rectangle {                                // buffering

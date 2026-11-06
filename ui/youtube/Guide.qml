@@ -13,9 +13,10 @@ FocusScope {
     readonly property string who: Y.profile ? Y.profile.name : "Guest"
     property bool pinned: false               // Settings: open beside the page, Settings marked
     readonly property bool open: activeFocus || pinned
-    readonly property var list: entries.filter(e => e.key !== "settings")
-    readonly property int groupEnd1: 2        // dividers after Shorts and after Library
-    readonly property int groupEnd2: 5
+    // the tabs Settings → Guide tabs leaves in (VacuumTube's "Guide tabs")
+    readonly property var list: entries.filter(e => e.key !== "settings" && (Y.settings.guide_tabs || {})[e.key] !== false)
+    readonly property int groupEnd1: list.findIndex(e => e.key === "shorts")      // dividers after Shorts and after Library
+    readonly property int groupEnd2: list.findIndex(e => e.key === "library")
     signal chosen(string key)                 // moved onto an entry (the page behind follows)
     signal enter()                            // OK / Right: into the page
     width: open ? Y.guideOpen : Y.left
@@ -48,8 +49,9 @@ FocusScope {
         enter();
     }
 
-    Rectangle {                               // the open guide's panel
-        anchors.fill: parent
+    Rectangle {                               // the open guide's panel (pinned beside Settings: short of its list at 525)
+        width: guide.pinned && !guide.activeFocus ? 500 * Y.u : parent.width
+        height: parent.height
         color: Y.bg
         opacity: guide.open ? 1 : 0
     }
@@ -84,13 +86,14 @@ FocusScope {
     }
 
     // ------------------------------------------------------------------ the entries
-    // Open, they scroll so the focused one stays about two thirds down (y 700) until the last is
-    // in view; Settings stays at the bottom, apart.
+    // Open, the list runs to the bottom of the screen with Settings at its end (48 apart), and
+    // scrolls so the focused entry stays about two thirds down (y 700) until the end is in view.
+    // Closed, the icons stop above Settings, which sits at the bottom on its own.
     Item {
         id: viewport
         y: guide.open ? 154 * Y.u : 195 * Y.u
         width: parent.width
-        height: (guide.open ? 898 : 900) * Y.u - y
+        height: (guide.open ? 1080 : 900) * Y.u - y
         clip: true
         Column {
             id: column
@@ -99,11 +102,16 @@ FocusScope {
                 let yy = 0;
                 for (let k = 0; k < i && k < guide.list.length; k++)
                     yy += 78 * Y.u + (guide.open && (k === guide.groupEnd1 || k === guide.groupEnd2) ? 39 * Y.u : 0);
-                return yy;
+                return yy + (i >= guide.list.length ? 48 * Y.u : 0);      // Settings, after its gap
             }
-            readonly property real full: topOf(guide.list.length)
-            readonly property real curY: topOf(Math.min(guide.cur, guide.list.length - 1))
-            y: !guide.open || guide.cur < 0 ? 0
+            readonly property real full: topOf(guide.list.length) + 78 * Y.u + 58 * Y.u
+            // pinned beside Settings: scrolled to its end, Settings in view
+            readonly property int at: guide.pinned && !guide.activeFocus ? guide.list.length : guide.cur
+            readonly property real curY: topOf(Math.min(at, guide.list.length))
+            // folded: the current page's entry kept on the rail (Movies & TV, Live: below its end)
+            readonly property int sel: guide.list.findIndex(e => e.key === guide.section)
+            y: !guide.open ? -Math.max(0, topOf(Math.max(0, sel)) + 78 * Y.u - viewport.height)
+               : at < 0 ? 0
                : -Math.max(0, Math.min(full - viewport.height, viewport.y + curY + 39 * Y.u - 700 * Y.u))
             Behavior on y { NumberAnimation { duration: 140 } }
             Repeater {
@@ -116,8 +124,6 @@ FocusScope {
                     readonly property bool on: guide.activeFocus && guide.cur === index
                     width: column.width
                     height: 78 * Y.u + (guide.open && (index === guide.groupEnd1 || index === guide.groupEnd2) ? 39 * Y.u : 0)
-                    // only whole entries show: one the viewport would cut in half (above Settings) isn't drawn
-                    opacity: !guide.open || (column.y + y >= -1 && column.y + y + 78 * Y.u <= viewport.height + 1) ? 1 : 0
                     Rectangle {
                         x: 33 * Y.u
                         width: 444 * Y.u; height: 78 * Y.u
@@ -128,7 +134,7 @@ FocusScope {
                     Icon {
                         x: 58 * Y.u; y: 19 * Y.u
                         name: entry.modelData.key
-                        filled: entry.sel
+                        filled: entry.sel || entry.on       // (the focused one filled too, as YouTube's)
                         size: 40 * Y.u
                         color: entry.on ? Y.ink : Y.text
                     }
@@ -148,15 +154,21 @@ FocusScope {
                     }
                 }
             }
+            Item {                             // Settings, the open list's last entry
+                visible: guide.open
+                width: column.width; height: 48 * Y.u + 78 * Y.u
+                SettingsEntry { y: 48 * Y.u }
+            }
         }
     }
 
-    // ------------------------------------------------------------------ Settings, at the bottom
-    Item {
+    // ------------------------------------------------------------------ Settings, at the bottom (closed)
+    SettingsEntry { visible: !guide.open; y: 944 * Y.u }
+
+    component SettingsEntry: Item {
         readonly property bool on: guide.activeFocus && guide.cur === guide.list.length
         readonly property bool marked: guide.pinned && !guide.activeFocus
-        y: 944 * Y.u
-        width: parent.width; height: 78 * Y.u
+        width: guide.width; height: 78 * Y.u
         Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: parent.on ? Y.text : Y.raised2; visible: parent.on || parent.marked }
         Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; filled: guide.section === "settings"; size: 40 * Y.u; color: parent.on ? Y.ink : Y.text }
         Text {

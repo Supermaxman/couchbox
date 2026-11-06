@@ -27,8 +27,9 @@ FocusScope {
     }
     Logo {                                    // it stays put while the open guide pushes the page right
         premium: !!(Y.profile && Y.profile.premium)
-        anchors { right: parent.right; rightMargin: 108 * Y.u + (Y.pushed ? Y.guideOpen - Y.left : 0) }
-        y: 76 * Y.u
+        anchors { right: parent.right; rightMargin: 110 * Y.u + (Y.pushed ? Y.guideOpen - Y.left : 0) }
+        y: 81 * Y.u
+        h: 43 * Y.u
     }
     Keys.onReturnPressed: searchAsked()
     Keys.onEnterPressed: searchAsked()
