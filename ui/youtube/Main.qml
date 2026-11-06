@@ -78,6 +78,7 @@ ApplicationWindow {
         updateState();
     }
     property bool homeLater: false
+    property string afterPick: ""              // what Who's watching opens once a profile is picked
     property var homeCopy: null                // (status: Home as it was, for the profile the app starts as)
     function showProfiles() {
         picking = true;
@@ -208,7 +209,11 @@ ApplicationWindow {
             if (sb && win.page(win.section) === sb && sb.feedFocused) sb.toChannels();
             else guide.forceActiveFocus();
         }
-        function onWhoIsWatching() { win.pickedAtStart = false; win.showProfiles(); }
+        function onWhoIsWatching() {
+            // from a video YouTube wouldn't play to a guest: once an account is picked, that video
+            win.afterPick = win.playing && stack.currentItem.signInOffer ? "video:" + stack.currentItem.videoId : "";
+            win.pickedAtStart = false; win.showProfiles();
+        }
         function onSignIn() { win.push(signInC, {}); }
         function onOpenList(title, id) { win.push(listC, {title: title, browseId: id}); }
         function onCardMenu(it, back) { cardMenu.open(it, back); }
@@ -360,7 +365,7 @@ ApplicationWindow {
             id: profilesPage
             anchors.fill: parent
             visible: win.picking && !stack.depth
-            onChosen: p => win.use(p ? p.id : "", "")
+            onChosen: p => { const then = p ? win.afterPick : ""; win.afterPick = ""; win.use(p ? p.id : "", then); }
             onAddAccount: win.push(signInC, {})
             onSignOut: p => Y.call("signOut", {account: p.account}, () => {
                 toast.show(p.name + " is signed out on this TV.");

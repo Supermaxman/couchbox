@@ -27,7 +27,7 @@ FocusScope {
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
                                           height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
-                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message}; }
+                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
     // follow from the first frame
     property real pos: video.position
@@ -71,6 +71,8 @@ FocusScope {
     property var meta: ({})                    // watch: {video, related, next}
     property var s: null                       // stream: {url, live, duration, chapters, ...}
     property string message: ""
+    // a guest YouTube won't play to (its bot check, "sign in"): OK offers Who's watching
+    readonly property bool signInOffer: !Y.signedIn && /\bbot\b|sign in|signed in|login/i.test(message)
     property string mode: "controls"           // hidden | bar | controls | related
     property int button: 4                     // the focused control (index into controls)
     readonly property var video: Y.video
@@ -416,6 +418,7 @@ FocusScope {
             return;
         }
         if (k === Qt.Key_Escape || k === Qt.Key_Back) { if (!e.isAutoRepeat) back(); e.accepted = true; return; }
+        if (signInOffer && (k === Qt.Key_Return || k === Qt.Key_Enter)) { if (!e.isAutoRepeat) Y.whoIsWatching(); e.accepted = true; return; }
         // a keyboard's (VacuumTube's) keys: P / D faster and slower, A normal speed, C captions, M sound
         const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
         if ((k === Qt.Key_P || k === Qt.Key_D || k === Qt.Key_A) && !(e.modifiers & Qt.ControlModifier)) {
@@ -897,7 +900,8 @@ FocusScope {
             width: parent.width * 0.6
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
-            text: player.message ? player.message + "\nBack to go back."
+            text: player.signInOffer ? "YouTube wants you signed in to play this.\nOK: sign in or choose an account · Back to go back."
+                : player.message ? player.message + "\nBack to go back."
                 : player.waitLeft > 0 ? "Starting in " + player.waitLeft + " s (YouTube holds it back as long as its ads would play)" : "Loading…"
             color: Y.text
             font.family: Y.font; font.pixelSize: 32 * Y.u

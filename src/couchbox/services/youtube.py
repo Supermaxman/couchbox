@@ -1807,7 +1807,12 @@ class Demo(YouTube):
 
 
 def demo_stream(video_id: str) -> dict[str, Any]:
-    """The demo's "stream": nothing to play (the stand-in video), with chapters to draw."""
+    """The demo's "stream": nothing to play (the stand-in video), with chapters to draw. A "demobot..."
+    video gets YouTube's bot check, as a guest's can (screenshots)."""
+    if video_id.startswith("demobot"):
+        from couchbox.services import ytstream
+
+        raise ytstream.Unavailable(ytstream.friendly("Sign in to confirm you’re not a bot"))
     n = int(video_id[4:]) if video_id.startswith("demo") and video_id[4:].isdigit() else 0
     names = ["Intro", "The question", "First try", "What went wrong", "Second try", "The answer", "Wrapping up"]
     return {
