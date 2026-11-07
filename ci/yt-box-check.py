@@ -331,7 +331,7 @@ def player_walk(r):
     remote(*(["up", "up"] if d(focus()).get("mode") == "hidden" else ["up"]), *(["left", "ok"] if at >= 12 else ["back"]))   # (OK: there; Back: the bar down)
     r.step("paused-seek-mid", lambda f: (bool(d(f).get("paused")), f"position {at} -> {d(f).get('position')}"), settle=2.5)
     mid = picture(r, "paused-seek-mid-picture")
-    for _ in range(12):  # back to 0:00 (a resumed video starts minutes in): Left, 4 at a time, until there
+    for _ in range(30):  # back to 0:00 (a resumed video starts minutes in): Left, 4 at a time (real 10 s seeks), until there
         g = d(focus())  # (where it's going: a scrub goes there on OK or a moment after the last press)
         if (g.get("scrub", -1) if g.get("scrub", -1) >= 0 else g.get("position", 99)) <= 1:
             break
