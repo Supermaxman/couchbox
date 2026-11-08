@@ -26,7 +26,7 @@ Window {
     readonly property real textMax: win.width * 0.62 - 140
     property var st: ({ phase: "idle", heard: "", status: "", reply: "" })
     property bool shown: false
-    property bool busy: st.phase === "transcribing" || st.phase === "thinking" || st.phase === "working"
+    property bool busy: st.phase === "transcribing" || st.phase === "thinking" || st.phase === "working" || (st.phase === "notice" && !!st.busy)
 
     function poll() {
         const x = new XMLHttpRequest();
@@ -40,7 +40,9 @@ Window {
             const age = s.now - s.t;
             // long enough to read; a question waits for the answer (hold the mic button)
             const linger = s.question ? 120 : Math.min(8, 3 + (s.reply || "").length / 25);
-            shown = s.phase !== "idle" && !((s.phase === "done" || s.phase === "error") && age > linger);
+            // a notice (the TV switching its refresh rate): for as long as it asked
+            shown = s.phase === "notice" ? age < (s.linger || 0)
+                  : s.phase !== "idle" && !((s.phase === "done" || s.phase === "error") && age > linger);
         };
         x.open("GET", "http://127.0.0.1:8790/state");
         x.send();
@@ -138,7 +140,7 @@ Window {
                 }
                 Text {
                     anchors.centerIn: parent
-                    visible: win.st.phase === "done" || win.st.phase === "error"
+                    visible: win.st.phase === "done" || win.st.phase === "error" || (win.st.phase === "notice" && !win.st.busy)
                     text: win.st.phase === "error" ? "!" : win.st.question ? "?" : "✓"
                     color: win.st.phase === "error" ? "#ff8a8a" : win.accent
                     font.family: win.font
@@ -162,7 +164,7 @@ Window {
                 }
                 Text {
                     width: Math.min(implicitWidth, win.textMax)
-                    visible: text !== "" && win.st.phase !== "done" && win.st.phase !== "error"
+                    visible: text !== "" && win.st.phase !== "done" && win.st.phase !== "error" && win.st.phase !== "notice"
                     text: win.st.note || ""
                     color: "#c9d6ff"
                     font.family: win.font
@@ -173,7 +175,7 @@ Window {
                 }
                 Text {
                     width: Math.min(implicitWidth, win.textMax)
-                    text: win.st.phase === "done" || win.st.phase === "error" ? win.st.reply
+                    text: win.st.phase === "done" || win.st.phase === "error" || win.st.phase === "notice" ? win.st.reply
                           : win.st.phase === "listening" ? "Listening…"
                           : (win.st.status || "Thinking") + "…"
                     color: win.st.phase === "error" ? "#ffb4b4" : "#f5f6f8"

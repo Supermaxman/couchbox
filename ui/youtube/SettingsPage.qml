@@ -54,7 +54,7 @@ FocusScope {
                             desc: "Sharper than 1080p, up to 4K, when H.264 only is off"},
                            {key: "remove_superres", label: "Remove Super Resolution", on: !!st.remove_superres, group: "Quality",
                             desc: "Skip the versions YouTube sharpened with AI"},
-                           {key: "match_rate", label: "Match the TV to the video's frame rate", group: "The TV", value: st.match_rate || "film",
+                           {key: "match_rate", label: "Match the TV to the video's frame rate", group: "The TV", value: st.match_rate || "off",
                             choices: [["film", "Film only"], ["always", "Always"], ["off", "Off"]],
                             desc: "Film only: for 24 and 25 fps films over 5 minutes (smoother; the screen goes black a moment when it changes). Always: for every video."}]};
         if (item.key === "player")

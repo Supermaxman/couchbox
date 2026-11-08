@@ -27,6 +27,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -234,13 +235,31 @@ def outputs() -> list[Output]:
 
 ON_SWITCH = None  # an app's timing hook: (ms the switch took, the new mode)
 
+# A switch blanks the TV for a second or two: the indicator over every app (couchbox-voice's,
+# POST /notice) says so NOTICE_LEAD before, and what the TV is at once it's done.
+NOTICE_LEAD = 2.0
+VOICE_URL = "http://127.0.0.1:8790"
+
+
+def notice(text: str, busy: bool, linger: float) -> None:
+    """A line on the TV's indicator (a spinner while busy, else a tick) for linger seconds;
+    nothing when couchbox-voice isn't running, or while the voice assistant is using it."""
+    req = urllib.request.Request(
+        VOICE_URL + "/notice",
+        data=json.dumps({"text": text, "busy": busy, "linger": linger}).encode(),
+        headers={"X-Couchbox": "1", "Content-Type": "application/json"},
+    )
+    with contextlib.suppress(OSError, ValueError):
+        urllib.request.urlopen(req, timeout=1).close()
+
 
 def set_rate(fps: float | None) -> list[str]:
     """Put each TV output in the mode for a fps video (None: Settings → Resolution), with
     kscreen-doctor, in the TV session. An output already there isn't touched (a switch blanks
-    the TV for a second or two). Returns the outputs left away from Settings' mode."""
+    the TV for a second or two, said on screen before and after). Returns the outputs left away
+    from Settings' mode."""
     spec, names = _display_settings()
-    away = []
+    away, moves = [], []
     for o in outputs():
         if not (o.enabled and o.connected and o.name in names):
             continue
@@ -249,15 +268,23 @@ def set_rate(fps: float | None) -> list[str]:
         if not target:
             continue
         if target.id != o.current:
-            t = time.monotonic()
-            r = system.sh(["kscreen-doctor", f"output.{o.name}.mode.{target.id}"], check=False, timeout=15)
-            took = round((time.monotonic() - t) * 1000)
-            why = f"for {fps:.3f} fps" if fps else "Settings' mode"
-            _log(f"{o.name}: {o.mode(o.current)} -> {target} {why} in {took} ms" + ("" if r.returncode == 0 else " (failed)"))
-            if ON_SWITCH:
-                ON_SWITCH(took, str(target))
+            moves.append((o, target))
         if home is None or target.id != home.id:
             away.append(o.name)
+    if moves:
+        hz = f"{round(moves[0][1].rate)} Hz"
+        notice(f"Switching the TV to {hz} for this video" if fps else f"Switching the TV back to {hz}", True, NOTICE_LEAD + 20)
+        time.sleep(NOTICE_LEAD)
+    for o, target in moves:
+        t = time.monotonic()
+        r = system.sh(["kscreen-doctor", f"output.{o.name}.mode.{target.id}"], check=False, timeout=15)
+        took = round((time.monotonic() - t) * 1000)
+        why = f"for {fps:.3f} fps" if fps else "Settings' mode"
+        _log(f"{o.name}: {o.mode(o.current)} -> {target} {why} in {took} ms" + ("" if r.returncode == 0 else " (failed)"))
+        if ON_SWITCH:
+            ON_SWITCH(took, str(target))
+    if moves:
+        notice(f"The TV is at {hz}" if fps else f"Back to {hz}", False, 8)
     return away
 
 

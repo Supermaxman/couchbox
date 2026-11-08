@@ -59,8 +59,9 @@ DEFAULTS: dict[str, Any] = {
     "autoplay": True,  # the next video plays by itself when one ends (YouTube's Autoplay next video)
     "restricted": False,  # YouTube's Restricted mode (InnerTube's safety mode) for every profile on this TV
     "parent_code": "",  # a parent code's hash: Restricted mode and the code itself change only with it
-    # the TV's refresh rate to the video's: off | film (24 and 25 fps films only) | always
-    "match_rate": "film",
+    # the TV's refresh rate to the video's: off | film (24 and 25 fps films only) | always. Off:
+    # each switch blanks the TV for a second or two, too often for YouTube's short videos
+    "match_rate": "off",
     "cast": True,  # the TV as a cast target for the YouTube phone app (couchbox-yt-cast, DIAL and the Lounge)
     "guide_tabs": {"music": True, "gaming": True, "news": True, "podcasts": True, "movies": True, "live": True, "sports": True},
 }

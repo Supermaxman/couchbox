@@ -10,6 +10,17 @@ from couchbox import playback, settings
 from couchbox.daemon import apply
 
 G, C = "\x1b[01;32m", "\x1b[0;0m"
+
+
+@pytest.fixture(autouse=True)
+def notices(monkeypatch):
+    """What the TV's indicator was told (no voice service here, no lead to wait out)."""
+    said = []
+    monkeypatch.setattr(playback, "NOTICE_LEAD", 0)
+    monkeypatch.setattr(playback, "notice", lambda text, busy, linger: said.append((text, busy)))
+    return said
+
+
 # kscreen-doctor -o on the Pi (Plasma 6), colours and all; HDMI-A-2 has nothing plugged in
 KSCREEN = f"""{G}Output: {C}1 HDMI-A-1 6b1f53c3-0000
 \t{G}enabled{C}
@@ -96,7 +107,23 @@ def test_set_rate_switches_only_when_needed(runner):
     assert not runner.ran("kscreen-doctor", "output.HDMI-A-1.mode.1")
 
 
-def test_set_rate_puts_settings_mode_back(runner):
+def test_a_switch_is_said_on_the_tv_before_and_after(runner, notices, monkeypatch):
+    runner.answers[("kscreen-doctor", "-o")] = (0, KSCREEN)
+    order = []
+    monkeypatch.setattr(playback, "notice", lambda text, busy, linger: order.append(("notice", text, busy)))
+    monkeypatch.setattr(playback, "ON_SWITCH", lambda took, mode: order.append(("switch", mode)))
+    playback.set_rate(23.976)
+    assert order == [
+        ("notice", "Switching the TV to 24 Hz for this video", True),
+        ("switch", "1920x1080@23.98"),
+        ("notice", "The TV is at 24 Hz", False),
+    ]
+    order.clear()
+    playback.set_rate(30.0)  # no switch: nothing said
+    assert order == []
+
+
+def test_set_rate_puts_settings_mode_back(runner, notices):
     runner.answers[("kscreen-doctor", "-o")] = (
         0,
         KSCREEN.replace("1:\x1b[01;32m1920x1080@60.00*", "1:1920x1080@60.00").replace("8:1920x1080@23.98", "8:1920x1080@23.98*"),
@@ -104,6 +131,7 @@ def test_set_rate_puts_settings_mode_back(runner):
     settings.update({"display.mode": "1920x1080@60"})
     assert playback.set_rate(None) == []
     assert runner.ran("kscreen-doctor", "output.HDMI-A-1.mode.1")
+    assert notices == [("Switching the TV back to 60 Hz", True), ("Back to 60 Hz", False)]
 
 
 # ------------------------------------------------------------------ the Follower
