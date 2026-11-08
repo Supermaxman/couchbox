@@ -11,14 +11,11 @@ Sources, each only while its app is on the home row (as couchboxd last wrote it,
   nebula          its Continue Watching and search (nebula.py)
   twitch          followed channels live now (signed in), and channel / category search (twitch.py)
   movies          search only: TMDB through Seerr or a TMDB key (movies.py)
-  youtube-beta    Couchbox's own YouTube app (couchbox-yt, the YouTube (beta) tile): the part-watched
-                  videos of its History, as the profile it last watched as (its own sign-in,
-                  ~/.local/share/couchbox-yt; a guest has none); OK starts it where it was left
-  youtube         search only: one card that opens YouTube's own search. YouTube isn't in
-                  Continue watching: its history lives in VacuumTube's page, which is only there
-                  while YouTube runs (couchbox-memory closes it when idle), and reading it means
-                  driving YouTube's screens (as the voice assistant's "resume" does) or its
-                  private TV API with VacuumTube's sign-in. Neither belongs in a background job.
+  youtube         Couchbox's own YouTube app (couchbox-yt): the part-watched videos of its History,
+                  as the profile it last watched as (its own sign-in, ~/.local/share/couchbox-yt;
+                  a guest has none), OK starting each where it was left; and search: one card
+                  that opens the app's search. With VacuumTube chosen instead (Settings → Apps →
+                  YouTube app), search only: its history lives in VacuumTube's page.
 
 Items are plain dicts, the same for both lists:
   {key, app, name, desktop, title, subtitle, art, fit, progress, left, live, viewers, when, target}
@@ -28,11 +25,12 @@ Items are plain dicts, the same for both lists:
 Targets name the app and what its --open takes:
   dropout:play:123  dropout:series:45  nebula:play:<id>  twitch:play:live:<login>
   twitch:series:<login>  twitch:category:<name>  movies:movie:603  movies:tv:1399
-  jellyfin:<item id>  youtube:search:<text>  youtube-beta:video:<id>[@<seconds>]
-open_target() opens one as the TV user: the streaming apps and Movies & TV through their control
-socket when they run (and KWin raises the window), else started with --open; Jellyfin and
-YouTube through couchbox-voice (127.0.0.1:8790 /play/jellyfin, /search/youtube), which drives
-them over DevTools as the voice assistant does (Jellyfin resumes where it was left).
+  jellyfin:<item id>  youtube:search:<text>  youtube:video:<id>[@<seconds>]
+open_target() opens one as the TV user: the streaming apps, Movies & TV and YouTube through their
+control socket when they run (and KWin raises the window), else started with --open; Jellyfin,
+and YouTube when VacuumTube is the YouTube app, through couchbox-voice (127.0.0.1:8790
+/play/jellyfin, /search/youtube), which drives them over DevTools as the voice assistant does
+(Jellyfin resumes where it was left).
 """
 
 import datetime
@@ -50,7 +48,7 @@ from typing import Any
 from couchbox import apps, paths, settings
 
 STREAMING = ("dropout", "2ndtry", "nebula", "twitch")  # app id = couchbox-streaming --site
-CONTINUE_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch", "youtube-beta")
+CONTINUE_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch", "youtube")
 SEARCH_APPS = ("jellyfin", "dropout", "2ndtry", "nebula", "twitch", "movies", "youtube")
 NAMES = {
     "jellyfin": "Jellyfin",
@@ -72,7 +70,6 @@ GLOW = {
     "twitch": "#9146ff",
     "movies": "#f5b301",
     "youtube": "#ff1f1f",
-    "youtube-beta": "#ff1f1f",
 }
 
 MAX_ITEMS = 20  # the row
@@ -365,17 +362,17 @@ def youtube_continue(page: dict[str, Any], limit: int = 12) -> list[dict[str, An
     for shelf in page.get("shelves") or []:
         for c in shelf.get("items") or []:
             p = c.get("progress") or 0.0
-            key = f"youtube-beta:{c.get('id')}"
+            key = f"youtube:{c.get('id')}"
             if c.get("type") != "video" or not c.get("id") or not 0.01 < p < DONE or any(it["key"] == key for it in out):
                 continue
             total = length(c.get("duration") or "")
             at = max(0, int(total * p) - 3) if total else 0
             out.append(
                 item(
-                    "youtube-beta",
+                    "youtube",
                     c["id"],
                     c.get("title") or "",
-                    f"youtube-beta:video:{c['id']}" + (f"@{at}" if at else ""),
+                    f"youtube:video:{c['id']}" + (f"@{at}" if at else ""),
                     subtitle=(c.get("lines") or [""])[0],
                     art=c.get("thumb") or "",
                     progress=round(p, 3),
@@ -552,7 +549,7 @@ class Clients:
     def get(self, site: str) -> Any:
         from couchbox.services import vhx
 
-        if site == "youtube-beta":
+        if site == "youtube":
             return self.youtube()
         mtime = self._mtime(site)
         if site in self.made and self.made[site][0] == mtime:
@@ -576,12 +573,12 @@ class Clients:
         a guest. Made once: it reads the app's files each time."""
         from couchbox.services import youtube
 
-        if "youtube-beta" not in self.made:  # the TV client as it's known here: no yt-dlp in this service
-            self.made["youtube-beta"] = (None, youtube.YouTube(client=youtube.TV_CLIENT))
-        yt = self.made["youtube-beta"][1]
+        if "youtube" not in self.made:  # the TV client as it's known here: no yt-dlp in this service
+            self.made["youtube"] = (None, youtube.YouTube(client=youtube.TV_CLIENT))
+        yt = self.made["youtube"][1]
         prof = yt.find_profile(yt.auth.last_profile())
         if not prof:
-            raise NotSignedIn("YouTube (beta): watching as a guest (nothing to continue)")
+            raise NotSignedIn("YouTube: watching as a guest (nothing to continue)")
         with yt.lock:
             yt.profile = prof
             yt.cache.clear()
@@ -597,13 +594,16 @@ def fetch_continue(source: str, clients: Clients) -> list[dict[str, Any]]:
         if not j:
             raise NotSignedIn("Jellyfin: open it once on the TV, signed in, so its sign-in can be read")
         return j.resume()
-    if source == "youtube-beta":
+    if source == "youtube":
+        from couchbox import apps
         from couchbox.services import ytauth
 
+        if not apps.youtube_native():
+            raise NotSignedIn("YouTube: VacuumTube is the YouTube app (its history isn't readable here)")
         try:
-            return youtube_continue(clients.get("youtube-beta").browse("FEhistory"), limit=YOUTUBE_MAX)
+            return youtube_continue(clients.get("youtube").browse("FEhistory"), limit=YOUTUBE_MAX)
         except ytauth.SignedOut:
-            raise NotSignedIn("YouTube (beta): the account was signed out; sign in again from Who's watching") from None
+            raise NotSignedIn("YouTube: the account was signed out; sign in again from Who's watching") from None
     c = clients.get(source)
     if source == "twitch" and not c.signed_in:
         raise NotSignedIn("Twitch: not signed in")
@@ -656,15 +656,13 @@ def split_target(target: str) -> tuple[str, str]:
         raise ValueError(f"not something {NAMES[app]} opens: {rest!r}")
     if app == "movies" and not re.fullmatch(r"(movie|tv):\d+", rest):
         raise ValueError(f"not a title: {rest!r}")
-    if app == "youtube-beta" and not re.fullmatch(r"video:[\w-]{11}(@\d{1,6})?", rest):
-        raise ValueError(f"not a video: {rest!r}")
-    if app == "youtube" and not rest.startswith("search:"):
-        raise ValueError(f"YouTube only opens a search: {rest!r}")
+    if app == "youtube" and not (re.fullmatch(r"video:[\w-]{11}(@\d{1,6})?", rest) or re.match(r"search:.", rest)):
+        raise ValueError(f"not a video or a search: {rest!r}")
     return app, rest
 
 
-SITE = {"youtube-beta": "yt"}  # control socket names that aren't the app's id
-EXE = {"youtube-beta": "couchbox-yt"}
+SITE = {"youtube": "yt"}  # control socket names that aren't the app's id
+EXE = {"youtube": "couchbox-yt"}
 
 
 def launch_command(app: str, rest: str, unit: str = "") -> list[str]:
@@ -728,7 +726,9 @@ def open_target(target: str) -> str:
     from couchbox import appctl
 
     app, rest = split_target(target)
-    if app in ("jellyfin", "youtube"):
+    from couchbox import apps
+
+    if app == "jellyfin" or (app == "youtube" and not apps.youtube_native()):  # (VacuumTube: its search, over DevTools)
         path, body = voice_request(app, rest)
         r = requests.post(VOICE + path, json=body, headers={"X-Couchbox": "1"}, timeout=10)
         r.raise_for_status()
@@ -803,10 +803,10 @@ def demo_continue(now: float | None = None) -> list[dict[str, Any]]:
         ),
         item("2ndtry", "55", "Ultimate Pie", "2ndtry:play:55", subtitle="S1 · E2", progress=0.55, left="8 min left", when=now - 3 * 86400),
         item(
-            "youtube-beta",
+            "youtube",
             "demo0000006",
             "How Tides Really Work",
-            "youtube-beta:video:demo0000006@1257",
+            "youtube:video:demo0000006@1257",
             subtitle="Orbit Lab",
             progress=0.35,
             left="39 min left",

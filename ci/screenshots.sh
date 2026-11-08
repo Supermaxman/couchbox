@@ -97,7 +97,7 @@ shot movies-person couchbox-movies --open person:303
 shot movies-person-work couchbox-movies --open person:303:directing
 shot movies-search couchbox-movies --open search:harbor
 shot movies-top couchbox-movies --open top:movie
-# YouTube (beta) with made-up videos: Home, the guide open, a tab, Search (the keys, typing),
+# YouTube with made-up videos: Home, the guide open, a tab, Search (the keys, typing),
 # results and down to the chips, a channel, the player (controls, the related rows, the bar),
 # Settings
 shot yt-home couchbox-yt

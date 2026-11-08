@@ -146,3 +146,21 @@ def test_pairing_code_comes_from_the_token_and_changes_with_it():
     secrets.clear("phone.token")
     assert secrets.check_pair_code(code) == ""  # no token, no code
     assert secrets.pair_code(secrets.ensure_token()) != code  # New pairing code changes it
+
+
+def test_the_youtube_beta_tile_becomes_the_youtube_tile():
+    from couchbox.settings import migrations
+
+    one = migrations.MIGRATIONS[1]
+    v = one({"home.layout": ["youtube-beta", "youtube", "jellyfin"], "home.names": {"youtube-beta": "YouTube", "youtube": "YouTube (old)"}})
+    assert v["home.layout"] == ["youtube", "jellyfin"] and v["home.names"] == {}
+    v = one({"home.layout": ["jellyfin", "youtube", "twitch", "youtube-beta"], "home.names": {"youtube-beta": "Tube"}})
+    assert v["home.layout"] == ["jellyfin", "youtube", "twitch"] and v["home.names"] == {"youtube": "Tube"}
+    assert one({"home.hidden": ["youtube-beta"]})["home.hidden"] == []  # VacuumTube's tile was shown
+    assert one({"home.hidden": ["youtube"]})["home.hidden"] == []  # the beta was shown
+    assert one({"home.hidden": ["youtube", "youtube-beta", "seerr"]})["home.hidden"] == ["seerr", "youtube"]
+    assert one({"locale.timezone": "UTC"}) == {"locale.timezone": "UTC"}
+    assert settings.migrate({"version": 1, "values": {"home.layout": ["youtube-beta"]}}) == {
+        "version": 2,
+        "values": {"home.layout": ["youtube"]},
+    }
