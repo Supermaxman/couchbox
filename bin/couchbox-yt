@@ -1,14 +1,14 @@
 #!/usr/bin/python3
-"""couchbox-yt: YouTube as a native TV app (the "YouTube (beta)" tile), built to look and work like
-YouTube's own TV app: the guide on the left (Search, Home, Shorts, Music, Subscriptions, Library,
+"""couchbox-yt: YouTube as a native TV app (the YouTube tile, through couchbox-youtube-tv), built to
+look and work like YouTube's own TV app: the guide on the left (Search, Home, Shorts, Music, Subscriptions, Library,
 Gaming, News, Podcasts, Movies & TV, Live, Sports, Settings), shelves of videos, search with
 suggestions, channel pages, and the player (libmpv, couchbox.player) with YouTube's controls and
 the related videos under them.
 
 Pages come from InnerTube as YouTube's TV client (couchbox.services.youtube); streams from yt-dlp
 (couchbox.services.ytstream: H.264 up to 1080p60, no ads). The QML is in
-/usr/share/couchbox/ui/youtube. VacuumTube (the YouTube tile) stays as it is until this app
-reaches it.
+/usr/share/couchbox/ui/youtube. VacuumTube stays installed as the tile's fallback (Settings →
+Apps → YouTube app).
 
   couchbox-yt [--open video:ID[@SECONDS] | search:TEXT | channel:ID | browse:ID | home | profiles | signin]
                                      open on that (a second launch hands it to the running app)
@@ -81,6 +81,8 @@ def started(step):
 
 started("imports")
 
+SHOWN = ("home", "browse", "channel", "search", "subscriptions", "library")   # pages (for "screen")
+
 
 class Backend(QObject):
     current = None                                   # (the one: for the memory report)
@@ -107,6 +109,7 @@ class Backend(QObject):
         self.kept = {}                               # "video|profile": until when the worker keeps its signed-in stream
         Backend.current = self
         self.home_lock = threading.Lock()
+        self.shown = {}                              # the last page the app asked for (the control socket's "screen")
         if not demo and self.settings.get()["cast"]:
             start_cast()                             # phones can cast to the TV (and launch the app) from now on
         if not demo:
@@ -580,7 +583,10 @@ class Backend(QObject):
         def work():
             started = yttiming.now()
             try:
-                out = self.run(op, json.loads(args or "{}"))
+                a = json.loads(args or "{}")
+                out = self.run(op, a)
+                if op in SHOWN and isinstance(out, dict) and "error" not in out:
+                    self.shown = {"op": op, "args": a, "page": out}
             except (ytstream.Unavailable, youtube.YouTubeError) as err:
                 out = {"error": str(err.args[0]) if err.args else str(err)}
             except ytauth.SignedOut as err:
@@ -609,7 +615,7 @@ def start_cast():
 def cast_code(demo):
     """A "Link with TV code" (12 digits, in threes) from couchbox-yt-cast."""
     if demo:
-        return {"code": "123 456 789 012", "name": "Couchbox YouTube (beta)"}
+        return {"code": "123 456 789 012", "name": "Couchbox"}
     from couchbox import appctl
     try:
         return appctl.call("yt-cast", {"op": "code"}, timeout=25)
@@ -629,8 +635,10 @@ def qr_png(text, path):
 
 
 class Control(QObject):
-    """The control socket (couchbox.appctl): a second launch hands its --open to this one, and
-    the voice assistant can open videos, searches and channels."""
+    """The control socket (couchbox.appctl): a second launch hands its --open to this one; the
+    voice assistant, links sent to the TV, Continue watching and phones casting (couchbox-yt-cast)
+    open videos, searches and channels, control what plays (media), read what's on screen (state,
+    screen: the last page asked for) and use the app's own sign-in (call)."""
     command = Signal(str)
 
     def __init__(self, backend):
@@ -675,6 +683,8 @@ class Control(QObject):
             return {"timing": yttiming.recent()}
         if op == "memory":                           # where the memory goes (the box check's perf mode)
             return memory()
+        if op == "screen":                           # the voice assistant's "what's on screen"
+            return dict(self.state, shown=self.backend.shown)
         if op == "call":
             return self.backend.run(req["fn"], req.get("args") or {})
         if op in ("open", "media"):

@@ -231,8 +231,9 @@ ApplicationWindow {
         }
     }
 
-    // --open / a second launch / the voice assistant: video:ID[@SECONDS], search:TEXT, channel:ID,
-    // browse:ID, home, and typing:TEXT (Search's keys with that typed: screenshots)
+    // --open / a second launch / the voice assistant / a link sent to the TV: video:ID[@SECONDS],
+    // search:TEXT, channel:ID, browse:ID, playlist:ID, history, home (or a guide entry), and
+    // typing:TEXT (Search's keys with that typed: screenshots)
     function openTarget(o) {
         if (!ready) { pendingOpen = o; return; }   // (still starting: once it's ready)
         if (picking) {                             // Who's watching is up: as the last profile watching
@@ -247,6 +248,11 @@ ApplicationWindow {
         } else if (k === "search") { stack.clear(StackView.Immediate); Y.search(rest); }
         else if (k === "typing") { stack.clear(StackView.Immediate); choose("search"); pg(searchL).begin(rest); pg(searchL).forceActiveFocus(); }
         else if (k === "channel" || k === "browse") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest}); }
+        else if (k === "playlist") { stack.clear(StackView.Immediate); push(channelC, {channelId: rest.indexOf("VL") === 0 ? rest : "VL" + rest}); }
+        else if (k === "history") {
+            stack.clear(StackView.Immediate); choose("library");
+            if (Y.signedIn) push(listC, {title: "History", browseId: "FEhistory"});
+        }
         else if (k === "home" || tabs[k] || k === "settings" || k === "subscriptions" || k === "library") { stack.clear(StackView.Immediate); choose(k); focusPage(); }
         else if (k === "profiles") { pickedAtStart = false; showProfiles(); }
         else if (k === "as") win.use(rest === "guest" ? "" : rest, "home");   // watch as a profile (the box check)
@@ -258,9 +264,13 @@ ApplicationWindow {
         const st = {page: picking ? "profiles" : cur ? (cur.videoId !== undefined ? "player" : cur.browseId !== undefined ? "list" : "channel") : section,
                     profile: Y.profile ? Y.profile.name : "guest"};
         if (cur && cur.label) st.showing = cur.label;
+        if (cur && cur.channelId) st.id = cur.channelId;
+        if (!picking && !cur) st.section = section;
+        if (!picking && !cur && section === "search") st.query = searchL.item ? searchL.item.query : "";
         if (win.playing) {
-            st.playing = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
+            st.playing = cur.label; st.title = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
             st.videoId = cur.videoId || ""; st.duration = Math.round(video.duration || 0);    // for couchbox-yt-cast
+            st.live = !!cur.live;
         }
         control.setState(JSON.stringify(st));
     }

@@ -44,7 +44,8 @@ def test_windows_map_to_apps():
     assert tools.app_of_window({"class": "plasmashell", "app": "org.kde.plasmashell"}) == "home"
     assert tools.app_of_window({}) == "home"
     assert tools.app_of_window({"class": "couchbox-dropout", "app": "couchbox-dropout"}).id == "dropout"
-    assert tools.app_of_window({"class": "x", "app": "rocks.shy.VacuumTube"}).id == "youtube"
+    assert tools.app_of_window({"class": "x", "app": "rocks.shy.VacuumTube"}).id == "youtube"  # the fallback
+    assert tools.app_of_window({"class": "couchbox-yt", "app": "couchbox-yt"}).id == "youtube"
     assert tools.app_of_window({"class": "something-else", "app": ""}) is None
 
 

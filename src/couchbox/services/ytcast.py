@@ -38,6 +38,21 @@ import requests
 
 log = logging.getLogger("couchbox.ytcast")
 
+
+def cast_name(s: dict[str, Any] | None = None) -> str:
+    """The name phones list the TV under: its device name (Settings → Network; "Couchbox" while
+    it's the default), marked as Couchbox's app when VacuumTube is the tile's (it may cast too)."""
+    from couchbox import apps, settings
+
+    try:
+        s = s or settings.load()
+        host, native = s["network.hostname"], apps.youtube_native(s)
+    except (OSError, ValueError, KeyError):
+        host, native = "couchbox", True
+    name = "Couchbox" if host in ("", "couchbox") else host
+    return name if native else f"{name} (Couchbox YouTube)"
+
+
 LOUNGE = "https://www.youtube.com/api/lounge"
 APP = "lb-v4"  # the TV ("leanback") app, as the phone knows it
 TIMEOUT = (8, 20)

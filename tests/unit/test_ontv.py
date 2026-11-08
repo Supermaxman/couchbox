@@ -214,15 +214,13 @@ def write_home(box, ids):
 
 def test_only_apps_on_the_home_row_are_asked(box):
     write_home(box, ["youtube", "twitch", "nebula", "jellyfin", "settings"])
-    assert ontv.sources("continue") == ["jellyfin", "nebula", "twitch"]  # VacuumTube's YouTube: search only
-    write_home(box, ["youtube", "youtube-beta", "twitch", "settings"])
-    assert ontv.sources("continue") == ["twitch", "youtube-beta"]  # the native app's History
+    assert ontv.sources("continue") == ["jellyfin", "nebula", "twitch", "youtube"]  # YouTube: the app's History
     write_home(box, ["youtube", "twitch", "nebula", "jellyfin", "settings"])
     assert ontv.sources("search") == ["jellyfin", "nebula", "twitch", "youtube"]
     # no home.json yet: the registry's row (Jellyfin needs its server set)
     (box / "var/lib/couchbox/home/home.json").unlink()
     settings.update({"apps.disabled": ["twitch"], "home.hidden": ["nebula"]})
-    assert ontv.sources("continue") == ["dropout", "2ndtry", "youtube-beta"]
+    assert ontv.sources("continue") == ["dropout", "2ndtry", "youtube"]
 
 
 def test_home_json_names_the_rows_file_unless_turned_off(box, runner):
@@ -239,8 +237,9 @@ def test_targets_are_checked_before_anything_runs():
     assert ontv.split_target("twitch:category:Just Chatting") == ("twitch", "category:Just Chatting")
     assert ontv.split_target("movies:tv:1399") == ("movies", "tv:1399")
     assert ontv.split_target("jellyfin:0f3a9c2e8b7d4e10") == ("jellyfin", "0f3a9c2e8b7d4e10")
-    assert ontv.split_target("youtube-beta:video:dQw4w9WgXcQ@182") == ("youtube-beta", "video:dQw4w9WgXcQ@182")
-    for bad in ("youtube-beta:video:x y", "youtube-beta:search:x", "youtube-beta:video:dQw4w9WgXcQ@1;rm"):
+    assert ontv.split_target("youtube:video:dQw4w9WgXcQ@182") == ("youtube", "video:dQw4w9WgXcQ@182")
+    assert ontv.split_target("youtube:search:tides") == ("youtube", "search:tides")
+    for bad in ("youtube:video:x y", "youtube:search:", "youtube:video:dQw4w9WgXcQ@1;rm"):
         with pytest.raises(ValueError):
             ontv.split_target(bad)
     for bad in ("", "dropout", "dropout:", "spotify:play:1", "dropout:rm -rf", "movies:person:3", "jellyfin:../x", "youtube:play:x"):
@@ -354,12 +353,12 @@ def test_youtube_beta_continues_the_part_watched_videos_of_its_history():
     from couchbox.services import youtube
 
     items = ontv.youtube_continue(youtube.Demo("demo1:").browse("FEhistory"))
-    assert [i["key"] for i in items] == ["youtube-beta:demo0000006", "youtube-beta:demo0000010"]
+    assert [i["key"] for i in items] == ["youtube:demo0000006", "youtube:demo0000010"]
     it = items[0]
-    assert it["app"] == "youtube-beta" and it["desktop"] == "couchbox-yt.desktop" and it["progress"] == 0.35
+    assert it["app"] == "youtube" and it["desktop"] == "couchbox-yt.desktop" and it["progress"] == 0.35
     secs = ontv.length("46:18")
-    assert it["target"] == f"youtube-beta:video:demo0000006@{int(secs * 0.35) - 3}"  # where it was left
-    assert ontv.split_target(it["target"])[0] == "youtube-beta"
+    assert it["target"] == f"youtube:video:demo0000006@{int(secs * 0.35) - 3}"  # where it was left
+    assert ontv.split_target(it["target"])[0] == "youtube"
 
 
 def test_youtube_beta_opens_in_the_running_app_or_starts_it(monkeypatch):
@@ -369,11 +368,11 @@ def test_youtube_beta_opens_in_the_running_app_or_starts_it(monkeypatch):
     monkeypatch.setattr(appctl, "running", lambda site: site == "yt" and not ran)
     monkeypatch.setattr(appctl, "call", lambda site, req, timeout=0: calls.append((site, req)))
     monkeypatch.setattr(ontv, "kwin_raise", lambda app_id: calls.append(("raise", app_id)))
-    ontv.open_target("youtube-beta:video:dQw4w9WgXcQ@182")
+    ontv.open_target("youtube:video:dQw4w9WgXcQ@182")
     assert calls == [("yt", {"op": "open", "target": "video:dQw4w9WgXcQ@182"}), ("raise", "couchbox-yt")]
     monkeypatch.setattr(appctl, "running", lambda site: False)
     monkeypatch.setattr(ontv.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
-    ontv.open_target("youtube-beta:video:dQw4w9WgXcQ@182")
+    ontv.open_target("youtube:video:dQw4w9WgXcQ@182")
     assert ran[0][-3:] == ["/usr/lib/couchbox/bin/couchbox-yt", "--open", "video:dQw4w9WgXcQ@182"]
     assert ran[0][4].startswith("--unit=app-couchbox-yt@ontv-")
 
@@ -381,4 +380,4 @@ def test_youtube_beta_opens_in_the_running_app_or_starts_it(monkeypatch):
 def test_youtube_beta_needs_a_signed_in_profile(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     with pytest.raises(ontv.NotSignedIn):
-        ontv.fetch_continue("youtube-beta", ontv.Clients())
+        ontv.fetch_continue("youtube", ontv.Clients())

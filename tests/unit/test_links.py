@@ -238,9 +238,10 @@ def test_timestamps(t, s):
 def tv(monkeypatch):
     """The TV's apps, faked: what was opened where."""
     from couchbox import appctl
-    from couchbox.voice import cdp, streaming, tools
+    from couchbox.voice import cdp, streaming, tools, ytnative
 
-    got = {"yt": [], "open": [], "calls": [], "raised": [], "jf": []}
+    got = {"yt": [], "ytn": [], "open": [], "calls": [], "raised": [], "jf": []}
+    monkeypatch.setattr(ytnative, "show", lambda target, raise_app=None, wait=25: got["ytn"].append(target) or True)
     monkeypatch.setattr(tools, "youtube_page", lambda: {"webSocketDebuggerUrl": "ws://x"})
     monkeypatch.setattr(cdp, "call", lambda page, js, cmd, wait, timeout=20: got["yt"].append(cmd) or {})
     monkeypatch.setattr(tools, "yt_title", lambda vid: f"“Video {vid}” by Someone")
@@ -268,11 +269,21 @@ def tv(monkeypatch):
     return got
 
 
-def test_youtube_video_plays_from_the_timestamp_in_its_playlist(tv):
+def test_youtube_video_plays_from_the_timestamp(tv):
     res = links.open_link("Watch this! https://youtu.be/dQw4w9WgXcQ?t=1m5s&list=PLabc123")
     assert res.ok and res.app == "youtube"
-    assert tv["yt"] == [{"watchEndpoint": {"videoId": "dQw4w9WgXcQ", "startTimeSeconds": 65, "playlistId": "PLabc123"}}]
+    assert tv["ytn"] == ["video:dQw4w9WgXcQ@65"] and tv["yt"] == []
     assert res.message == "Playing on the TV: “Video dQw4w9WgXcQ” by Someone, from 1:05"
+
+
+def test_vacuumtube_plays_it_in_its_playlist(tv, box):
+    from couchbox import settings
+
+    settings.update({"media.youtube.client": "vacuumtube"})
+    (box / "var/lib/flatpak/app/rocks.shy.VacuumTube").mkdir(parents=True)
+    res = links.open_link("Watch this! https://youtu.be/dQw4w9WgXcQ?t=1m5s&list=PLabc123")
+    assert res.ok and tv["ytn"] == []
+    assert tv["yt"] == [{"watchEndpoint": {"videoId": "dQw4w9WgXcQ", "startTimeSeconds": 65, "playlistId": "PLabc123"}}]
 
 
 def test_youtube_pages(tv, monkeypatch):
@@ -282,12 +293,12 @@ def test_youtube_pages(tv, monkeypatch):
     monkeypatch.setattr(links, "youtube_channel_id", lambda path: "UCuAXFkgsw1L7xaCfnd5JJOw" if path == "@known" else "")
     links.open_link("https://www.youtube.com/@known")
     assert links.open_link("https://www.youtube.com/@unknown").message == "Searched YouTube on the TV for @unknown."
-    assert tv["yt"] == [
-        {"browseEndpoint": {"browseId": "VLPLabc123"}},
-        {"browseEndpoint": {"browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"}},
-        {"searchEndpoint": {"query": "lofi beats"}},
-        {"browseEndpoint": {"browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"}},
-        {"searchEndpoint": {"query": "@unknown"}},
+    assert tv["ytn"] == [
+        "playlist:PLabc123",
+        "channel:UCuAXFkgsw1L7xaCfnd5JJOw",
+        "search:lofi beats",
+        "channel:UCuAXFkgsw1L7xaCfnd5JJOw",
+        "search:@unknown",
     ]
 
 
@@ -296,7 +307,7 @@ def test_hidden_apps_dont_open_links(tv):
 
     settings.update({"home.hidden": ["youtube"]})
     res = links.open_link("https://youtu.be/dQw4w9WgXcQ")
-    assert not res.ok and "home screen" in res.message and tv["yt"] == []
+    assert not res.ok and "home screen" in res.message and tv["yt"] == tv["ytn"] == []
 
 
 def test_twitch_live_or_the_channel_page(tv):

@@ -1,9 +1,10 @@
 """The voice agent's tools: what it can do on the TV.
 
-Apps are driven as text, not screenshots: YouTube through its own command router and
-data model, Jellyfin through the web app's API client, other web apps through a numbered
-list of the page's buttons and links. All of it over DevTools (cdp.py). Remote keys are
-the fallback."""
+Apps are driven as text, not screenshots: YouTube through Couchbox's own app's control socket
+(ytnative.py; VacuumTube, the tile's fallback, through its command router and data model),
+the native streaming apps through theirs (streaming.py), Jellyfin through the web app's API
+client, other web apps through a numbered list of the page's buttons and links, over DevTools
+(cdp.py). Remote keys are the fallback."""
 
 import json
 import os
@@ -20,7 +21,7 @@ from couchbox import appctl, secrets, settings
 from couchbox import apps as registry
 from couchbox.services import weather
 
-from . import cdp, streaming
+from . import cdp, streaming, ytnative
 
 TV_USER = "tv"
 APP_DIRS = [
@@ -150,6 +151,8 @@ def window_classes(app_id, name):
         out.append("chrome-" + re.sub(r"^https?://", "", url).split("/")[0] + "__-Default")
     if name.lower() == "jellyfin":
         out += ["jellyfin-desktop", "org.jellyfin.JellyfinDesktop", "org.jellyfin.jellyfin-desktop"]
+    if app_id == "couchbox-yt.desktop":
+        out += ["rocks.shy.VacuumTube"]  # the tile's fallback (Settings → Apps → YouTube app)
     return out
 
 
@@ -162,9 +165,20 @@ def raise_window(app_id, name):
     )
 
 
+def yt_native():
+    """YouTube is Couchbox's own app (couchbox-yt), not VacuumTube."""
+    return registry.youtube_native()
+
+
+def raise_youtube():
+    raise_window(ytnative.DESKTOP, "YouTube")
+
+
 def app_page(name):
-    """The DevTools page of a running app, or None."""
+    """The DevTools page of a running app, or None (our Qt apps have none)."""
     if name.lower() == "youtube":
+        if yt_native():
+            return None
         p = cdp.pages(cdp.YOUTUBE_PORT)
         return p[0] if p else None
     if name.lower() == "jellyfin":
@@ -183,6 +197,12 @@ def open_app(name, wait=True):
     if name.lower() not in apps:
         return f"No app called {name}. Apps: {', '.join(n for _, n in home_apps())}."
     app_id, name = apps[name.lower()]
+    if app_id == ytnative.DESKTOP and yt_native():
+        if ytnative.running():
+            raise_window(app_id, name)
+            return f"{name} is in front."
+        ytnative.launch()
+        return f"Opened {name}."
     if app_page(name):
         raise_window(app_id, name)
         return f"{name} is in front."
@@ -262,6 +282,10 @@ def typing_target():
     """(kind, page) for the app in front when it shows a text box or search screen: "youtube"
     (YouTube's search screen), "box" (a focused text box), "search" (a search page whose box
     isn't focused); else (None, None)."""
+    if yt_native() and ytnative.state().get("page") == "search":
+        a = app_of_window(active_window())
+        if a not in (None, "home") and a.id == "youtube":
+            return "youtube", None
     _, page = foreground(focused=True)
     if not page:
         return None, None
@@ -475,6 +499,8 @@ def youtube_page():
 
 
 def youtube(action, query=None, id=None):
+    if yt_native():
+        return ytnative.run(action, query, id, raise_youtube)
     page = youtube_page()
     if not page:
         return "YouTube isn't running."
@@ -696,6 +722,9 @@ PAGE_JS = r"""
 
 
 def page(action, target=None, text=None, submit=False):
+    a = app_of_window(active_window()) if yt_native() else None
+    if a not in (None, "home") and a.id == "youtube":
+        return "This is YouTube: use the youtube tool (action list shows what's on screen)."
     name, p = foreground()
     if not p:
         return "No app with a readable page is in front (the home screen?)."
@@ -776,12 +805,23 @@ def media_line(r, app):
     return f"{what}: {'paused' if r['paused'] else 'playing'} at {f(r['time'])} of {f(r['duration'])}"
 
 
+def native_site(a):
+    """The control socket's site of a native app (streaming apps, Couchbox's YouTube), or None."""
+    if a in (None, "home"):
+        return None
+    if a.id == "youtube":
+        return ytnative.SITE if yt_native() else None
+    return streaming.site_of_app(a.id)
+
+
 def media(action, seconds=None):
     """The app in front first, then any app with something playing."""
     a = app_of_window(active_window())
-    site = streaming.site_of_app(a.id) if a not in (None, "home") else None
+    site = native_site(a)
     if site and appctl.running(site):
         return streaming.media(site, action, seconds)
+    if site != ytnative.SITE and yt_native() and ytnative.state().get("page") == "player":
+        return streaming.media(ytnative.SITE, action, seconds)  # YouTube plays behind the app in front
     name, p = foreground()
     jf = [("Jellyfin", x, JF_MEDIA_JS) for x in cdp.pages(cdp.JELLYFIN_PORT)]
     candidates = (
@@ -1558,7 +1598,9 @@ def screen_summary():
     if a == "home":
         return "Screen: the home screen."
     if a is not None:
-        site = streaming.site_of_app(a.id)
+        site = native_site(a)
+        if site == ytnative.SITE:
+            return "Screen: " + ytnative.state_line(None, a.name) + "."
         if site:
             return "Screen: " + streaming.state_line(site, a.name) + "."
         if a.kind != "web" and a.id not in ("youtube", "jellyfin"):

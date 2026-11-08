@@ -2,9 +2,9 @@
 """couchbox-memory: keep the box's 8 GB for what's being watched.
 
 Idle apps. Every app is closed after COUCHBOX_APPS_IDLE_MINUTES (couchbox.env, default 60)
-without activity: YouTube, Jellyfin, each web app such as Dropout, and any other app started
-from the home screen (Twitch, Spotify, Settings, ...: each runs in its own app-*.service or
-app-*.scope). An app counts as active while something plays in it, or while it's in front and
+without activity: YouTube (couchbox-yt, or VacuumTube when it's the tile's choice), Jellyfin,
+each web app such as Dropout, and any other app started from the home screen (Twitch, Spotify,
+Settings, ...: each runs in its own app-*.service or app-*.scope). An app counts as active while something plays in it, or while it's in front and
 the remote is being pressed (couchbox-input touches /run/couchbox/last-key). Closing: web apps
 close their Chromium window; the others quit (SIGTERM, then SIGKILL). Their tiles start them
 fresh, and the voice assistant's resume picks up where they were. For the other apps, what's in
@@ -211,7 +211,9 @@ def front_and_players(uid):
 
 
 def app_name(app_id):
-    """couchbox-twitch -> Twitch, org.example.Foo -> Foo"""
+    """couchbox-twitch -> Twitch, org.example.Foo -> Foo, couchbox-yt (the YouTube tile) -> YouTube"""
+    if app_id == "couchbox-yt":
+        return "YouTube"
     name = app_id.removeprefix("couchbox-").rsplit(".", 1)[-1]
     return name[:1].upper() + name[1:]
 

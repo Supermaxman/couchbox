@@ -9,8 +9,9 @@ opening it there.
 Where links go:
   YouTube     watch, youtu.be, shorts, live, embed (also m., music. and youtube-nocookie), with
               t= / start= timestamps and playlists; playlist pages, channels (/channel/UC..,
-              /@handle, /c/, /user/), searches. Played in the YouTube app (VacuumTube) through
-              its own command router, as the voice tools do
+              /@handle, /c/, /user/), searches. Played in the YouTube app: Couchbox's own
+              through its control socket (a video in a playlist plays on its own there), or
+              VacuumTube (the tile's fallback) through its command router, as the voice tools do
   Twitch      twitch.tv/<channel> (live, else the channel's page), /videos/<id>, clips
               (clips.twitch.tv/<slug>, twitch.tv/<channel>/clip/<slug>), player.twitch.tv
   Nebula      nebula.tv/videos/<slug>, nebula.tv/<channel>
@@ -377,10 +378,42 @@ def _app(app_id):
     return a
 
 
+def _open_youtube_native(link):
+    from couchbox.voice import tools, ytnative
+
+    def show(target):
+        if not ytnative.show(target, tools.raise_youtube):
+            raise OpenFailed("YouTube didn't start on the TV.")
+
+    if link.kind == "video":
+        show(f"video:{link.id}" + (f"@{link.start}" if link.start else ""))
+        return f"Playing on the TV: {tools.yt_title(link.id)}" + (f", from {clock(link.start)}" if link.start else "")
+    if link.kind == "playlist":
+        show(f"playlist:{link.id}")
+        return "The playlist is on the TV."
+    if link.kind == "handle":
+        cid = youtube_channel_id(link.id)
+        if not cid:
+            show(f"search:{link.id.split('/')[-1]}")
+            return f"Searched YouTube on the TV for {link.id.split('/')[-1]}."
+        link = Link("youtube", "channel", cid, link.url)
+    if link.kind == "channel":
+        show(f"channel:{link.id}")
+        return "The channel is on the TV."
+    if link.kind == "search":
+        show(f"search:{link.id}")
+        return f"Searched YouTube on the TV for {link.id}."
+    show("home")
+    return "YouTube is open on the TV."
+
+
 def _open_youtube(link):
+    from couchbox import apps
     from couchbox.voice import cdp, tools
 
     _app("youtube")
+    if apps.youtube_native():
+        return _open_youtube_native(link)
     page = tools.youtube_page()
     if not page:
         raise OpenFailed("YouTube didn't start on the TV.")
