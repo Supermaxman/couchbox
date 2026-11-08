@@ -402,7 +402,7 @@ class Backend(QObject):
             return {"path": url}
         folder = os.path.join(tempfile.gettempdir(), f"couchbox-yt-captions-{os.getuid()}")
         os.makedirs(folder, mode=0o700, exist_ok=True)
-        path = os.path.join(folder, hashlib.sha256(url.encode()).hexdigest()[:20] + ".vtt")
+        path = os.path.join(folder, hashlib.sha256(url.encode()).hexdigest()[:20] + "-words.vtt")   # (-words: rolling_vtt)
         if os.path.exists(path):
             return {"path": path}
         last = ""
@@ -415,7 +415,7 @@ class Backend(QObject):
                 continue
             if r.status_code == 200 and r.text.lstrip().startswith("WEBVTT"):
                 with open(path + ".tmp", "w") as f:
-                    f.write(r.text)
+                    f.write(ytstream.rolling_vtt(r.text))   # generated captions: word by word, as spoken
                 os.replace(path + ".tmp", path)
                 return {"path": path}
             last = f"YouTube said {r.status_code}"
