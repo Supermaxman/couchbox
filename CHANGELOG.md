@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/Supermaxman/couchbox/compare/v0.19.1...v0.20.0) (2026-11-08)
+
+
+### New
+
+* **youtube:** channel pages as YouTube's TV app; Not interested again; a video opened from outside no longer stays paused ([#108](https://github.com/Supermaxman/couchbox/issues/108)) ([ff1b667](https://github.com/Supermaxman/couchbox/commit/ff1b66733f6b6fdd8ab52dd5110f818e810ab68d))
+* **youtube:** one YouTube tile that opens Couchbox's own app, VacuumTube the fallback ([#110](https://github.com/Supermaxman/couchbox/issues/110)) ([7e0632c](https://github.com/Supermaxman/couchbox/commit/7e0632c5df757625050441585bf8d31ca048ed17))
+
+
+### Fixed
+
+* **youtube:** a video opened while another card was preloaded no longer stays paused at 0:00 ([ff1b667](https://github.com/Supermaxman/couchbox/commit/ff1b66733f6b6fdd8ab52dd5110f818e810ab68d))
+
 ## [0.19.1](https://github.com/Supermaxman/couchbox/compare/v0.19.0...v0.19.1) (2026-11-08)
 
 
