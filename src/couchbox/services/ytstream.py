@@ -22,6 +22,7 @@ client that needs no JavaScript (visionOS: HLS only), so videos start, with fewe
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -317,6 +318,69 @@ def playable(
 
 def chapters(info: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"start": float(c.get("start_time") or 0), "title": c.get("title") or ""} for c in info.get("chapters") or [] if c.get("title")]
+
+
+_WORD_AT = re.compile(r"<(\d+:\d\d:\d\d\.\d{3})>")
+_C_TAG = re.compile(r"</?c(?:\.[\w.]+)?>")
+
+
+def _vtt_secs(t: str) -> float:
+    h, m, s = t.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _vtt_stamp(x: float) -> str:
+    h, ms = divmod(round(x * 1000), 3_600_000)
+    m, ms = divmod(ms, 60_000)
+    return f"{h:02d}:{m:02d}:{ms // 1000:02d}.{ms % 1000:03d}"
+
+
+def rolling_vtt(text: str) -> str:
+    """YouTube's generated captions as its apps show them: each word as it's spoken, under the
+    line before. Their WebVTT gives every word its time (<00:00:01.300><c> word</c>), but mpv
+    shows a cue's whole text from its start, up to seconds ahead of the speech; so each such cue
+    becomes one per word. Captions without word times come back as they were."""
+    if not _WORD_AT.search(text):
+        return text
+    blocks = re.split(r"\n\n+", text.replace("\r\n", "\n").strip("\n"))  # (a line of one space is a cue's blank line)
+    out = [blocks[0]]
+    for block in blocks[1:]:
+        lines = block.split("\n")
+        i = next((k for k, line in enumerate(lines) if "-->" in line), None)
+        m = re.match(r"\s*(\S+)\s+-->\s+(\S+)(.*)", lines[i]) if i is not None else None
+        body = lines[i + 1 :] if m else []
+        if not m or not body or not _WORD_AT.search(body[-1]):
+            out.append(_C_TAG.sub("", block))
+            continue
+        start, end, cue = _vtt_secs(m[1]), _vtt_secs(m[2]), m[3]
+        above = [_C_TAG.sub("", line) for line in body[:-1] if line.strip()]
+        parts = _WORD_AT.split(_C_TAG.sub("", body[-1]))  # [word, time, word, time, word...]
+        words = [(start, parts[0])] + [(_vtt_secs(parts[k]), parts[k + 1]) for k in range(1, len(parts) - 1, 2)]
+        said = ""
+        for n, (at, word) in enumerate(words):
+            said += word
+            at = min(max(at, start), end)
+            until = min(max(words[n + 1][0] if n + 1 < len(words) else end, at), end)
+            if until > at:
+                out.append(f"{_vtt_stamp(at)} --> {_vtt_stamp(until)}{cue}\n" + "\n".join([*above, said.strip()]))
+    return "\n\n".join(out) + "\n"
+
+
+def lines_apart(text: str) -> str:
+    """Each line of a caption as a cue of its own, the bottom one first: mpv stacks them, and
+    each gets its own box as YouTube draws them (one cue's lines share a box as wide as the
+    longest). Blank lines (a line of one space) are left out."""
+    blocks = re.split(r"\n\n+", text.replace("\r\n", "\n").strip("\n"))
+    out = [blocks[0]]
+    for block in blocks[1:]:
+        lines = block.split("\n")
+        i = next((k for k, line in enumerate(lines) if "-->" in line), None)
+        body = [line for line in lines[i + 1 :] if line.strip()] if i is not None else []
+        if len(body) < 2:
+            out.append("\n".join(lines[: i + 1] + body) if i is not None else block)
+            continue
+        out += [f"{lines[i]}\n{line}" for line in reversed(body)]
+    return "\n\n".join(out) + "\n"
 
 
 def captions(info: dict[str, Any], want: tuple[str, ...] = ("en",)) -> list[dict[str, Any]]:

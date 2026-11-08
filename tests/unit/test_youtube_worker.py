@@ -268,3 +268,63 @@ def test_captions_from_ytdlp_keep_the_spoken_language():
 
     got = ytstream.captions(ytworker.slim(info))
     assert [(c["lang"], c["auto"], c["translated"]) for c in got] == [("de", False, False), ("en", True, True), ("de", True, False)]
+
+
+# YouTube's generated captions, as /api/timedtext?fmt=vtt sends them: a time for each word, a
+# line of one space as a cue's blank line, a 10 ms cue holding the finished line
+GENERATED_VTT = "\n".join(
+    [
+        "WEBVTT",
+        "Kind: captions",
+        "Language: en",
+        "",
+        "00:00:00.800 --> 00:00:03.390 align:start position:0%",
+        " ",
+        "On<00:00:00.900><c> the</c><00:00:01.300><c> afternoon</c>",
+        "",
+        "00:00:03.390 --> 00:00:03.400 align:start position:0%",
+        "On the afternoon",
+        " ",
+        "",
+        "00:00:03.400 --> 00:00:06.390 align:start position:0%",
+        "On the afternoon",
+        "a<00:00:03.600><c> sturdy</c><00:00:04.100><c> Cessna</c>",
+        "",
+    ]
+)
+
+
+def test_generated_captions_show_each_word_as_its_spoken():
+    out = ytstream.rolling_vtt(GENERATED_VTT)
+    cues = [c.split("\n") for c in out.strip().split("\n\n")[1:]]
+    assert [c[0].split(" align")[0] for c in cues] == [
+        "00:00:00.800 --> 00:00:00.900",
+        "00:00:00.900 --> 00:00:01.300",
+        "00:00:01.300 --> 00:00:03.390",
+        "00:00:03.390 --> 00:00:03.400",
+        "00:00:03.400 --> 00:00:03.600",
+        "00:00:03.600 --> 00:00:04.100",
+        "00:00:04.100 --> 00:00:06.390",
+    ]
+    assert cues[0][1:] == ["On"]
+    assert cues[2][1:] == ["On the afternoon"]
+    assert cues[3][1:] == ["On the afternoon", " "]  # the hold cue as it was
+    assert cues[4][1:] == ["On the afternoon", "a"]  # the line before stays above
+    assert cues[6][1:] == ["On the afternoon", "a sturdy Cessna"]
+    assert cues[6][0].endswith(" align:start position:0%")
+    assert "<" not in out
+
+
+def test_captions_without_word_times_are_left_alone():
+    own = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHello there.\n\n00:00:04.000 --> 00:00:06.000\n<i>Music</i>\n"
+    assert ytstream.rolling_vtt(own) == own
+
+
+def test_each_caption_line_gets_its_own_cue_bottom_first():
+    vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start\nfirst line\nsecond line\n\n00:00:02.000 --> 00:00:03.000\nalone\n \n"
+    cues = [c.split("\n") for c in ytstream.lines_apart(vtt).strip().split("\n\n")[1:]]
+    assert cues == [
+        ["00:00:01.000 --> 00:00:02.000 align:start", "second line"],  # mpv stacks the next one above it
+        ["00:00:01.000 --> 00:00:02.000 align:start", "first line"],
+        ["00:00:02.000 --> 00:00:03.000", "alone"],  # (a blank line left out)
+    ]

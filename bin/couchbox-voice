@@ -18,7 +18,8 @@ The indicator (couchbox-voice-overlay) shows what's happening.
 
 The service also serves http://127.0.0.1:8790 (always, even with voice off: the Seerr app and
 the keyboard pop-ups use it): GET /state (read by the indicator), GET /log?after=N,
-POST /ask {"text": ...}, POST /cancel (the remote's Back button, via couchbox-input: stops
+POST /ask {"text": ...}, POST /notice {"text", "busy", "linger"} (another program's line on the
+indicator: the TV switching its refresh rate), POST /cancel (the remote's Back button, via couchbox-input: stops
 the request and hides the indicator; answers whether anything was showing), POST /typing,
 /seerr/... (the Seerr app's allow-listed proxy, adding the API key), /tmdb/... (Movies & TV's
 TMDB reads on a box without Seerr, adding the TMDB key), POST /play/jellyfin and /play/youtube
@@ -100,12 +101,23 @@ class Service:
         if st["phase"] in ("done", "error"):
             linger = 120 if st.get("question") else min(20, 6 + len(st.get("reply") or "") / 18)
             return time.time() - st["t"] < linger
+        if st["phase"] == "notice":
+            return time.time() - st["t"] < st.get("linger", 0)
         return False
+
+    def notice(self, text, busy, linger):
+        """Another program's line on the indicator (the TV about to switch its refresh rate),
+        unless the assistant is using it."""
+        with self.lock:
+            if self.showing() and self.state["phase"] != "notice":
+                return False
+        self.set("notice", "", heard="", reply=text, note="", question=False, busy=bool(busy), linger=float(linger))
+        return True
 
     def cancel_all(self):
         """Back button: stop whatever the assistant is doing and hide it."""
         with self.lock:
-            was = self.showing()
+            was = self.showing() and self.state["phase"] != "notice"   # a notice hides, and Back still goes to the app
         self.cancel.set()
         self.dropped_listen = self.state["phase"] == "listening"
         self.agent.asked = False
@@ -356,6 +368,10 @@ class Service:
                     return self.send({"ok": True})
                 if self.path == "/cancel":
                     return self.send({"cancelled": svc.cancel_all()})
+                if self.path == "/notice":           # {"text", "busy", "linger": s}: the refresh rate switching
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    shown = svc.notice(str(body.get("text", ""))[:200], body.get("busy"), min(60.0, float(body.get("linger", 6))))
+                    return self.send({"shown": shown})
                 if self.path != "/ask":
                     return self.send({"error": "not found"}, 404)
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

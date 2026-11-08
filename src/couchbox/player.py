@@ -245,11 +245,24 @@ class MpvVideo(QQuickFramebufferObject):
             if os.environ.get("COUCHBOX_MPV_LOG")
             else None,
         )
-        if os.environ.get("COUCHBOX_MPV_SUB_BOX") == "1":  # an app's caption look (the YouTube app): on a 75% black box
+        if os.environ.get("COUCHBOX_MPV_SUB_BOX") == "1":
+            # an app's caption look, the YouTube app's as VacuumTube draws them (measured at 1080p):
+            # Roboto at 48 px on a solid black box, lines left-aligned from 441 px in, the last one
+            # 54 px off the bottom (mpv's sizes are for a 720-line screen: two thirds of those)
             try:
-                self.mpv["sub-border-style"] = "background-box"
-                self.mpv["sub-back-color"] = "#BF000000"
-                self.mpv["sub-shadow-offset"] = 0
+                for k, v in {
+                    "sub-font": "Roboto",
+                    "sub-font-size": 42,
+                    "sub-border-style": "background-box",  # (a box a line: ytstream.lines_apart)
+                    "sub-border-size": 0,  # (the box's padding: none, as YouTube's)
+                    "sub-back-color": "#FF000000",
+                    "sub-shadow-offset": 0,
+                    "sub-align-x": "left",
+                    "sub-justify": "left",
+                    "sub-margin-x": 222,
+                    "sub-margin-y": 36,
+                }.items():
+                    self.mpv[k] = v
             except Exception:  # noqa: BLE001  (an mpv without these: as before)
                 pass
         self._dbg_until = 0.0  # COUCHBOX_MPV_LOG: log renders and updates until then (after a seek)

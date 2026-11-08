@@ -48,10 +48,11 @@ kind), DeArrow, Return YouTube Dislike, Hide Shorts, H.264 only, Unlock resoluti
 Resolution, Show remaining time, Pause on blur, Block "Continue watching?", the guide's tabs,
 Always show captions (English first: the video's own, generated, or YouTube's translation).
 
-The TV's refresh rate follows a film (23.976, 24, 25 or 50 fps, over 5 minutes; Settings → Video
-→ Match the TV to the video's frame rate: Film only, Always, Off). It isn't changed for 59.94 or
-29.97 fps (each change blanks the TV for a second or two), and stays as it is between videos
-while the player is open.
+The TV's refresh rate stays as it is by default: each change blanks the TV for a second or two,
+too often for YouTube. Settings → Video → Match the TV to the video's frame rate: Film only
+follows a film (23.976, 24, 25 or 50 fps, over 5 minutes; not 59.94 or 29.97), Always every
+video; either way the TV stays as it is between videos while the player is open, and the
+indicator says so before and after each switch.
 
 ## Privacy
 

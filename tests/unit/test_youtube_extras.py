@@ -81,7 +81,7 @@ def test_hide_shorts():
 
 def test_captions_always_and_frame_rate_matching_settings(tmp_path):
     s = X.Settings(str(tmp_path))
-    assert s.get()["captions_always"] is True and s.get()["match_rate"] == "film"
+    assert s.get()["captions_always"] is True and s.get()["match_rate"] == "off"
     assert s.set("captions_always", False)["captions_always"] is False
     assert s.set("match_rate", "always")["match_rate"] == "always"
     with pytest.raises(ValueError):
