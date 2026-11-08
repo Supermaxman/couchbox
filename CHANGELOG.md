@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/Supermaxman/couchbox/compare/v0.19.0...v0.19.1) (2026-11-08)
+
+
+### Fixed
+
+* **youtube:** captions as YouTube shows them; the TV's refresh rate left alone in YouTube, and every switch said on screen ([#106](https://github.com/Supermaxman/couchbox/issues/106)) ([b3adaba](https://github.com/Supermaxman/couchbox/commit/b3adaba3a899a40077e129fb34d99b97fb4f32eb))
+* **youtube:** the player's Up as the old app's: the controls, then the bar, then back to the video ([#105](https://github.com/Supermaxman/couchbox/issues/105)) ([c28442d](https://github.com/Supermaxman/couchbox/commit/c28442d43b133621403472251a4742f8dbb285de))
+
 ## [0.19.0](https://github.com/Supermaxman/couchbox/compare/v0.18.2...v0.19.0) (2026-11-06)
 
 
