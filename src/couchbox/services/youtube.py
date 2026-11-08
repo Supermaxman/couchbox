@@ -766,6 +766,18 @@ def parse_header(h: dict[str, Any]) -> dict[str, Any] | None:
         or text(c.get("descriptionText"))
         # the TV's channelHeaderRenderer: its selectable description's short form
         or " ".join(text(dig(c, "selectableDescription", "selectableTextRenderer", "compactDescription")).split()),
+        # its buttons: Play mix (the mix's first video and its queue, in params) and Subscribe
+        "mix": next(
+            (
+                {"id": w.get("videoId", ""), "params": w.get("params", "")}
+                for b in c.get("buttons") or []
+                for w in [dig(b, "buttonRenderer", "navigationEndpoint", "watchEndpoint") or {}]
+                if w.get("videoId")
+            ),
+            None,
+        ),
+        "subscribed": any(bool(dig(b, "subscribeButtonRenderer", "subscribed")) for b in c.get("buttons") or []),
+        "subscribeKey": next((k for b in c.get("buttons") or [] if (k := dig(b, "subscribeButtonRenderer", "subscribedEntityKey"))), ""),
     }
 
 
@@ -1459,7 +1471,28 @@ class YouTube:
                     (d for d in _find(resp.get("metadata") or resp.get("microformat") or {}, "description") if isinstance(d, str)), ""
                 )
             page["header"]["description"] = " ".join(str(desc or "").split())[:300]
+        state = entity_subscribed(resp, page["header"].pop("subscribeKey", ""))  # (the button's own can say false)
+        if state is not None:
+            page["header"]["subscribed"] = state
         return page
+
+    def mix(self, video_id: str, params: str = "") -> dict[str, Any]:
+        """A channel's Play mix: its videos in order (the watch page's first row, as YouTube's TV
+        app queues them), from its first video and the queue its button carries."""
+        body = {"videoId": video_id}
+        if params:
+            body["params"] = params
+        resp = self.call("next", body, cache=False)
+        results = dig(resp, "contents", "singleColumnWatchNextResults") or {}
+        items = []
+        for s in dig(results, "pivot", "sectionListRenderer", "contents") or []:
+            shelves = parse_shelf(s)
+            if shelves:
+                items = [it for it in shelves[0]["items"] if it.get("type") in ("video", "live")]
+                break
+        if not any(it["id"] == video_id for it in items):
+            items.insert(0, {"type": "video", "id": video_id, "title": "", "lines": []})
+        return {"items": items}
 
     def subscriptions(self) -> dict[str, Any]:
         self.need_profile("see your subscriptions")
@@ -2062,8 +2095,13 @@ class Demo(YouTube):
                 "banner": "",
                 "lines": [handle, subs, f"{120 + i * 40} videos"],
                 "description": "Experiments, explanations and the occasional disaster, every other Thursday.",
+                "mix": {"id": self._video(i)["id"], "params": ""},
+                "subscribed": bool(self.state["subs"].get(cid)),
             },
         }
+
+    def mix(self, video_id, params=""):
+        return {"items": [self._video(i) for i in range(6)]}
 
     def subscriptions(self):
         self.need_profile("see your subscriptions")

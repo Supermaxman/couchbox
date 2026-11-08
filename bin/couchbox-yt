@@ -531,6 +531,7 @@ class Backend(QObject):
             "library": lambda: self.page(y.library()),
             "like": lambda: y.like(a["id"], a["status"]),
             "subscribe": lambda: y.subscribe(a["id"], bool(a["on"])),
+            "mix": lambda: y.mix(a["id"], a.get("params", "")),
             "notify": lambda: y.notify(a["params"], a.get("level", "")),
             "saveOptions": lambda: y.save_options(a["id"]),
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
