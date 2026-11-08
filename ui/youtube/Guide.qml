@@ -12,6 +12,7 @@ FocusScope {
     property string section: "home"
     readonly property string who: Y.profile ? Y.profile.name : "Guest"
     property bool pinned: false               // Settings: open beside the page, Settings marked
+    readonly property color idleIcon: guide.open ? Y.text : "#b8b8b8"   // the rail's icons but the current page's: grey (open: white, with their names)
     readonly property bool open: activeFocus || pinned
     // the tabs Settings → Guide tabs leaves in (VacuumTube's "Guide tabs")
     readonly property var list: entries.filter(e => e.key !== "settings" && (Y.settings.guide_tabs || {})[e.key] !== false)
@@ -136,7 +137,8 @@ FocusScope {
                         name: entry.modelData.key
                         filled: entry.sel || entry.on       // (the focused one filled too, as YouTube's)
                         size: 40 * Y.u
-                        color: entry.on ? Y.ink : Y.text
+                        weight: 1.5
+                        color: entry.on ? Y.ink : entry.sel ? Y.text : guide.idleIcon   // the others grey, as YouTube's
                     }
                     Text {
                         visible: guide.open
@@ -170,7 +172,8 @@ FocusScope {
         readonly property bool marked: guide.pinned && !guide.activeFocus
         width: guide.width; height: 78 * Y.u
         Rectangle { x: 33 * Y.u; width: 444 * Y.u; height: parent.height; radius: 16 * Y.u; color: parent.on ? Y.text : Y.raised2; visible: parent.on || parent.marked }
-        Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; filled: guide.section === "settings"; size: 40 * Y.u; color: parent.on ? Y.ink : Y.text }
+        Icon { x: 58 * Y.u; y: 19 * Y.u; name: "settings"; filled: guide.section === "settings"; size: 40 * Y.u; weight: 1.5
+               color: parent.on ? Y.ink : guide.section === "settings" ? Y.text : guide.idleIcon }
         Text {
             visible: guide.open
             x: 123 * Y.u; y: 39 * Y.u - height / 2
