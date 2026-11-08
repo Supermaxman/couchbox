@@ -266,7 +266,7 @@ ApplicationWindow {
         if (cur && cur.label) st.showing = cur.label;
         if (cur && cur.channelId) st.id = cur.channelId;
         if (!picking && !cur) st.section = section;
-        if (!picking && !cur && section === "search") st.query = search.query;
+        if (!picking && !cur && section === "search") st.query = searchL.item ? searchL.item.query : "";
         if (win.playing) {
             st.playing = cur.label; st.title = cur.label; st.paused = video.paused; st.position = Math.round(video.position);
             st.videoId = cur.videoId || ""; st.duration = Math.round(video.duration || 0);    // for couchbox-yt-cast
