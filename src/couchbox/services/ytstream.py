@@ -366,6 +366,23 @@ def rolling_vtt(text: str) -> str:
     return "\n\n".join(out) + "\n"
 
 
+def lines_apart(text: str) -> str:
+    """Each line of a caption as a cue of its own, the bottom one first: mpv stacks them, and
+    each gets its own box as YouTube draws them (one cue's lines share a box as wide as the
+    longest). Blank lines (a line of one space) are left out."""
+    blocks = re.split(r"\n\n+", text.replace("\r\n", "\n").strip("\n"))
+    out = [blocks[0]]
+    for block in blocks[1:]:
+        lines = block.split("\n")
+        i = next((k for k, line in enumerate(lines) if "-->" in line), None)
+        body = [line for line in lines[i + 1 :] if line.strip()] if i is not None else []
+        if len(body) < 2:
+            out.append("\n".join(lines[: i + 1] + body) if i is not None else block)
+            continue
+        out += [f"{lines[i]}\n{line}" for line in reversed(body)]
+    return "\n\n".join(out) + "\n"
+
+
 def captions(info: dict[str, Any], want: tuple[str, ...] = ("en",)) -> list[dict[str, Any]]:
     """Captions to offer, as YouTube's TV app does: the video's own (every language), its
     automatic ones (whatever their language), and when nothing is in a wanted language, one

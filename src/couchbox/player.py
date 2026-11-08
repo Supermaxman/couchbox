@@ -252,14 +252,14 @@ class MpvVideo(QQuickFramebufferObject):
             try:
                 for k, v in {
                     "sub-font": "Roboto",
-                    "sub-font-size": 32,
-                    "sub-border-style": "background-box",
-                    "sub-border-size": 2,
+                    "sub-font-size": 42,
+                    "sub-border-style": "background-box",  # (a box a line: ytstream.lines_apart)
+                    "sub-border-size": 0,  # (the box's padding: none, as YouTube's)
                     "sub-back-color": "#FF000000",
                     "sub-shadow-offset": 0,
                     "sub-align-x": "left",
                     "sub-justify": "left",
-                    "sub-margin-x": 294,
+                    "sub-margin-x": 222,
                     "sub-margin-y": 36,
                 }.items():
                     self.mpv[k] = v

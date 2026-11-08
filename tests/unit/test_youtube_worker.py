@@ -318,3 +318,13 @@ def test_generated_captions_show_each_word_as_its_spoken():
 def test_captions_without_word_times_are_left_alone():
     own = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHello there.\n\n00:00:04.000 --> 00:00:06.000\n<i>Music</i>\n"
     assert ytstream.rolling_vtt(own) == own
+
+
+def test_each_caption_line_gets_its_own_cue_bottom_first():
+    vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start\nfirst line\nsecond line\n\n00:00:02.000 --> 00:00:03.000\nalone\n \n"
+    cues = [c.split("\n") for c in ytstream.lines_apart(vtt).strip().split("\n\n")[1:]]
+    assert cues == [
+        ["00:00:01.000 --> 00:00:02.000 align:start", "second line"],  # mpv stacks the next one above it
+        ["00:00:01.000 --> 00:00:02.000 align:start", "first line"],
+        ["00:00:02.000 --> 00:00:03.000", "alone"],  # (a blank line left out)
+    ]
