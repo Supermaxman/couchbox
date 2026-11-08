@@ -19,8 +19,8 @@ Setting up a new box takes about 20 minutes. **You don't need a keyboard, a mous
 
 | | |
 |---|---|
-| The box | A **Raspberry Pi 5** with its SSD fitted on the M.2 HAT+, the Active Cooler and the official 27 W power supply. The full list is in [reference hardware](design/first-boot.md#reference-hardware) |
-| HDMI | A micro-HDMI to HDMI cable (the official one carries HDMI-CEC, so the TV remote works) |
+| The box | A **Raspberry Pi 5** with its SSD fitted on the M.2 HAT+, the Active Cooler and the official 27 W power supply. Fit the Active Cooler first: the HAT+ sits over it. The full list is in [reference hardware](design/first-boot.md#reference-hardware) |
+| HDMI | A micro-HDMI to HDMI cable (the official one carries HDMI-CEC, so the TV remote works). A PC monitor works too, but has no HDMI-CEC: use a Fire TV remote or your phone |
 | A USB stick | **16 GB or larger**, USB 3 if you have one. It's erased. You get it back at the end |
 | A computer | Windows, macOS or Linux, to write the stick |
 | A remote, any one | The TV's remote, a Fire TV remote, or a phone with a camera |
@@ -51,7 +51,7 @@ You write Couchbox to the stick with **Raspberry Pi Imager**, the free official 
    - **Hostname:** for example `livingroom`, otherwise `couchbox`.
    - **Time zone.**
    - **Username and password:** Couchbox doesn't need them. If Imager insists, use anything: the TV logs in by itself.
-   - **SSH**, only if you want remote access. Use a public key.
+   - **SSH:** leave it off here. If you want remote access, turn it on later in Settings → Remote access → SSH, and add your key there. You log in as `admin`.
 6. **Write**, and wait for Imager to write and check the stick. That takes 5–10 minutes.
 
 <details>
@@ -143,11 +143,11 @@ Then you're on the home screen.
 |---|---|
 | The TV shows "no signal" | The first start takes up to 3 minutes. Check the cable is in **HDMI 0**, the port next to the power socket, and that the TV is on the right input |
 | The Pi doesn't start from the stick | Take out any SD card. Use a blue USB port. Pi 5 boards made before 2024 may need a bootloader update: in Imager, *Misc utility images* → *Bootloader (Pi 5)* → *USB Boot*, written to a spare SD card. Start the Pi with that card until the green light blinks steadily, then remove the card |
-| The TV remote does nothing | Turn on HDMI-CEC in the TV's settings (Anynet+, SimpLink, Bravia Sync). Some cheap cables don't carry CEC. Meanwhile, use your phone |
+| The TV remote does nothing | Turn on HDMI-CEC in the TV's settings (Anynet+, SimpLink, Bravia Sync). Some cheap cables don't carry CEC, and PC monitors have none. Meanwhile, use your phone |
 | The phone code doesn't open | The phone has to be on the same Wi-Fi as the box, or on **Couchbox-XXXX** when the box shows that network. Turn off "private relay" or a VPN on the phone while you set up |
 | The Fire TV remote doesn't pair | The setup screen says what it sees. "Looking" and nothing more: the remote isn't in pairing mode. Unplug any Fire TV Stick it was paired with, put in fresh batteries, then hold Home for 10 seconds. **Don't** reset it with Menu + Back + Left: that erases its TV buttons |
 | "Install to the SSD" isn't offered | The SSD isn't detected. Power off, then check the ribbon cable between the Pi and the M.2 HAT+ (contacts facing the right way) and that the SSD is screwed in |
-| Something else | Settings → System → **Run checks** shows what isn't working. Over SSH: `couchbox doctor` and `journalctl -u 'couchbox*'`. Report bugs at [GitHub issues](https://github.com/Supermaxman/couchbox/issues) with the `couchbox doctor` output |
+| Something else | Settings → System → **Run checks** shows what isn't working. Over SSH (`ssh admin@<name>.local`, once it's on in Settings → Remote access): `couchbox doctor` and `journalctl -u 'couchbox*'`. Report bugs at [GitHub issues](https://github.com/Supermaxman/couchbox/issues) with the `couchbox doctor` output |
 
 ## Updates
 
