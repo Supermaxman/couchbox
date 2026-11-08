@@ -3,6 +3,7 @@
 # opens couchbox-yt, Couchbox's own YouTube TV app; "vacuumtube" the VacuumTube Flatpak (YouTube's
 # web TV app, kept installed as the fallback), with DevTools on localhost:9222 for the voice
 # tools. couchbox.apps.youtube_native() decides the same way.
+# shellcheck source=/dev/null
 . /etc/couchbox/couchbox.env 2>/dev/null || true
 if [ "${COUCHBOX_MEDIA_YOUTUBE_CLIENT:-native}" = vacuumtube ] && [ -d /var/lib/flatpak/app/rocks.shy.VacuumTube ]; then
   exec flatpak run rocks.shy.VacuumTube --remote-debugging-port=9222 "$@"
