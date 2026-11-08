@@ -27,6 +27,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -318,6 +319,8 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
     fb = menu_feedback(t.get("onLongPressCommand"))
     if fb:
         out["feedback"] = fb
+    elif panel := menu_panel(t.get("onLongPressCommand")):
+        out["menuPanel"] = panel  # the menu comes as a panel of its own: its options on opening (card_feedback)
     wl = menu_watch_later(t.get("onLongPressCommand"))
     if wl:
         out["laterEdit"] = wl
@@ -448,6 +451,31 @@ def menu_feedback(cmd: Any) -> list[dict[str, str]]:
             (k for k, _i, words in FEEDBACK_KINDS if any(w in label.lower() for w in words)), ""
         )
         if kind and not any(o["kind"] == kind for o in out):
+            out.append({"kind": kind, "label": label, "token": tok})
+    return out
+
+
+def menu_panel(cmd: Any) -> str:
+    """A card's menu that YouTube sends as an engagement panel of its own (showEngagementPanel-
+    Endpoint, tag PAcontext_menu): its params, for get_panel; "" for a menu that came inline."""
+    e = dig(cmd, "showEngagementPanelEndpoint") or {}
+    if dig(e, "identifier", "tag") != "PAcontext_menu":
+        return ""
+    return urllib.parse.unquote(dig(e, "globalConfiguration", "params") or "")
+
+
+def panel_feedback(resp: dict[str, Any]) -> list[dict[str, str]]:
+    """The feedback options of a card's menu panel (get_panel's list of listItemViewModels: Not
+    interested's token on the item, Don't recommend channel's in the confirmation it opens):
+    [{kind, label, token}]."""
+    out: list[dict[str, str]] = []
+    for li in _find(resp, "listItemViewModel"):
+        if not isinstance(li, dict):
+            continue
+        label = text(li.get("title"))
+        tok = next((f.get("feedbackToken") for f in _find(li, "feedbackEndpoint") if isinstance(f, dict) and f.get("feedbackToken")), "")
+        kind = next((k for k, _i, words in FEEDBACK_KINDS if any(w in label.lower() for w in words)), "")
+        if tok and kind and not any(o["kind"] == kind for o in out):
             out.append({"kind": kind, "label": label, "token": tok})
     return out
 
@@ -766,6 +794,18 @@ def parse_header(h: dict[str, Any]) -> dict[str, Any] | None:
         or text(c.get("descriptionText"))
         # the TV's channelHeaderRenderer: its selectable description's short form
         or " ".join(text(dig(c, "selectableDescription", "selectableTextRenderer", "compactDescription")).split()),
+        # its buttons: Play mix (the mix's first video and its queue, in params) and Subscribe
+        "mix": next(
+            (
+                {"id": w.get("videoId", ""), "params": w.get("params", "")}
+                for b in c.get("buttons") or []
+                for w in [dig(b, "buttonRenderer", "navigationEndpoint", "watchEndpoint") or {}]
+                if w.get("videoId")
+            ),
+            None,
+        ),
+        "subscribed": any(bool(dig(b, "subscribeButtonRenderer", "subscribed")) for b in c.get("buttons") or []),
+        "subscribeKey": next((k for b in c.get("buttons") or [] if (k := dig(b, "subscribeButtonRenderer", "subscribedEntityKey"))), ""),
     }
 
 
@@ -1459,7 +1499,28 @@ class YouTube:
                     (d for d in _find(resp.get("metadata") or resp.get("microformat") or {}, "description") if isinstance(d, str)), ""
                 )
             page["header"]["description"] = " ".join(str(desc or "").split())[:300]
+        state = entity_subscribed(resp, page["header"].pop("subscribeKey", ""))  # (the button's own can say false)
+        if state is not None:
+            page["header"]["subscribed"] = state
         return page
+
+    def mix(self, video_id: str, params: str = "") -> dict[str, Any]:
+        """A channel's Play mix: its videos in order (the watch page's first row, as YouTube's TV
+        app queues them), from its first video and the queue its button carries."""
+        body = {"videoId": video_id}
+        if params:
+            body["params"] = params
+        resp = self.call("next", body, cache=False)
+        results = dig(resp, "contents", "singleColumnWatchNextResults") or {}
+        items = []
+        for s in dig(results, "pivot", "sectionListRenderer", "contents") or []:
+            shelves = parse_shelf(s)
+            if shelves:
+                items = [it for it in shelves[0]["items"] if it.get("type") in ("video", "live")]
+                break
+        if not any(it["id"] == video_id for it in items):
+            items.insert(0, {"type": "video", "id": video_id, "title": "", "lines": []})
+        return {"items": items}
 
     def subscriptions(self) -> dict[str, Any]:
         self.need_profile("see your subscriptions")
@@ -1614,6 +1675,13 @@ class YouTube:
                     "tile": outline_words({k: v for k, v in t.items() if k != "onLongPressCommand"}),
                 }
         return {"entries": [], "note": "no video tile on Home"}
+
+    def card_feedback(self, params: str) -> dict[str, Any]:
+        """A card's menu panel (menuPanel): its feedback options, as the menu opens."""
+        if not self.profile or not params:
+            return {"feedback": []}
+        resp = self.call("get_panel", {"panelId": "PAcontext_menu", "params": params}, cache=False)
+        return {"feedback": panel_feedback(resp)}
 
     def feedback(self, token: str) -> dict[str, Any]:
         """A card menu's Not interested, Don't recommend channel or Remove from watch history."""
@@ -2062,8 +2130,13 @@ class Demo(YouTube):
                 "banner": "",
                 "lines": [handle, subs, f"{120 + i * 40} videos"],
                 "description": "Experiments, explanations and the occasional disaster, every other Thursday.",
+                "mix": {"id": self._video(i)["id"], "params": ""},
+                "subscribed": bool(self.state["subs"].get(cid)),
             },
         }
+
+    def mix(self, video_id, params=""):
+        return {"items": [self._video(i) for i in range(6)]}
 
     def subscriptions(self):
         self.need_profile("see your subscriptions")

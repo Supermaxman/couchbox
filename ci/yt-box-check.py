@@ -820,6 +820,14 @@ def account_core(r, want):
     r.step("home-row2-signed-in", lambda f: (f.get("page") == "home" and d(f).get("row") == 1, f"row {d(f).get('row')}"), settle=2)
     remote("up")
     time.sleep(1)
+    # a video other than the focused (preloaded) card, opened from outside (a link sent to the TV,
+    # Play mix): it plays, not paused at 0:00 (mpv put the preload's pause back on it)
+    anchor("video:jNQXAC9IVRw")
+    r.step("open-other-plays", lambda f: (f.get("page") == "player" and not d(f).get("paused") and d(f).get("position", 0) >= 1,
+                                          f"paused {d(f).get('paused')} at {d(f).get('position')}"), settle=4)
+    remote("back")
+    time.sleep(0.6)
+    anchor("home")
 
     # Subscriptions: the channels down the side and the feed; a channel's own feed
     if guide_to("subscriptions") and ok_on(lambda f: f.get("guideAt") == "subscriptions", "Subscriptions"):

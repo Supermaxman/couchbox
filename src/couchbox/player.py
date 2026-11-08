@@ -425,6 +425,10 @@ class MpvVideo(QQuickFramebufferObject):
         self._error = ""
         self.endedChanged.emit()
         opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
+        # playing, for this file: a preload it replaces ends after the pause = False below, and
+        # mpv then puts back the pause it had before that preload (the YouTube app's first video
+        # after Home, other than the focused card, stayed paused at 0:00)
+        opts.append("pause=no")
         if options:
             opts.append(options)  # as given: its %LEN% quoting may hold commas
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), 0.0, int(start)

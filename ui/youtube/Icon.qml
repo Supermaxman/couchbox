@@ -128,9 +128,9 @@ Item {
         const p = paths[name] || "";
         const col = String(c);
         let body;
-        if (p === "m")                       // YouTube Music's mark keeps its own red
-            body = "<circle cx='12' cy='12' r='9.5' fill='#ff0000'/><circle cx='12' cy='12' r='5.2' fill='none' stroke='#fff' stroke-width='1.3'/>"
-                 + "<path d='M10.4 9.6v4.8l4.1-2.4z' fill='#fff'/>";
+        if (p === "m")                       // YouTube Music's mark, in the guide's outline style (YouTube's TV app)
+            body = "<g fill='none' stroke='" + col + "' stroke-width='" + icon.weight + "'><circle cx='12' cy='12' r='9.3'/><circle cx='12' cy='12' r='5.3'/></g>"
+                 + "<path d='M10.6 9.9v4.2l3.7-2.1z' fill='" + col + "'/>";
         else {
             const kind = p.slice(0, 1), parts = p.slice(2).split("|");
             const stroke = s => "<g fill='none' stroke='" + col + "' stroke-width='" + (kind === "t" ? Math.max(2.7, icon.weight + 0.9) : icon.weight) + "' stroke-linecap='round' stroke-linejoin='round'>" + s + "</g>";

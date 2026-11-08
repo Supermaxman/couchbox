@@ -5,6 +5,8 @@ FocusScope {
     id: header
     property string query: ""
     property real pillW: 720 * Y.u
+    property bool logo: true                  // (a channel page: the pill alone)
+    property color idle: Y.raised             // the pill without the focus (over a banner: see-through)
     signal searchAsked()
     signal down()
     width: parent ? parent.width : 0
@@ -15,7 +17,7 @@ FocusScope {
         width: header.pillW
         height: 72 * Y.u
         radius: height / 2
-        color: header.activeFocus ? Y.text : Y.raised
+        color: header.activeFocus ? Y.text : header.idle
         Behavior on width { NumberAnimation { duration: 160 } }
         Text {
             anchors { left: parent.left; leftMargin: 34 * Y.u; right: parent.right; rightMargin: 34 * Y.u; verticalCenter: parent.verticalCenter }
@@ -26,6 +28,7 @@ FocusScope {
         }
     }
     Logo {                                    // it stays put while the open guide pushes the page right
+        visible: header.logo
         premium: !!(Y.profile && Y.profile.premium)
         anchors { right: parent.right; rightMargin: 110 * Y.u + (Y.pushed ? Y.guideOpen - Y.left : 0) }
         y: 81 * Y.u

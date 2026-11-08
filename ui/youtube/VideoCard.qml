@@ -29,6 +29,7 @@ Item {
     property bool wide: false                 // drawn 16:9 whatever its shape (a hero shelf's row)
     readonly property string shape: wide ? "wide" : item.shape || "wide"   // wide | poster | square | hero | round
     readonly property bool round: kind === "channel" || shape === "round"
+    readonly property bool pillar: kind === "short" && shape === "wide"   // its upright picture whole, not cut to 16:9
     readonly property real thumbH: Math.round(w * 9 / 16)
     readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
     width: artW
@@ -64,11 +65,17 @@ Item {
                 font.family: Y.font; font.pixelSize: parent.height * 0.4; font.weight: Font.Medium
             }
         }
+        Rectangle {                          // a Short in a 16:9 card: pillarboxed on black, as YouTube's
+            anchors.fill: parent
+            radius: Y.radius
+            color: "black"
+            visible: card.pillar && img.visible
+        }
         Image {
             id: img
             anchors.fill: parent
             source: card.thumb
-            fillMode: Image.PreserveAspectCrop
+            fillMode: card.pillar ? Image.PreserveAspectFit : Image.PreserveAspectCrop
             asynchronous: true
             sourceSize: Y.sz(width, height)
             visible: status === Image.Ready && !card.overVideo

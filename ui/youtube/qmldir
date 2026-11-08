@@ -29,3 +29,4 @@ DescriptionPanel 1.0 DescriptionPanel.qml
 CommentsPanel 1.0 CommentsPanel.qml
 EndScreen 1.0 EndScreen.qml
 CardMenu 1.0 CardMenu.qml
+Pill 1.0 Pill.qml

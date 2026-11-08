@@ -236,3 +236,65 @@ def test_a_carousel_tiles_spotlight_gives_the_hero_its_badges_and_synopsis():
     )[0]["items"][0]
     assert it["title"] == "A Made-up Film" and it["badges"] == ["Pay to watch", "TV-PG"] and it["pay"] == ["Pay to watch"]
     assert it["lines"] == ["Primetime show", "A lighthouse keeper and a very long winter."]
+
+
+def test_a_channel_headers_play_mix_and_subscribe():
+    h = {
+        "channelHeaderRenderer": {
+            "title": {"runs": [{"text": "Marques Brownlee"}]},
+            "buttons": [
+                {
+                    "buttonRenderer": {
+                        "text": {"runs": [{"text": "Play mix"}]},
+                        "navigationEndpoint": {"watchEndpoint": {"videoId": "ESABTN4VtrA", "params": "Kgt"}},
+                    }
+                },
+                {"subscribeButtonRenderer": {"subscribed": False, "subscribedEntityKey": "key1"}},
+            ],
+        }
+    }
+    head = Y.parse_header(h)
+    assert head["mix"] == {"id": "ESABTN4VtrA", "params": "Kgt"}
+    assert head["subscribed"] is False and head["subscribeKey"] == "key1"
+    assert Y.parse_header({"channelHeaderRenderer": {"title": "x"}})["mix"] is None
+
+
+def test_a_card_menu_sent_as_a_panel():
+    cmd = {"showEngagementPanelEndpoint": {"identifier": {"tag": "PAcontext_menu"}, "globalConfiguration": {"params": "-gol%3D%3D"}}}
+    assert Y.menu_panel(cmd) == "-gol=="
+    assert Y.menu_panel({"showEngagementPanelEndpoint": {"identifier": {"tag": "other"}}}) == ""
+    panel = {
+        "content": {
+            "listViewModel": {
+                "listItems": [
+                    {"listItemViewModel": {"title": {"content": "Play"}}},
+                    {
+                        "listItemViewModel": {
+                            "title": {"content": "Not interested"},
+                            "rendererContext": {
+                                "commandContext": {"onTap": {"innertubeCommand": {"feedbackEndpoint": {"feedbackToken": "T1"}}}}
+                            },
+                        }
+                    },
+                    {
+                        "listItemViewModel": {
+                            "title": {"content": "Don't recommend channel"},
+                            "rendererContext": {
+                                "commandContext": {
+                                    "onTap": {
+                                        "innertubeCommand": {
+                                            "openPopupAction": {"popup": {"x": {"feedbackEndpoint": {"feedbackToken": "T2"}}}}
+                                        }
+                                    }
+                                }
+                            },
+                        }
+                    },
+                ]
+            }
+        }
+    }
+    assert Y.panel_feedback(panel) == [
+        {"kind": "not_interested", "label": "Not interested", "token": "T1"},
+        {"kind": "no_channel", "label": "Don't recommend channel", "token": "T2"},
+    ]
