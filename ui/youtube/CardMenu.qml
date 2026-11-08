@@ -50,6 +50,14 @@ FocusScope {
         if (!options.length) return;
         visible = true;
         forceActiveFocus();
+        // a menu YouTube sends as a panel of its own: Not interested and Don't recommend channel
+        // from it, added as they come (the options above them stay where they are)
+        if (it.menuPanel && !it.feedback && Y.signedIn)
+            Y.call("cardFeedback", {params: it.menuPanel}, r => {
+                const fb = r.feedback || [];
+                if (menu.visible && menu.item && menu.item.id === it.id && fb.length)   // (by id: item reads back as a copy)
+                    menu.item = Object.assign({}, menu.item, {feedback: fb});
+            });
     }
     function close() { visible = false; mode = "main"; if (returnFocus) returnFocus.forceActiveFocus(); }
     function needAccount(what) {

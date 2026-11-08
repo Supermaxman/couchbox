@@ -536,6 +536,7 @@ class Backend(QObject):
             "saveOptions": lambda: y.save_options(a["id"]),
             "save": lambda: y.save(a["id"], a["playlist"], bool(a["add"])),
             "feedback": lambda: y.feedback(a["token"]),
+            "cardFeedback": lambda: y.card_feedback(a.get("params", "")),
             "cardStats": lambda: self.card_stats(a["id"]),
             "liveBehind": lambda: self.live_dvr(a["id"], float(a.get("behind") or 0)),
             "deletePlaylist": lambda: y.delete_playlist(a["id"]),
