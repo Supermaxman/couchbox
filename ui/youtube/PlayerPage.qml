@@ -445,6 +445,11 @@ FocusScope {
     property real dvrBehind: -1                // playing from the segments, this far behind live (-1: the live stream)
     property real liveTarget: -1               // where Left / Right are taking it (-1: nowhere)
     readonly property real behindLive: dvrBehind >= 0 ? dvrBehind : Math.max(0, duration - pos)
+    readonly property real liveBehind: liveTarget >= 0 ? liveTarget : behindLive   // where it is (or Left / Right are taking it)
+    // behind live, as the bar says it (grey badge, the knob, "behind live"): the edge itself reads
+    // 10 to 20 s behind as an HLS stream's segments come (YouTube says nothing there)
+    readonly property bool liveBack: dvrBehind >= 0 || liveBehind > 30
+    readonly property real liveWindow: s && s.dvr > 0 ? s.dvr : 0   // how far back it goes (known once played from its segments)
     Timer { id: liveGo; interval: 1200; onTriggered: player.liveApply() }
     function liveSkip(d) {
         if (!s) return;
@@ -706,7 +711,7 @@ FocusScope {
                     Rectangle {
                         visible: player.live
                         width: liveT.implicitWidth + 16 * Y.u; height: liveT.implicitHeight + 4 * Y.u; radius: 4 * Y.u
-                        color: "#cc0000"
+                        color: player.liveBack ? "#606060" : "#cc0000"
                         anchors.verticalCenter: parent.verticalCenter
                         Text { id: liveT; anchors.centerIn: parent; text: "LIVE"; color: "white"; font.family: Y.font; font.pixelSize: 22 * Y.u; font.weight: Font.Bold }
                     }
@@ -728,23 +733,31 @@ FocusScope {
                 opacity: player.mode === "related" ? 0 : 1
                 visible: !player.message
                 Behavior on opacity { NumberAnimation { duration: 180 } }
-                Rectangle {                    // live: the red badge where the time would be
+                Rectangle {                    // live: the badge where the time would be; grey while behind live
                     visible: player.live
                     width: liveBar.implicitWidth + 20 * Y.u; height: 34 * Y.u; radius: 6 * Y.u
-                    color: "#cc0000"
+                    color: player.liveBack ? "#606060" : "#cc0000"
                     Text { id: liveBar; anchors.centerIn: parent; text: "LIVE"; color: "white"; font.family: Y.font; font.pixelSize: 22 * Y.u; font.weight: Font.Bold }
                 }
-                Rectangle {
+                Item {                         // live: the DVR window, red up to where it plays, a knob there while behind or seeking
                     visible: player.live
-                    y: 59 * Y.u; width: parent.width; height: 6 * Y.u; radius: 3 * Y.u
-                    color: Y.red
+                    y: 59 * Y.u; width: parent.width; height: 6 * Y.u
+                    readonly property real frac: player.liveWindow > 0 ? Math.max(0, Math.min(1, 1 - player.liveBehind / player.liveWindow)) : 1
+                    Rectangle { anchors.fill: parent; radius: height / 2; color: "#5affffff" }
+                    Rectangle { width: parent.frac * parent.width; height: parent.height; radius: height / 2; color: Y.red }
+                    Rectangle {
+                        visible: player.liveBack || player.liveTarget >= 0 || player.mode === "bar"
+                        x: parent.frac * parent.width - width / 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 22 * Y.u; height: width; radius: width / 2
+                        color: Y.red
+                    }
                 }
                 Text {
                     visible: !player.seeking
                     x: player.live ? liveBar.implicitWidth + 34 * Y.u : 0      // (beside the LIVE badge)
                     y: 5 * Y.u
-                    text: player.live ? ((player.liveTarget >= 0 ? player.liveTarget : player.behindLive) > 8
-                                         ? Y.clock(player.liveTarget >= 0 ? player.liveTarget : player.behindLive) + " behind live" : "")
+                    text: player.live ? (player.liveBack ? Y.clock(player.liveBehind) + " behind live" : "")
                                       : Y.clock(player.shownPos) + (player.chapter >= 0 ? " • " + player.chapters[player.chapter].title : "")
                     color: "#babac0"
                     font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
