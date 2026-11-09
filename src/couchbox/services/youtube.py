@@ -2361,7 +2361,11 @@ class Demo(YouTube):
             }
 
         if not opened:
-            return {"items": [one(k, a, t) for k, (a, t) in enumerate(zip(names, texts, strict=True))], "more": ""}
+            return {
+                "items": [one(k, a, t) for k, (a, t) in enumerate(zip(names, texts, strict=True))],
+                "more": "",
+                "handoff": "Open the YouTube mobile app to add comments and replies.",
+            }
         reply = token.endswith("r")
         k0 = int(token.rstrip("r").rsplit("-", 1)[1])
         head = one(k0, names[k0], texts[k0], reply)
