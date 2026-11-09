@@ -144,6 +144,11 @@ FocusScope {
         preferredHighlightEnd: walk ? shelf.indent + 2 * shelf.cardW + Y.gap : shelf.indent + shelf.cardW
         highlightMoveDuration: 180
         highlightFollowsCurrentItem: true
+        // where the row comes to rest for the current card: a card that will rest left of the
+        // indent is a passed one from the moment the row starts to move
+        readonly property real restX: !currentItem || shelf.fixed ? contentX
+            : walk ? Math.max(-leftMargin, Math.min(currentItem.x - preferredHighlightBegin, contentWidth - width))
+            : currentItem.x - preferredHighlightBegin
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: true
         interactive: false
@@ -179,6 +184,10 @@ FocusScope {
             captioned: !shelf.row.hero
             wide: !!shelf.row.hero
             metaSize: shelf.metaSize
+            // a card scrolled past the row's start: at 10% on the current row, gone on the others,
+            // switched at once (YouTube's TV app: .XVxlBe { opacity: 0.1 }, .tmaMPd { opacity: 0 })
+            readonly property bool passed: !shelf.fixed && x - list.restX < shelf.indent - 1
+            opacity: passed ? (shelf.current ? 0.1 : 0) : 1
         }
     }
 
