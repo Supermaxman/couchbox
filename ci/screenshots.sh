@@ -102,6 +102,9 @@ shot movies-top couchbox-movies --open top:movie
 # Settings
 shot yt-home couchbox-yt
 shot yt-guide couchbox-yt --keys left
+# Home's end: YouTube's Refresh tile (current), and Home again after OK on it
+shot yt-home-refresh couchbox-yt --keys down,down,down,down
+shot yt-home-refreshed couchbox-yt --keys down,down,down,down,ok,wait:1
 shot yt-guide-tab couchbox-yt --keys left,down,down,down,down,down,down
 shot yt-gaming couchbox-yt --open gaming
 shot yt-search couchbox-yt --keys left,up,ok

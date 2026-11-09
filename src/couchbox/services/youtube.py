@@ -618,6 +618,20 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
         title, sub = shelf_title(r)
         items = parse_items(lst.get("items"))
         if not items:
+            # Home's last row: YouTube's Refresh button (Home again, with new videos)
+            for x in lst.get("items") or []:
+                b = x.get("gridButtonRenderer") if isinstance(x, dict) else None
+                tok = dig(b, "navigationEndpoint", "loadReloadContinuationCommand", "continuation") if b else ""
+                if tok:
+                    return [
+                        {
+                            "title": "",
+                            "subtitle": "",
+                            "items": [],
+                            "more": "",
+                            "refresh": {"title": text(b.get("title")) or "Refresh", "token": tok},
+                        }
+                    ]
             return []
         out = {"title": title, "subtitle": sub, "items": items, "more": _continuation(lst)}
         kind = r.get("tvhtml5ShelfRendererType") or ""
@@ -683,6 +697,7 @@ def section_list(resp: dict[str, Any]) -> dict[str, Any]:
         ("contents", "tvBrowseRenderer", "content", "tvSurfaceContentRenderer", "content", "sectionListRenderer"),
         ("contents", "sectionListRenderer"),
         ("continuationContents", "sectionListContinuation"),
+        ("continuationContents", "tvSurfaceContentContinuation", "content", "sectionListRenderer"),  # Home again (Refresh)
         ("contents", "singleColumnBrowseResultsRenderer", "tabs", 0, "tabRenderer", "content", "sectionListRenderer"),
     ):
         s = dig(resp, *path)
@@ -1461,9 +1476,11 @@ class YouTube:
         return parse_page(self.call("browse", body))
 
     def more(self, token: str) -> dict[str, Any]:
-        """More of a page (shelves) or of a shelf (items), from a continuation token."""
+        """More of a page (shelves) or of a shelf (items), from a continuation token; Home's Refresh
+        token: Home again, all of it."""
         resp = self.call("browse", {"continuation": token})
-        if dig(resp, "continuationContents", "sectionListContinuation"):
+        cc = resp.get("continuationContents") or {}
+        if "sectionListContinuation" in cc or "tvSurfaceContentContinuation" in cc:  # (the latter: Home again)
             return parse_page(resp)
         return parse_more_items(resp)
 
@@ -2048,7 +2065,7 @@ class Demo(YouTube):
     def _shelf(self, title, start, n=8, kind="video", subtitle=""):
         return {"title": title, "subtitle": subtitle, "items": [self._video(start + i, kind) for i in range(n)], "more": ""}
 
-    def home(self):
+    def home(self, again=0):
         if not self.profile:
             return {
                 "shelves": [self._shelf("Trending", 4), self._shelf("Live now", 16, kind="live")],
@@ -2056,12 +2073,20 @@ class Demo(YouTube):
                 "nudge": {"title": "Make YouTube your own", "subtitle": "Sign in to see the latest videos tailored to your interests."},
                 "header": None,
             }
+        o = 32 * again
         return {
             "shelves": [
-                self._shelf("Recommended", 0),
-                self._shelf("New to you", 8),
-                self._shelf("Live now", 16, kind="live"),
-                self._shelf("Science & engineering", 24),
+                self._shelf("Recommended", o),
+                self._shelf("New to you", o + 8),
+                self._shelf("Live now", o + 16, kind="live"),
+                self._shelf("Science & engineering", o + 24),
+                {
+                    "title": "",
+                    "subtitle": "",
+                    "items": [],
+                    "more": "",
+                    "refresh": {"title": "Refresh", "token": f"demo-reload:{again + 1}"},
+                },
             ],
             "more": "",
             "nudge": None,
@@ -2120,6 +2145,8 @@ class Demo(YouTube):
         }
 
     def more(self, token):
+        if token.startswith("demo-reload:"):  # Home's Refresh: Home with other videos
+            return self.home(int(token.split(":")[1]))
         return {"items": [], "more": ""}
 
     def channel(self, channel_id, params=""):

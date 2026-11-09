@@ -330,9 +330,10 @@ class Backend(QObject):
         prof = (self.yt.profile.get("id", "") if self.yt.profile else "") or "guest"
         return os.path.join(self.yt.dir, "home-" + "".join(ch if ch.isalnum() else "_" for ch in prof) + ".json")
 
-    def home(self):
+    def home(self, token=""):
+        """Home; with token (its Refresh button's): Home again, with new videos."""
         with self.home_lock:                         # Search's landing shelf asks too: once, then from the cache
-            out = self.page(self.yt.home())
+            out = self.page(self.yt.more(token) if token else self.yt.home())
         if not self.demo and out.get("shelves"):
             try:
                 path = self.home_file()
@@ -577,7 +578,7 @@ class Backend(QObject):
             "share": lambda: self.share(a["id"]),
             "report": lambda: y.report(a["id"], a["cpn"], a["event"], float(a.get("position", 0)), float(a.get("duration", 0))),
             "about": self.about,
-            "home": self.home,
+            "home": lambda: self.home(a.get("token") or ""),
             "homeCached": self.home_cached,
             "browse": lambda: self.page(y.browse(a["id"], a.get("params", ""))),
             "more": lambda: self.page(y.more(a["token"])),

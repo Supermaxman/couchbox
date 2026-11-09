@@ -71,11 +71,12 @@ def test_hide_shorts():
         "shelves": [
             {"title": "Shorts", "items": [{"type": "short", "id": "s1"}]},
             {"title": "Mixed", "items": [{"type": "video", "id": "v1"}, {"type": "short", "id": "s2"}]},
+            {"title": "", "items": [], "refresh": {"title": "Refresh", "token": "t"}},  # Home's Refresh row stays
         ],
         "more": "",
     }
     out = X.hide_shorts(page)
-    assert [s["title"] for s in out["shelves"]] == ["Mixed"] and [i["id"] for i in out["shelves"][0]["items"]] == ["v1"]
+    assert [s["title"] for s in out["shelves"]] == ["Mixed", ""] and [i["id"] for i in out["shelves"][0]["items"]] == ["v1"]
     assert X.hide_shorts({"items": [{"type": "short"}, {"type": "video"}]}) == {"items": [{"type": "video"}]}
 
 
