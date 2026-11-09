@@ -137,6 +137,37 @@ def test_tile_kinds_live_channel_short():
     assert Y.parse_any(short)["type"] == "short"
 
 
+def test_explore_more_topics_tile_is_a_search_for_its_topic():
+    # Home's last shelf (TVHTML5_SHELF_RENDERER_TYPE_EDU), as YouTube's TV app gets it: the topic's
+    # name on the picture, a search glass top left, and OK searches for the topic
+    t = {
+        "tileRenderer": {
+            "style": "TILE_STYLE_YTLR_EDU_GRID",
+            "contentType": "TILE_CONTENT_TYPE_EDU",
+            "header": {
+                "tileHeaderRenderer": {
+                    "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/gzpytaTwiLM/mqdefault.jpg", "width": 232, "height": 174}]},
+                    "thumbnailOverlays": [
+                        {
+                            "thumbnailOverlayIconRenderer": {
+                                "icon": {"iconType": "SEARCH"},
+                                "iconPosition": "THUMBNAIL_OVERLAY_ICON_RENDERER_ICON_POSITION_TOP_LEFT_CORNER",
+                            }
+                        },
+                        {"tileMetadataRenderer": {"title": {"simpleText": "Automatic cat litter tech"}}},
+                    ],
+                }
+            },
+            "onSelectCommand": {
+                "searchEndpoint": {"query": "Automatic cat litter tech", "searchPageAccessPoint": "SEARCH_PAGE_ACCESS_POINT_BROWSE"}
+            },
+        }
+    }
+    c = Y.parse_any(t)
+    assert c["type"] == "search" and c["id"] == "Automatic cat litter tech" and c["title"] == "Automatic cat litter tech"
+    assert c["shape"] == "topic" and c["lines"] == [] and c["thumb"].endswith("/gzpytaTwiLM/mqdefault.jpg")
+
+
 def test_lockup_becomes_the_same_card():
     c = Y.parse_any(lockup("vid00000004", "Alien Matter"))
     assert c == Y.item(

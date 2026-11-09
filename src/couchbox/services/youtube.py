@@ -287,6 +287,8 @@ def parse_tile(t: dict[str, Any]) -> dict[str, Any] | None:
         out["type"] = "playlist"
     elif kind == "TILE_CONTENT_TYPE_SHORTS" or target.get("type") == "short":
         out["type"] = "short"
+    elif target.get("type") == "search":  # Home's "Explore more topics": a search for its topic
+        out["type"] = "search"
     if out["live"] and out["type"] == "video":
         out["type"] = "live"
     out["id"] = target.get("id") or t.get("contentId", "")
@@ -339,11 +341,14 @@ def split_channel(lines: list[str]) -> list[str]:
 
 def tile_shape(style: str, thumbnail: Any) -> str:
     """How a card is drawn: "wide" (16:9, most), "poster" (2:3 movie art), "square" (albums,
-    podcasts), "hero" (a large wide card) or "round"."""
+    podcasts), "hero" (a large wide card), "topic" (a topic's search, its name on the picture) or
+    "round"."""
     if style.endswith("_SQUARE"):
         return "square"
     if style.endswith("_HERO"):
         return "hero"
+    if style.endswith("_EDU_GRID"):
+        return "topic"  # Home's "Explore more topics": a small picture with the topic's name on it
     t = (dig(thumbnail, "thumbnails") or [{}])[-1]
     w, h = t.get("width") or 16, t.get("height") or 9
     if h > w * 1.2:
@@ -637,6 +642,8 @@ def parse_shelf(s: dict[str, Any]) -> list[dict[str, Any]]:
         kind = r.get("tvhtml5ShelfRendererType") or ""
         if kind == "TVHTML5_SHELF_RENDERER_TYPE_GRID":
             out["grid"] = True
+        elif kind == "TVHTML5_SHELF_RENDERER_TYPE_EDU":
+            out["topics"] = True  # Home's "Explore more topics": small cards, a search each
         elif kind in (
             "TVHTML5_SHELF_RENDERER_TYPE_EXPANSION_SHELF",
             "TVHTML5_SHELF_RENDERER_TYPE_WORMHOLES",
@@ -2140,6 +2147,22 @@ class Demo(YouTube):
                 self._shelf("New to you", o + 8),
                 self._shelf("Live now", o + 16, kind="live"),
                 self._shelf("Science & engineering", o + 24),
+                {  # Home's last shelf: searches for topics, as YouTube's TV app has it
+                    "title": "Explore more topics",
+                    "subtitle": "",
+                    "items": [
+                        item(type="search", id=t, title=t, shape="topic")
+                        for t in (
+                            "Paper bridge builds",
+                            "Coastal trail running",
+                            "Sourdough science",
+                            "Night sky timelapse",
+                            "Tiny house tours",
+                        )
+                    ],
+                    "more": "",
+                    "topics": True,
+                },
                 {
                     "title": "",
                     "subtitle": "",

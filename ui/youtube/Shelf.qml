@@ -18,7 +18,8 @@ FocusScope {
     property bool fixed: false                // a row that doesn't scroll (the player's rows of three)
     property real metaSize: Y.tMeta
     property bool dim: false                  // the header grey (the guide open, the focus elsewhere)
-    readonly property real cardW: row.hero ? 288 * Y.u : grow && current ? Y.bigW : baseW
+    // a hero's row: small posters; Home's "Explore more topics": small topic cards, the current row's too
+    readonly property real cardW: row.hero ? 288 * Y.u : row.topics ? 405 * Y.u : grow && current ? Y.bigW : baseW
     readonly property bool hasHead: !row.hero && !!(row.title || row.pill)    // a hero's title is the focused card's
     readonly property real headH: (row.pill ? 96 * Y.u : hasHead ? (row.subtitle ? 106 : 70) * Y.u : 0) + (row.hero ? 468 * Y.u : 0)
     readonly property var focused: (row.items || [])[list.currentIndex] || ({})
@@ -126,18 +127,21 @@ FocusScope {
         id: list
         y: shelf.headH
         width: parent.width
-        height: Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 198) * Y.u
+        height: shelf.row.topics ? Math.round(shelf.cardW * 8 / 15) + 9 * Y.u   // (nothing under a topic's picture)
+                                 : Math.round(shelf.cardW * 9 / 16) + (shelf.boxed ? 194 : shelf.row.hero ? 12 : 198) * Y.u
         orientation: ListView.Horizontal
         spacing: Y.gap
         clip: false
         focus: true
         model: itemModel
         cacheBuffer: Math.round(Y.bigW * 3)
-        // the focus stays at the left; the row moves under it
-        highlightRangeMode: shelf.fixed ? ListView.NoHighlightRange : ListView.StrictlyEnforceRange
-        leftMargin: shelf.fixed ? shelf.indent : 0
-        preferredHighlightBegin: shelf.indent
-        preferredHighlightEnd: shelf.indent + shelf.cardW
+        // the focus stays at the left; the row moves under it. Topics: the focus moves to the
+        // second card, then stays there (one topic always to its left), as YouTube's TV app has it
+        readonly property bool walk: !!shelf.row.topics && !shelf.fixed
+        highlightRangeMode: shelf.fixed ? ListView.NoHighlightRange : walk ? ListView.ApplyRange : ListView.StrictlyEnforceRange
+        leftMargin: shelf.fixed || walk ? shelf.indent : 0
+        preferredHighlightBegin: walk ? shelf.indent + shelf.cardW + Y.gap : shelf.indent
+        preferredHighlightEnd: walk ? shelf.indent + 2 * shelf.cardW + Y.gap : shelf.indent + shelf.cardW
         highlightMoveDuration: 180
         highlightFollowsCurrentItem: true
         boundsBehavior: Flickable.StopAtBounds
