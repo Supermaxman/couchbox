@@ -934,8 +934,11 @@ def _token_in(o: Any) -> str:
     return ""
 
 
+VOTES = {"LIKE": "like", "DISLIKE": "dislike"}
+
+
 def _comment(c: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "id": c.get("commentId") or "",
         "author": text(c.get("authorText")),
         "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
@@ -944,7 +947,39 @@ def _comment(c: dict[str, Any]) -> dict[str, Any]:
         "likes": text(c.get("voteCount")),
         "replies": int(c.get("replyCount") or 0),
         "pinned": "pinnedCommentBadge" in c,
+        "vote": VOTES.get(str(c.get("voteStatus") or ""), "like" if c.get("isLiked") else ""),
     }
+    # the comment's own page (the TV's: OK on any comment opens it: the comment, its buttons, its replies)
+    if c.get("detailViewEndpoint"):
+        tok = _token_in(c["detailViewEndpoint"])
+        if tok:
+            out["open"] = tok
+    acts = comment_actions(c)
+    if acts:
+        out["actions"] = acts
+    return out
+
+
+def comment_actions(c: dict[str, Any]) -> dict[str, Any]:
+    """A comment's Like and Dislike (on its own page): {like, unlike, dislike, undislike} (each a
+    perform_comment_action token) and counts: the likes YouTube says to show after each."""
+    bar = dig(c, "actionButtons", "commentActionButtonsRenderer") or {}
+    out: dict[str, Any] = {}
+    counts: dict[str, str] = {}
+    for button, on, off in (("likeButton", "like", "unlike"), ("dislikeButton", "dislike", "undislike")):
+        t = dig(bar, button, "toggleButtonRenderer") or {}
+        for ep, name in (("defaultServiceEndpoint", on), ("toggledServiceEndpoint", off)):
+            pc = dig(t, ep, "performCommentActionEndpoint") or {}
+            if pc.get("action"):
+                out[name] = pc["action"]
+                n = next(
+                    (u.get("voteCount") for u in _find(pc.get("clientActions") or [], "updateCommentVoteAction") if isinstance(u, dict)),
+                    None,
+                )
+                counts[name] = text(n)
+    if out:
+        out["counts"] = counts
+    return out
 
 
 def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
@@ -999,7 +1034,25 @@ def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
         more = next(
             (t for cs in _find(resp.get("continuationContents") or {}, "continuations") if (t := _continuation({"continuations": cs}))), ""
         )
-    return {"items": _unique_comments(items), "more": more}
+    out: dict[str, Any] = {"items": _unique_comments(items), "more": more}
+    # a comment's own page: the comment itself first (not in a thread), with its buttons, and
+    # YouTube's line on adding comments and replies (on the phone)
+    head = next((c for c in _find(_outside_threads(resp), "commentRenderer") if isinstance(c, dict) and c.get("actionButtons")), None)
+    if head:
+        out["head"] = _comment(head)
+    hand = next((h for h in _find(resp, "handoffInstructionRenderer") if isinstance(h, dict)), None)
+    if hand:
+        out["handoff"] = text(hand.get("text"))
+    return out
+
+
+def _outside_threads(o: Any) -> Any:
+    """o without its commentThreadRenderers (a comment's own page: the comment, not its replies)."""
+    if isinstance(o, dict):
+        return {k: _outside_threads(v) for k, v in o.items() if k != "commentThreadRenderer"}
+    if isinstance(o, list):
+        return [_outside_threads(v) for v in o]
+    return o
 
 
 def _unique_comments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1851,6 +1904,13 @@ class YouTube:
         self.changed()
         return {"like": status}
 
+    def comment_vote(self, action: str) -> dict[str, Any]:
+        """Like, dislike or take either back on a comment (an action token from its own page)."""
+        self.need_profile("like comments")
+        self.call("comment/perform_comment_action", {"actions": [action]}, cache=False)
+        self.changed()
+        return {"ok": True}
+
     def subscribe(self, channel_id: str, on: bool) -> dict[str, Any]:
         self.need_profile("subscribe")
         self.call("subscription/subscribe" if on else "subscription/unsubscribe", {"channelIds": [channel_id]}, cache=False)
@@ -2280,23 +2340,47 @@ class Demo(YouTube):
             "answers: what happens when it rains? Honestly that could be its own episode. Maybe two.",
             "First!",
         ]
-        return {
-            "items": [
-                {
-                    "author": a,
-                    "photo": "",
-                    "text": t,
-                    "time": f"{k + 1} days ago",
-                    "likes": f"{(k + 3) * 41}",
-                    "replies": 0 if token.startswith("demo-replies") else k % 3,
-                    "pinned": k == 0 and not token.startswith("demo-replies"),
-                    **({"repliesToken": f"demo-replies-{k}"} if k % 3 and not token.startswith("demo-replies") else {}),
-                }
-                for k, (a, t) in enumerate(zip(names, texts, strict=True))
-                if not token.startswith("demo-replies") or k < 3
-            ],
-            "more": "",
+        opened = token.startswith("demo-open-")  # a comment's own page: it (with its buttons), then its replies
+
+        def one(k, a, t, reply=False):
+            key = f"demo-c{k}" + ("r" if reply else "")
+            likes = (k + 3) * 41
+            vote = self.state.setdefault("commentVotes", {}).get(key, "")
+            return {
+                "id": key,
+                "author": a,
+                "photo": "",
+                "text": t,
+                "time": f"{k + 1} days ago",
+                "likes": str(likes + (vote == "like")),
+                "vote": vote,
+                "replies": 0 if reply else k % 3,
+                "pinned": k == 0 and not reply,
+                "open": f"demo-open-{k}" + ("r" if reply else ""),
+                **({"repliesToken": f"demo-open-{k}"} if k % 3 and not reply else {}),
+            }
+
+        if not opened:
+            return {"items": [one(k, a, t) for k, (a, t) in enumerate(zip(names, texts, strict=True))], "more": ""}
+        reply = token.endswith("r")
+        k0 = int(token.rstrip("r").rsplit("-", 1)[1])
+        head = one(k0, names[k0], texts[k0], reply)
+        base = (k0 + 3) * 41
+        head["actions"] = {
+            "like": f"like:{head['id']}",
+            "unlike": f"unlike:{head['id']}",
+            "dislike": f"dislike:{head['id']}",
+            "undislike": f"undislike:{head['id']}",
+            "counts": {"like": str(base + 1), "unlike": str(base), "dislike": str(base), "undislike": str(base)},
         }
+        replies = [] if reply else [one(k, names[k], texts[k], True) for k in range(3) if k != k0][: k0 % 3]
+        return {"items": [head, *replies], "more": "", "head": head, "handoff": "Open the YouTube mobile app to add comments and replies."}
+
+    def comment_vote(self, action):
+        self.need_profile("like comments")
+        what, key = action.split(":", 1)
+        self.state.setdefault("commentVotes", {})[key] = {"like": "like", "dislike": "dislike"}.get(what, "")
+        return {"ok": True}
 
     def shorts(self, params="", token=""):
         if token:

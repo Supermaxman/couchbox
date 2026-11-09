@@ -138,6 +138,12 @@ shot yt-player-seek couchbox-yt --open video:demo0000003 --keys up
 shot yt-player-chapters couchbox-yt --open video:demo0000003 --keys up,up,right,right
 shot yt-player-description couchbox-yt --open video:demo0000003 --keys left,left,left,ok
 shot yt-player-comments couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok
+# a comment's own page (OK on it): Like and Dislike under it, the focus on Like; liked (OK); a
+# reply's own page (Down to it, OK); a comment without replies opens too
+shot yt-player-comment-open couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,ok
+shot yt-player-comment-liked couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,ok,wait:1,ok
+shot yt-player-comment-reply couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,ok,wait:1,down,ok
+shot yt-player-comment-plain couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,down,down,ok,wait:1,right
 shot yt-player-settings couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok
 shot yt-player-quality couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,ok
 shot yt-player-cc couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,ok

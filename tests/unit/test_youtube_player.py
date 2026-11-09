@@ -135,6 +135,7 @@ def test_comments_page():
         "likes": "166",
         "replies": 49,
         "pinned": True,
+        "vote": "",
     }
     assert c["more"] == "tok-c2"
 
@@ -331,6 +332,127 @@ def test_tv_comment_replies_come_from_its_detail_view():
     }
     c = Y.parse_comments(page)
     assert c["items"][0]["repliesToken"] == "tok-replies"
+
+
+def _toggle(icon, on, off, after_on, after_off):
+    def ep(tok, n, status):
+        return {
+            "performCommentActionEndpoint": {
+                "action": tok,
+                "clientActions": [{"updateCommentVoteAction": {"voteCount": {"simpleText": n}, "voteStatus": status}}],
+            }
+        }
+
+    return {
+        "toggleButtonRenderer": {
+            "defaultIcon": {"iconType": icon},
+            "defaultServiceEndpoint": ep(on, after_on, icon),
+            "toggledServiceEndpoint": ep(off, after_off, "INDIFFERENT"),
+        }
+    }
+
+
+def test_a_comments_own_page_has_its_buttons_then_its_replies():
+    """The TV's page for one comment (its detailViewEndpoint): the comment itself (with Like and
+    Dislike: perform_comment_action tokens, and the likes to show after each), YouTube's line on
+    replying from the phone, then the replies as threads (each opening its own page)."""
+    page = {
+        "continuationContents": {
+            "itemSectionContinuation": {
+                "contents": [
+                    {
+                        "commentRenderer": {
+                            "commentId": "Ug1",
+                            "authorText": {"simpleText": "@a"},
+                            "contentText": {"simpleText": "Hi"},
+                            "voteCount": {"simpleText": "9"},
+                            "voteStatus": "INDIFFERENT",
+                            "replyCount": 1,
+                            "actionButtons": {
+                                "commentActionButtonsRenderer": {
+                                    "likeButton": _toggle("LIKE", "t-like", "t-unlike", "10", "9"),
+                                    "dislikeButton": _toggle("DISLIKE", "t-dis", "t-undis", "9", "9"),
+                                }
+                            },
+                        }
+                    },
+                    {
+                        "handoffInstructionRenderer": {
+                            "text": {"runs": [{"text": "Open the YouTube mobile app to add comments and replies."}]}
+                        }
+                    },
+                    {
+                        "commentThreadRenderer": {
+                            "comment": {
+                                "commentRenderer": {
+                                    "commentId": "Ug2",
+                                    "authorText": {"simpleText": "@b"},
+                                    "contentText": {"simpleText": "A reply"},
+                                    "voteStatus": "LIKE",
+                                    "detailViewEndpoint": {"x": {"continuations": [{"nextContinuationData": {"continuation": "tok-ug2"}}]}},
+                                }
+                            }
+                        }
+                    },
+                ]
+            }
+        }
+    }
+    r = Y.parse_comments(page)
+    assert r["head"]["id"] == "Ug1"
+    assert r["head"]["actions"] == {
+        "like": "t-like",
+        "unlike": "t-unlike",
+        "dislike": "t-dis",
+        "undislike": "t-undis",
+        "counts": {"like": "10", "unlike": "9", "dislike": "9", "undislike": "9"},
+    }
+    assert r["handoff"] == "Open the YouTube mobile app to add comments and replies."
+    assert [(x["id"], x["vote"], x.get("open")) for x in r["items"]] == [("Ug2", "like", "tok-ug2")]
+
+
+def test_every_comment_opens_its_own_page():
+    """A comment without replies opens too (its page: its buttons)."""
+    page = {
+        "contents": [
+            {
+                "commentThreadRenderer": {
+                    "comment": {
+                        "commentRenderer": {
+                            "commentId": "Ug3",
+                            "authorText": {"simpleText": "@c"},
+                            "contentText": {"simpleText": "No replies"},
+                            "isLiked": True,
+                            "detailViewEndpoint": {"x": {"continuations": [{"nextContinuationData": {"continuation": "tok-ug3"}}]}},
+                        }
+                    }
+                }
+            }
+        ]
+    }
+    c = Y.parse_comments(page)["items"][0]
+    assert (c["open"], c["vote"], c.get("repliesToken")) == ("tok-ug3", "like", None)
+    assert "head" not in Y.parse_comments(page)
+
+
+def test_a_comment_vote_sends_its_action():
+    y = Y.YouTube.__new__(Y.YouTube)
+    sent = []
+    y.profile = {"id": "a:"}
+    y.call = lambda ep, body, cache=True, as_client=None: sent.append((ep, body, cache)) or {}
+    y.changed = lambda: sent.append("changed")
+    assert y.comment_vote("t-like") == {"ok": True}
+    assert sent == [("comment/perform_comment_action", {"actions": ["t-like"]}, False), "changed"]
+
+
+def test_demo_comment_votes_stick():
+    d = Y.Demo()
+    d.use("demo1:")
+    page = d.comments("demo-open-1")
+    assert page["head"]["vote"] == ""
+    d.comment_vote(page["head"]["actions"]["like"])
+    assert d.comments("demo-open-1")["head"]["vote"] == "like"
+    assert d.comments("demo-comments")["items"][1]["vote"] == "like"
 
 
 def test_a_shorts_subscription_comes_from_its_entity():

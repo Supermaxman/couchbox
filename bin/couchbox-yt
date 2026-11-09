@@ -596,6 +596,7 @@ class Backend(QObject):
             "premiumProbe": lambda: y.premium_probe(),   # measuring: where YouTube says this account has Premium
             "historyToday": lambda: {"ids": [e["id"] for e in y.history_today(newest=60)]} if y.profile else {"ids": []},
             "comments": lambda: y.comments(a["token"]),
+            "commentVote": lambda: y.comment_vote(a["action"]),
             "shorts": lambda: y.shorts(a.get("params", ""), a.get("token", "")),
             "short": lambda: y.short(a["id"]),
         }

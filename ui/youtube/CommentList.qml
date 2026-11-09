@@ -1,7 +1,8 @@
-// A list of comments (CommentsPanel's: the comments, or one comment and its replies). The focus
-// glides from one to the next and the list follows it, keeping it in the upper part of the
-// panel; a comment is the same size focused or not. While a page is on its way, placeholder
-// cards breathe where the comments will be.
+// A list of comments (CommentsPanel's: the comments, or one comment's own page: it whole, with
+// its Like and Dislike buttons and YouTube's line on replying from the phone, then its replies).
+// The focus glides from one to the next and the list follows it, keeping it in the upper part of
+// the panel; a comment is the same size focused or not (the open one's buttons take the focus,
+// not the comment). While a page is on its way, placeholder cards breathe where the comments will be.
 import QtQuick
 
 ListView {
@@ -12,6 +13,8 @@ ListView {
     property string note: ""                  // nothing to show, and why
     property real pulse: 1                    // the placeholders' breathing (one clock: the panel's)
     property bool focused: false              // the panel has the focus
+    property int button: 0                    // the open comment's button with the focus: 0 Like, 1 Dislike
+    property string handoff: ""               // YouTube's line under them (adding comments and replies: the phone)
     visible: opacity > 0
     clip: true
     spacing: 12 * Y.u
@@ -38,7 +41,9 @@ ListView {
         required property string repliesToken
         required property bool pinned
         required property bool isParent
-        readonly property bool on: ListView.isCurrentItem && lv.live && lv.focused
+        required property string vote             // like | dislike | "" (this profile's)
+        readonly property bool here: ListView.isCurrentItem && lv.live && lv.focused
+        readonly property bool on: here && !isParent  // (the open comment: its buttons have the focus, not it)
         readonly property bool cut: body.truncated
         readonly property color ink: on ? Y.ink : Y.text
         readonly property color sub: on ? "#606060" : Y.dim
@@ -73,14 +78,61 @@ ListView {
             }
             Row {
                 spacing: 20 * Y.u
-                visible: !!c.likes || (c.replies > 0 && !c.isParent)
+                visible: !c.isParent && (!!c.likes || !!c.vote || c.replies > 0)
                 Row {
                     spacing: 8 * Y.u
-                    visible: !!c.likes
-                    Icon { name: "like"; size: 26 * Y.u; color: c.on ? Y.ink : Y.dim }
+                    visible: !!c.likes || c.vote === "like"
+                    Icon { name: c.vote === "like" ? "like-filled" : "like"; size: 26 * Y.u; color: c.on ? Y.ink : Y.dim }
                     Text { text: c.likes; color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
                 }
-                Text { visible: c.replies > 0 && !c.isParent; text: c.replies + (c.replies === 1 ? " reply" : " replies"); color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
+                Icon { visible: c.vote === "dislike"; name: "dislike-filled"; size: 26 * Y.u; color: c.on ? Y.ink : Y.dim }
+                Text { visible: c.replies > 0; text: c.replies + (c.replies === 1 ? " reply" : " replies"); color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
+            }
+            // the open comment: Like (with the likes) and Dislike, as YouTube's TV app has them under it
+            Row {
+                visible: c.isParent
+                topPadding: 10 * Y.u
+                spacing: 16 * Y.u
+                Vote { icon: c.vote === "like" ? "like-filled" : "like"; label: c.likes; on: c.here && lv.button === 0; objectName: "commentLike" }
+                Vote { icon: c.vote === "dislike" ? "dislike-filled" : "dislike"; on: c.here && lv.button === 1; objectName: "commentDislike" }
+            }
+            // ... and under them, YouTube's line on adding comments and replies (with your picture)
+            Row {
+                visible: c.isParent
+                topPadding: 14 * Y.u
+                spacing: 14 * Y.u
+                RoundImage { width: 36 * Y.u; height: width; source: (Y.profile || {}).photo || ""; fallback: ((Y.profile || {}).name || "You"); anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    width: col.width - 50 * Y.u
+                    text: lv.handoff || "Open the YouTube mobile app to add comments and replies."
+                    color: Y.dim; font.family: Y.font; font.pixelSize: 21 * Y.u
+                    wrapMode: Text.Wrap
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+    }
+    // a button under the open comment: an icon (and the likes) on a faint pill, white with the focus
+    component Vote: Rectangle {
+        id: vb
+        property string icon
+        property string label: ""
+        property bool on: false
+        width: label ? vrow.width + 48 * Y.u : height
+        height: 64 * Y.u
+        radius: height / 2
+        color: on ? Y.text : "#1fffffff"
+        Behavior on color { ColorAnimation { duration: Y.tFocus } }
+        Row {
+            id: vrow
+            anchors.centerIn: parent
+            spacing: 10 * Y.u
+            Icon { name: vb.icon; size: 32 * Y.u; color: vb.on ? Y.ink : Y.text; weight: 1.6; anchors.verticalCenter: parent.verticalCenter }
+            Text {
+                visible: !!vb.label
+                text: vb.label
+                color: vb.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 24 * Y.u; font.weight: Font.Medium
+                anchors.verticalCenter: parent.verticalCenter
             }
         }
     }

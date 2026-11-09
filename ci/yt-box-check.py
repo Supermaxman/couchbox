@@ -431,6 +431,12 @@ def player_walk(r):
                     time.sleep(0.5)
                 r.step("comment-replies", lambda f: ((d(f).get("comments") or {}).get("thread") and (d(f).get("comments") or {}).get("replies", 0) > 0,
                                                      f"replies {(d(f).get('comments') or {}).get('replies')}"), settle=0)
+                # its Like and Dislike (read: never pressed): there, the focus on Like, Right to Dislike, Left back
+                head = lambda f: (d(f).get("comments") or {}).get("head") or {}
+                r.step("comment-buttons", lambda f: (head(f).get("ready") and head(f).get("button") == "like", f"buttons {head(f)!r}"), settle=0)
+                remote("right")
+                r.step("comment-dislike-focus", lambda f: (head(f).get("button") == "dislike", f"button {head(f).get('button')!r}"), settle=0.6)
+                remote("left")
                 remote("back")
                 r.step("comment-replies-back", lambda f: (not (d(f).get("comments") or {}).get("thread") and (d(f).get("comments") or {}).get("at") == at,
                                                           f"comments again, on {(d(f).get('comments') or {}).get('at')} (was {at})"), settle=1)
