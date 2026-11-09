@@ -91,6 +91,47 @@ grep -q "couchbox_real_delete(couchbox_last_fence)" external/mpvqt/src/mpvrender
 # used its HTML5 player. Build the script with the documented WebEngine.script() instead.
 perl -0pi -e 's/var nativeshell =\s*\{\s*sourceCode: (components\.system\.getNativeShellScript\(\)),\s*injectionPoint: (WebEngineScript\.DocumentCreation),\s*worldId: (WebEngineScript\.MainWorld)\s*\}\s*web\.userScripts\.collection = \[ nativeshell \];/var nativeshell = WebEngine.script();\n      nativeshell.name = "nativeshell";\n      nativeshell.sourceCode = $1;\n      nativeshell.injectionPoint = $2;\n      nativeshell.worldId = $3;\n      web.profile.userScripts.insert(nativeshell);/' src/ui/webview.qml
 grep -q "web.profile.userScripts.insert(nativeshell)" src/ui/webview.qml || { echo "webview.qml patch did not apply"; exit 1; }
+# The web client draws over the video with a transparent background. When the start page hands
+# over to the server, Chromium swaps in a new renderer, and that one sometimes keeps Chromium's
+# default white background though Qt still reports transparent: the video plays unseen under
+# white (on the Pi 5, measured: 6 of 23 starts, and every start for an evening). Set the
+# background again after each page load and whenever a video starts. Chromium accepts only an
+# opaque or a fully transparent background (anything else aborts), so the value in between is
+# transparent white.
+python3 - src/ui/webview.qml <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+edits = [
+    ("    onLoadingChanged: function(loadingInfo)",
+     """    // Couchbox: the transparent background again (see build-jellyfin.sh)
+    function couchboxTransparent() {
+      web.backgroundColor = Qt.rgba(1, 1, 1, 0)
+      web.backgroundColor = "transparent"
+    }
+
+    onLoadingChanged: function(loadingInfo)"""),
+    ("""        console.log("WebEngineLoadRequest success: " + loadingInfo.url);""",
+     """        console.log("WebEngineLoadRequest success: " + loadingInfo.url);
+        web.couchboxTransparent()"""),
+    ("  Text\n  {\n    id: errorLabel",
+     """  Connections
+  {
+    target: components.player
+    function onVideoPlaybackActive(active) { if (active) web.couchboxTransparent() }
+  }
+
+  Text
+  {
+    id: errorLabel"""),
+]
+for a, b in edits:
+    if s.count(a) != 1:
+        sys.exit("webview.qml background patch did not apply: " + a.strip()[:60])
+    s = s.replace(a, b)
+open(p, "w").write(s)
+PY
+grep -q "function onVideoPlaybackActive" src/ui/webview.qml || { echo "background patch did not apply"; exit 1; }
 # "Force transcode Hi10P" limits every codec to 8 bit, which also sends 10-bit HEVC and AV1
 # (both fine on the Pi) to the server. Limit it to H.264, the one the Pi can't keep up with.
 perl -0pi -e "s/(force_transcode_hi10p\) \{\s*CodecProfiles\.push\(\{\s*'Type': 'Video',)/\$1\n            'Codec': 'h264',/" native/nativeshell.js
