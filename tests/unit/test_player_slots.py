@@ -49,3 +49,32 @@ def test_a_new_file_is_covered_until_its_own_first_picture():
     assert v._has_frame and len(emitted) == 2
     player.MpvVideo._new_file(v, "")  # stop(): nothing shown, nothing awaited
     assert (v._has_frame, v._await_frame) == (False, "")
+
+
+def test_a_preloaded_video_plays_with_sound_after_the_warm_up():
+    """warmUp()'s clip is opened muted and stays loaded 2.5 s; a card preloaded meanwhile used to
+    take that mute for the viewer's, and its video played silent. Only toggleMute is the viewer's."""
+    import types
+
+    player = pytest.importorskip("couchbox.player")
+
+    class FakeMpv(dict):
+        mute = True  # warmUp's clip is loaded: mute=yes for that file
+        pause = True
+
+        def command(self, *a):
+            pass
+
+    v = types.SimpleNamespace(
+        mpv=FakeMpv(), _preloaded=None, _ended=True, _paused=True, _pos=0.0, _loads=0, _muted=False, PRELOAD_CACHE="10MiB",
+        _rate=types.SimpleNamespace(suspend=lambda on: None), _error="", endedChanged=types.SimpleNamespace(emit=lambda: None),
+        frameReady=types.SimpleNamespace(emit=lambda: None), _new_file=lambda *a: None,
+    )  # fmt: skip
+    player.MpvVideo.preload(v, "https://v/1", 0.0, "")
+    v._play_preloaded = lambda start: player.MpvVideo._play_preloaded(v, start)
+    player.MpvVideo._play_preloaded(v, 0.0)
+    assert v.mpv.mute is False and v.mpv.pause is False
+    v._muted = True  # the viewer turned the sound off (M): a preloaded video keeps it off
+    player.MpvVideo.preload(v, "https://v/2", 0.0, "")
+    player.MpvVideo._play_preloaded(v, 0.0)
+    assert v.mpv.mute is True

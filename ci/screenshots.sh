@@ -138,10 +138,20 @@ shot yt-player-seek couchbox-yt --open video:demo0000003 --keys up
 shot yt-player-chapters couchbox-yt --open video:demo0000003 --keys up,up,right,right
 shot yt-player-description couchbox-yt --open video:demo0000003 --keys left,left,left,ok
 shot yt-player-comments couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok
+# a comment's own page (OK on it): Like, Dislike and Report under it, the focus on Like, then the
+# mobile-app row and the replies; liked (OK); a reply's own page (Down past the row to it, OK); a
+# comment without replies opens too (Right: Dislike)
+shot yt-player-comment-open couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,down,ok
+shot yt-player-comment-liked couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,down,ok,wait:1,ok
+shot yt-player-comment-reply couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,down,ok,wait:1,down,down,ok
+shot yt-player-comment-plain couchbox-yt --open video:demo0000003 --keys left,left,left,ok,down,down,down,ok,down,down,down,down,ok,wait:1,right
 shot yt-player-settings couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok
 shot yt-player-quality couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,ok
 shot yt-player-cc couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,ok
 shot yt-player-end couchbox-yt --open video:demo0000003@3598
+# ... its Replay focused (Left), the row of more videos (Down)
+shot yt-player-end-replay couchbox-yt --open video:demo0000003@3598 --keys wait:3,left
+shot yt-player-end-more couchbox-yt --open video:demo0000003@3598 --keys wait:3,down,right
 shot yt-card-menu couchbox-yt --keys menu
 shot yt-movies couchbox-yt --open movies
 shot yt-music couchbox-yt --open music

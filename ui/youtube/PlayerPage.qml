@@ -27,7 +27,7 @@ FocusScope {
     // to whichever panel or row had it last
     Item { id: ctl; objectName: "controls"; focus: true }
     function focusDetail() { return {mode: mode, button: (controls[button] || {}).key || "", panel: panel, position: Math.round(pos), scrub: Math.round(scrub), dvrBehind: Math.round(dvrBehind), liveTarget: Math.round(liveTarget), paused: !!video.paused, row: related.index, rows: related.count,
-                                          captions: captionsOn, speed: speed, live: live, ending: ending, videoId: videoId,
+                                          captions: captionsOn, speed: speed, live: live, ending: ending, end: ending ? endScreen.focusDetail() : null, videoId: videoId,
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
                                           height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
@@ -241,6 +241,9 @@ FocusScope {
         if (!n) { mode = "controls"; showControls(); return; }
         endScreen.next = n.item;
         endScreen.queued = n.queued;
+        // the row below: three more (YouTube's related, not the one that plays next)
+        endScreen.more = (meta.related || []).filter(x => x.id !== n.item.id && (x.type === "video" || !x.type)).slice(0, 3);
+        endScreen.current = {title: player.label, thumb: player.seed.thumb || (player.videoId ? "https://i.ytimg.com/vi/" + player.videoId + "/hqdefault.jpg" : "")};
         endScreen.seconds = meta.countdown || 5;
         ending = true;
         endScreen.begin();
@@ -522,7 +525,7 @@ FocusScope {
     onModeChanged: {
         if (mode === "hidden") { quickSeek = false; cancelScrub(); }   // (a scrub left to time out doesn't jump)
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
-        else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
+        else { if (!panel && !ending) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel, Up next keep the focus)
     }
     Connections {
         target: related
@@ -554,6 +557,7 @@ FocusScope {
 
     Keys.onPressed: e => {
         const k = e.key;
+        if (ending) { endScreen.key(e); return; }   // Up next's, every key (the focus may have slipped back here)
         if (askContinue) {                     // "Continue watching?": OK plays on; Back leaves
             if (k === Qt.Key_Return || k === Qt.Key_Enter) { askContinue = false; video.setPaused(false); showControls(); }
             else if (k === Qt.Key_Escape || k === Qt.Key_Back) { askContinue = false; finished(); }
@@ -711,7 +715,7 @@ FocusScope {
     Item {
         id: overlay
         anchors.fill: parent
-        opacity: player.shown && !player.panel ? 1 : 0
+        opacity: player.shown && !player.panel && !player.ending ? 1 : 0   // (Up next shows: nothing of the player's under it)
         visible: opacity > 0
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
@@ -1159,7 +1163,9 @@ FocusScope {
         anchors.fill: parent
         visible: player.ending
         onPlayNow: { player.ending = false; ctl.forceActiveFocus(); player.playNext(); }
-        onCancel: { player.ending = false; player.mode = "controls"; player.button = 3; ctl.forceActiveFocus(); player.showControls(); }
+        onReplay: { player.ending = false; ctl.forceActiveFocus(); player.start(player.videoId, 0); }
+        onOpenItem: it => { player.ending = false; ctl.forceActiveFocus(); Y.open(it); }
+        onLeave: { player.ending = false; player.finished(); }   // Back: out of the player, as YouTube's end screen does
     }
     Rectangle {                                // buffering
         id: busy

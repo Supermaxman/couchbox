@@ -93,7 +93,7 @@ CASES = [
     ("yt-player-description", "couchbox-yt", ["--open", "video:demo0000003"], "left,left,left,ok", "moves"),
     ("yt-player-comments", "couchbox-yt", ["--open", "video:demo0000003"], "left,left,left,ok,down,down,down,ok", "moves"),
     ("yt-player-quality", "couchbox-yt", ["--open", "video:demo0000003"], "right,right,right,right,right,right,right,right,right,ok,ok", "moves"),
-    ("yt-player-end", "couchbox-yt", ["--open", "video:demo0000003@3598"], "", "moves"),
+    ("yt-player-end", "couchbox-yt", ["--open", "video:demo0000003@3598"], "wait:3", "moves"),   # (Back on Up next: after the end)
     ("yt-card-menu", "couchbox-yt", [], "menu", "moves"),
     ("yt-player-scrub", "couchbox-yt", ["--open", "video:demo0000003@1500"], "back,right", "moves"),
     ("yt-results-cluster", "couchbox-yt", ["--open", "search:sky"], "down,down,right", "moves"),

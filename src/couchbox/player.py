@@ -276,7 +276,9 @@ class MpvVideo(QQuickFramebufferObject):
         self._loads = 0  # files loaded (loadWith)
         self._preloaded = None  # (url, start) of the file preload() opened, paused
         self._rate_was = True
-        self._mute_was = False
+        # the sound off by the viewer (toggleMute): never read back from mpv, whose mute is also on
+        # for files opened muted (warmUp's, preload's) while they're loaded
+        self._muted = False
         self._pos_pending = False  # a position update is due (they're passed on 10 times a second)
         self._pos = 0.0
         self._dur = 0.0
@@ -511,8 +513,9 @@ class MpvVideo(QQuickFramebufferObject):
     def toggleMute(self):
         """Sound off or on again (a keyboard's M); returns whether it's off now."""
         try:
-            self.mpv.mute = not self.mpv.mute
-            return bool(self.mpv.mute)
+            self._muted = not self._muted
+            self.mpv.mute = self._muted
+            return self._muted
         except Exception:  # noqa: BLE001
             return False
 
@@ -635,10 +638,6 @@ class MpvVideo(QQuickFramebufferObject):
             return  # something plays: leave it
         if not self._preloaded:
             self._rate.suspend(True)  # (not looked at, and the TV not put back for it either)
-            try:
-                self._mute_was = bool(self.mpv.mute)
-            except Exception:  # noqa: BLE001
-                self._mute_was = False
         opts = ([f"start={int(start)}"] + (["hr-seek=no"] if KEYFRAMES else [])) if start > 0 else []
         opts += ["pause=yes", "mute=yes", f"demuxer-max-bytes={self.PRELOAD_CACHE}"]
         if options:
@@ -677,7 +676,7 @@ class MpvVideo(QQuickFramebufferObject):
         self._new_file("restart" if abs(start - at) > 5 else "render")
         try:
             self.mpv["demuxer-max-bytes"] = (os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0]
-            self.mpv.mute = self._mute_was
+            self.mpv.mute = self._muted  # (the viewer's: not what mpv had then, which may be warmUp's mute)
             if abs(start - at) > 5:
                 self.mpv.command("seek", start, "absolute+keyframes" if KEYFRAMES else "absolute")
             self.mpv.pause = False
