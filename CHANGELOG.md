@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/Supermaxman/couchbox/compare/v0.20.0...v0.20.1) (2026-11-09)
+
+
+### Fixed
+
+* **youtube:** a smoother app: the card menu opens whole, comments that hold still, no last frame of the video before ([#111](https://github.com/Supermaxman/couchbox/issues/111)) ([eac498c](https://github.com/Supermaxman/couchbox/commit/eac498c8133f4ee1a8d5ff5524435a54d8cde0c7))
+
 ## [0.20.0](https://github.com/Supermaxman/couchbox/compare/v0.19.1...v0.20.0) (2026-11-08)
 
 
