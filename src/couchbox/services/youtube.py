@@ -2158,6 +2158,13 @@ class Demo(YouTube):
                             "Sourdough science",
                             "Night sky timelapse",
                             "Tiny house tours",
+                            "Wooden boat restoration",
+                            "Retro console repairs",
+                            "Alpine hut cooking",
+                            "Bonsai for beginners",
+                            "City bike commuting",
+                            "Lighthouse history",
+                            "Model railway layouts",
                         )
                     ],
                     "more": "",
