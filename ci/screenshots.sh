@@ -102,6 +102,9 @@ shot movies-top couchbox-movies --open top:movie
 # Settings
 shot yt-home couchbox-yt
 shot yt-guide couchbox-yt --keys left
+# a row scrolled two cards: the passed card at 10% under the guide's fade; that row under the current one (passed cards gone)
+shot yt-home-passed couchbox-yt --keys right,right
+shot yt-home-passed-below couchbox-yt --keys down,right,right,up
 # Home's end: "Explore more topics" (under the current row, current, its second card), YouTube's
 # Refresh tile (current), and Home again after OK on it
 shot yt-home-topics-below couchbox-yt --keys down,down,down

@@ -50,6 +50,15 @@ FocusScope {
         enter();
     }
 
+    Rectangle {                               // over the page's left edge, under the icons: the page's
+        width: 135 * Y.u                       // background fading out to the right (YouTube's TV app:
+        height: parent.height                  // 90 px of 1280, linear-gradient(to left, transparent, #0f0f0f))
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0; color: Y.bg }
+            GradientStop { position: 1; color: Qt.rgba(Y.bg.r, Y.bg.g, Y.bg.b, 0) }
+        }
+    }
     Rectangle {                               // the open guide's panel (pinned beside Settings: short of its list at 525)
         width: guide.pinned && !guide.activeFocus ? 500 * Y.u : parent.width
         height: parent.height
