@@ -25,6 +25,7 @@ FocusScope {
     property real topRoom: 12 * Y.u              // room above the current row (its focus ring)
     signal atTop()
     signal open(var item)
+    signal reload(string token)              // OK on Home's last row, YouTube's Refresh button
     // the cards after this one, through the following rows (a playlist's order)
     function itemsAfter(it) {
         const all = [];
@@ -44,6 +45,7 @@ FocusScope {
         const out = [];
         if (page.nudge) out.push({kind: "nudge", title: page.nudge.title, subtitle: page.nudge.subtitle});
         for (const s of page.shelves || []) {
+            if (s.refresh) { out.push({kind: "refresh", title: s.refresh.title, token: s.refresh.token}); continue; }
             if (s.cluster) { out.push(Object.assign({kind: "cluster"}, s)); continue; }
             if (!s.grid) { out.push(Object.assign({kind: "shelf"}, s)); continue; }
             for (let i = 0; i < s.items.length; i += perRow)         // a grid: rows that don't scroll
@@ -102,7 +104,7 @@ FocusScope {
             // rows above the current one are gone (as on YouTube), and their cards' corners
             // (Shapes) mustn't draw past the list's clip
             visible: index >= list.currentIndex
-            sourceComponent: ({chips: chipsC, nudge: nudgeC, tiles: tilesC, cluster: clusterC})[modelData.kind] || shelfC
+            sourceComponent: ({chips: chipsC, nudge: nudgeC, tiles: tilesC, cluster: clusterC, refresh: refreshC})[modelData.kind] || shelfC
             Component {
                 id: shelfC
                 Shelf {
@@ -134,6 +136,41 @@ FocusScope {
                 Tiles { tiles: cell.modelData.tiles || []; indent: feed.indent; focus: true; room: Math.max(0, 95 * Y.u - feed.rowGap) }
             }
             Component {
+                id: refreshC
+                // Home's end: YouTube's Refresh tile (Home again, with new videos), as its TV app has it
+                FocusScope {
+                    id: refreshRow
+                    width: list.width
+                    height: 13 * Y.u + 450 * Y.u
+                    focus: true
+                    Rectangle {
+                        x: feed.indent; y: 13 * Y.u
+                        width: 504 * Y.u; height: 450 * Y.u
+                        radius: Y.radius
+                        color: "#212121"
+                        Text {
+                            id: refreshLabel
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: 52 * Y.u - (refreshLabel.height - refreshLabel.font.pixelSize) / 2 - 0.08 * refreshLabel.font.pixelSize
+                            text: cell.modelData.title
+                            color: Y.text
+                            font.family: Y.titleFont; font.pixelSize: 44 * Y.u
+                        }
+                        Icon { x: 140 * Y.u; y: 126 * Y.u; name: "refresh"; size: 224 * Y.u; weight: 2.25; color: Y.text }
+                        Rectangle {
+                            visible: refreshRow.activeFocus
+                            anchors { fill: parent; margins: -Y.ring }
+                            radius: Y.radius + Y.ring
+                            color: "transparent"
+                            border.color: Y.text; border.width: Y.ring
+                        }
+                    }
+                    Keys.onReturnPressed: feed.reload(cell.modelData.token)
+                    Keys.onEnterPressed: feed.reload(cell.modelData.token)
+                    Keys.onLeftPressed: Y.toGuide()
+                }
+            }
+            Component {
                 id: nudgeC
                 Nudge { title: cell.modelData.title; subtitle: cell.modelData.subtitle; indent: feed.indent; focus: true }
             }
@@ -154,7 +191,8 @@ FocusScope {
                 const items = r.items || [];
                 for (let k = 0; k < items.length; k += perRow)
                     add.push({kind: "shelf", title: "", subtitle: "", items: items.slice(k, k + perRow), more: "", fixedRow: !gridScroll});
-            } else add = (r.shelves || []).map(s => Object.assign({kind: "shelf"}, s));
+            } else add = (r.shelves || []).map(s => s.refresh ? {kind: "refresh", title: s.refresh.title, token: s.refresh.token}
+                                                              : Object.assign({kind: "shelf"}, s));
             more = r.more || "";
             // added where they go (rows itself grows in place: what's on screen stays as it is)
             const base = rows.length;

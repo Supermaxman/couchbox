@@ -203,6 +203,49 @@ def test_tv_page_shelves_nudge_header_and_continuations():
     assert page["header"]["avatar"] == "https://yt3.example/abc=s176-c-k-c0x00ffffff-no-rj"
 
 
+def refresh_shelf(token):
+    button = {
+        "gridButtonRenderer": {
+            "title": {"runs": [{"text": "Refresh"}]},
+            "icon": {"iconType": "ARROW_CIRCLE"},
+            "navigationEndpoint": {"loadReloadContinuationCommand": {"continuation": token, "targetId": "browse-feedFEtopics"}},
+        }
+    }
+    return {"shelfRenderer": {"content": {"horizontalListRenderer": {"items": [button]}}}}
+
+
+def test_home_ends_with_youtubes_refresh_button_and_it_brings_home_again(monkeypatch):
+    # Home's last page: its shelves, then a row of one button, Refresh (no cards)
+    last = {
+        "continuationContents": {
+            "sectionListContinuation": {
+                "contents": [shelf("Explore more topics", [tile("vid00000020", "Last")]), refresh_shelf("tok-reload")]
+            }
+        }
+    }
+    page = Y.parse_page(last)
+    assert [s["title"] for s in page["shelves"]] == ["Explore more topics", ""]
+    assert page["shelves"][1]["refresh"] == {"title": "Refresh", "token": "tok-reload"} and page["more"] == ""
+    # pressing it: YouTube answers with Home again, all of it, as a surface continuation
+    again = {
+        "continuationContents": {
+            "tvSurfaceContentContinuation": {
+                "content": {
+                    "sectionListRenderer": {
+                        "contents": [shelf("Recommended", [tile("vid00000021", "New one")])],
+                        "continuations": [{"nextContinuationData": {"continuation": "tok-next"}}],
+                    }
+                }
+            }
+        }
+    }
+    yt = Y.YouTube.__new__(Y.YouTube)
+    monkeypatch.setattr(yt, "call", lambda ep, body, **kw: again if body == {"continuation": "tok-reload"} else last, raising=False)
+    home = yt.more("tok-reload")
+    assert [(s["title"], [i["id"] for i in s["items"]]) for s in home["shelves"]] == [("Recommended", ["vid00000021"])]
+    assert home["more"] == "tok-next"
+
+
 def test_search_page_with_a_cluster_and_its_pills():
     resp = {
         "contents": {

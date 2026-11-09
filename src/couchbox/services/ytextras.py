@@ -256,7 +256,7 @@ def hide_shorts(page: Any) -> Any:
         shelves = []
         for s in page.get("shelves") or []:
             items = [i for i in s.get("items") or [] if i.get("type") != "short"]
-            if items:
+            if items or s.get("refresh"):  # (Home's Refresh row has no cards)
                 s = dict(s, items=items)
                 if s.get("cluster"):
                     c = s["cluster"]
