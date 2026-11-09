@@ -148,6 +148,9 @@ shot yt-player-settings couchbox-yt --open video:demo0000003 --keys right,right,
 shot yt-player-quality couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,ok
 shot yt-player-cc couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,ok
 shot yt-player-end couchbox-yt --open video:demo0000003@3598
+# ... its Replay focused (Left), the row of more videos (Down)
+shot yt-player-end-replay couchbox-yt --open video:demo0000003@3598 --keys wait:3,left
+shot yt-player-end-more couchbox-yt --open video:demo0000003@3598 --keys wait:3,down,right
 shot yt-card-menu couchbox-yt --keys menu
 shot yt-movies couchbox-yt --open movies
 shot yt-music couchbox-yt --open music
