@@ -522,7 +522,7 @@ FocusScope {
     onModeChanged: {
         if (mode === "hidden") { quickSeek = false; cancelScrub(); }   // (a scrub left to time out doesn't jump)
         if (mode === "related") related.forceActiveFocus();      // now: the next key (even right after) goes to the row
-        else { if (!panel) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel keeps the focus)
+        else { if (!panel && !ending) ctl.forceActiveFocus(); related.index = 0; }   // the row folds back (an open panel, Up next keep the focus)
     }
     Connections {
         target: related
@@ -554,6 +554,7 @@ FocusScope {
 
     Keys.onPressed: e => {
         const k = e.key;
+        if (ending) { endScreen.key(e); return; }   // Up next's, every key (the focus may have slipped back here)
         if (askContinue) {                     // "Continue watching?": OK plays on; Back leaves
             if (k === Qt.Key_Return || k === Qt.Key_Enter) { askContinue = false; video.setPaused(false); showControls(); }
             else if (k === Qt.Key_Escape || k === Qt.Key_Back) { askContinue = false; finished(); }
@@ -711,7 +712,7 @@ FocusScope {
     Item {
         id: overlay
         anchors.fill: parent
-        opacity: player.shown && !player.panel ? 1 : 0
+        opacity: player.shown && !player.panel && !player.ending ? 1 : 0   // (Up next shows: nothing of the player's under it)
         visible: opacity > 0
         Behavior on opacity { NumberAnimation { duration: 220 } }
 
