@@ -19,6 +19,16 @@ FocusScope {
     x: 1254 * Y.u
     width: 612 * Y.u
     height: parent ? parent.height : 0
+
+    // opening: in from the right; closing: out, quicker
+    property bool open: false
+    visible: open || opacity > 0
+    opacity: open ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: panel.open ? Y.tPanel : Y.tOut; easing.type: Easing.OutCubic } }
+    transform: Translate {
+        x: panel.open ? 0 : 56 * Y.u
+        Behavior on x { NumberAnimation { duration: Y.tPanel; easing.type: Easing.OutCubic } }
+    }
     readonly property var cards: [true, !!d.text, !!d.summary, !!(d.teaser || d.comments), chapters.length > 0]
     function step(dir) {
         let i = index + dir;

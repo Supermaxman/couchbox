@@ -131,7 +131,7 @@ FocusScope {
         spacing: Y.gap
         clip: false
         focus: true
-        model: shelf.row.items || []
+        model: itemModel
         cacheBuffer: Math.round(Y.bigW * 3)
         // the focus stays at the left; the row moves under it
         highlightRangeMode: shelf.fixed ? ListView.NoHighlightRange : ListView.StrictlyEnforceRange
@@ -148,11 +148,16 @@ FocusScope {
         // OK opens the card; held, or the Menu key, its menu (Play next, Add to queue...)
         Keys.onPressed: e => {
             if (e.key === Qt.Key_Menu) { Y.cardMenu(shelf.row.items[currentIndex], list); e.accepted = true; }
-            else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) { if (!e.isAutoRepeat) hold.restart(); e.accepted = true; }
+            else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
+                // held, the menu opens whole: what YouTube sends of it separately, asked for now
+                if (!e.isAutoRepeat) { hold.restart(); Y.warmMenu(shelf.row.items[currentIndex]); }
+                e.accepted = true;
+            }
         }
         Keys.onReleased: e => {
             if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter) && !e.isAutoRepeat && hold.running) {
                 hold.stop();
+                Y.openedW = shelf.cardW;       // (the player's stand-in picture: this card's, as decoded)
                 shelf.open(shelf.row.items[currentIndex]);
                 e.accepted = true;
             }
@@ -160,9 +165,9 @@ FocusScope {
         Timer { id: hold; interval: 650; onTriggered: Y.cardMenu(shelf.row.items[list.currentIndex], list) }
         onCurrentIndexChanged: if (count && currentIndex >= count - 5) shelf.loadMore()
         delegate: VideoCard {
-            required property var modelData
+            required property int k
             required property int index
-            item: modelData
+            item: (shelf.row.items || [])[k] || ({})
             on: ListView.isCurrentItem && shelf.activeFocus
             w: shelf.cardW
             boxed: shelf.boxed
@@ -172,6 +177,17 @@ FocusScope {
             metaSize: shelf.metaSize
         }
     }
+
+    // the cards the row shows, by their place in row.items: more cards are added to it, never the
+    // row made again (its pictures blinked and it slid back to the focus, as more came)
+    ListModel { id: itemModel }
+    function remodel() {
+        itemModel.clear();
+        const n = (row.items || []).length;
+        if (n) itemModel.append(Array.from({length: n}, (_, k) => ({k: k})));
+    }
+    onRowChanged: remodel()
+    Component.onCompleted: remodel()
 
     // more cards, from the shelf's continuation (kept where the focus is)
     property bool loading: false
@@ -183,10 +199,12 @@ FocusScope {
             if (!shelf) return;                // (gone meanwhile: its row was rebuilt or left)
             loading = false;
             if (row.more !== token) return;
-            const i = list.currentIndex;
-            row = Object.assign({}, row, {items: (row.items || []).concat(r.items || []), more: r.more || ""});
-            list.currentIndex = i;
-            list.positionViewAtIndex(i, ListView.Beginning);
+            // added at the end, in place (the row object is the feed's too: a playlist's order sees them)
+            if (!row.items) row.items = [];
+            const base = row.items.length, add = r.items || [];
+            for (const x of add) row.items.push(x);
+            row.more = r.more || "";
+            if (add.length) itemModel.append(add.map((_, j) => ({k: base + j})));
         }, () => { if (shelf) shelf.loading = false; });
     }
 }

@@ -127,6 +127,10 @@ FocusScope {
 
     function start(id, at) {
         if (s && reported) report(video.ended ? "end" : "pause");     // the one before
+        // the one before stops now (not its sound on under the next one's picture while it comes)
+        if (s) video.stop();
+        pictured = false;
+        watchKnown = false; beginWaiting = false; beginLater.stop();
         videoId = id;
         startAt = at || 0;
         s = null; meta = {}; message = ""; waitLeft = 0; pos = 0; panel = ""; reported = false; lastReport = 0;
@@ -146,7 +150,7 @@ FocusScope {
             // where this profile left off: the card's (a part-watched card's red bar) unless told
             if (!player.startAt && !r.live) player.startAt = Y.resumeAt(Y.progressOf(player.seed), r.duration || player.seed.duration);
             waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
-            if (waitLeft <= 0) begin();
+            if (waitLeft <= 0) beginSoon();
             showControls();
         }, e => { if (player && player.videoId === id) message = e || "This video can't be played."; });
         segments = []; skippedOnce = ({}); skipNotice = null; brandTitle = ""; dislikes = -1;
@@ -156,11 +160,13 @@ FocusScope {
         Y.call("watch", {id: id}, r => {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             meta = r;
+            watchKnown = true;
             // YouTube's own resume point for this profile, when the card didn't have one
             if (r.start > 0 && !player.startAt) {
                 player.startAt = r.start;
-                if (player.s && video.position < r.start - 5) video.seekTo(r.start);
+                if (player.s && !player.beginWaiting && video.position < r.start - 5) video.seekTo(r.start);
             }
+            if (player.beginWaiting) player.begin();   // (it waited for this: from there, no jump)
             const rows = [];
             const rel = r.related || [];
             for (let i = 0; i < rel.length; i += 3) rows.push({kind: "shelf", title: "", items: rel.slice(i, i + 3), more: ""});
@@ -170,7 +176,18 @@ FocusScope {
             if (n && !n.item.live) Y.call("prefetch", {id: n.item.id}, () => {}, () => {});
         }, () => {});
     }
+    // where this profile left off comes with the watch page (asked for as the card had the focus):
+    // a moment's wait for it, so a part-watched video starts there, not at 0:00 and then jumps
+    property bool watchKnown: false
+    property bool beginWaiting: false
+    Timer { id: beginLater; interval: 600; onTriggered: if (player.beginWaiting) player.begin() }
+    function beginSoon() {
+        if (watchKnown || startAt > 0 || live) { begin(); return; }
+        beginWaiting = true;
+        beginLater.restart();
+    }
     function begin() {
+        beginWaiting = false; beginLater.stop();
         if (s.url.indexOf("demo://") === 0) video.load(s.url, startAt);
         else video.loadWith(s.url, startAt, s.opts || "");
         autoCaptionsLater.restart();
@@ -495,8 +512,9 @@ FocusScope {
         if (mode !== "hidden" && s && !message) { mode = "hidden"; return; }
         finished();
     }
-    // captions above the controls while they're up (YouTube's: never under the scrim or the related row)
-    readonly property bool captionsHigh: mode !== "hidden" || !!panel
+    // captions above the controls while they're up (YouTube's: never under the scrim or the related row);
+    // a panel open hides the controls: at the foot of the video beside it
+    readonly property bool captionsHigh: mode !== "hidden" && !panel
     onCaptionsHighChanged: video.setSubtitlePosition(captionsHigh ? 58 : 100)
     // ...and out of the way of the related row and the seek frames (they'd sit over them)
     readonly property bool captionsShown: mode !== "related" && !seeking
@@ -604,35 +622,60 @@ FocusScope {
         e.accepted = true;
     }
 
-    // the video's place: the whole screen, or left of a panel
-    readonly property rect place: Y.videoSide ? Qt.rect(54 * Y.u, 219 * Y.u, 1146 * Y.u, 645 * Y.u) : Qt.rect(0, 0, width, height)
-    // the stand-in for the video while it loads (and off screen, the demo): its thumbnail
-    Image {
-        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
-        visible: !player.s || !hasVideo
-        source: player.seed.thumb || ""
-        fillMode: Image.PreserveAspectCrop
-        sourceSize: Y.sz(width, height)
-        asynchronous: true
-    }
-    Rectangle {
-        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
-        visible: !hasVideo && !(player.seed.thumb)
-        gradient: Gradient {
-            GradientStop { position: 0; color: Qt.hsla(Y.hue(player.label), 0.35, 0.22, 1) }
-            GradientStop { position: 1; color: Qt.hsla((Y.hue(player.label) + 0.2) % 1, 0.45, 0.08, 1) }
+    // what stands in for the video, moving with it as a panel opens (Main's MpvVideo: its side):
+    // its thumbnail until this video's own first picture is drawn (never the video before's last
+    // one), then fading out; and the inset video's rounded corners
+    readonly property real side: video.side !== undefined ? video.side : 0
+    property bool pictured: false              // this video's picture has shown (a quality change keeps it)
+    readonly property bool framed: hasVideo && !!video.hasFrame && !!s
+    onFramedChanged: if (framed) pictured = true
+    Item {
+        id: frame
+        width: player.width; height: player.height
+        transformOrigin: Item.TopLeft
+        scale: 1 - player.side * (1 - Y.sideRect.width / player.width)
+        x: player.side * Y.sideRect.x; y: player.side * Y.sideRect.y
+        Item {
+            id: cover
+            anchors.fill: parent
+            readonly property bool want: !player.pictured
+            opacity: 1
+            visible: opacity > 0
+            onWantChanged: { fade.stop(); if (want) opacity = 1; else fade.start(); }
+            NumberAnimation { id: fade; target: cover; property: "opacity"; to: 0; duration: 240; easing.type: Easing.OutCubic }
+            Rectangle {
+                anchors.fill: parent
+                visible: thumbImg.status !== Image.Ready
+                color: "black"
+                gradient: hasVideo ? undefined : demoGradient   // (the demo's videos: their colours)
+                Gradient {
+                    id: demoGradient
+                    GradientStop { position: 0; color: Qt.hsla(Y.hue(player.label), 0.35, 0.22, 1) }
+                    GradientStop { position: 1; color: Qt.hsla((Y.hue(player.label) + 0.2) % 1, 0.45, 0.08, 1) }
+                }
+            }
+            Image {
+                id: thumbImg
+                anchors.fill: parent
+                // (a video opened from outside, a phone's cast: YouTube's own picture of it)
+                source: player.seed.thumb || (hasVideo && player.videoId ? "https://i.ytimg.com/vi/" + player.videoId + "/hqdefault.jpg" : "")
+                fillMode: Image.PreserveAspectCrop
+                // the card's own picture, at the size its card decoded it: already in memory, so it's
+                // there at once (decoded again at the screen's size, it came seconds late on the box)
+                sourceSize: Y.sz(Y.openedW, Math.round(Y.openedW * 9 / 16))
+                asynchronous: true
+            }
         }
-    }
-
-    Corners {                                  // the inset video's rounded corners
-        visible: Y.videoSide
-        x: player.place.x; y: player.place.y; width: player.place.width; height: player.place.height
-        r: 28 * Y.u
+        Corners {                              // the inset video's corners, rounding in as it moves
+            anchors.fill: parent
+            visible: player.side > 0
+            r: player.side * 28 * Y.u / Math.max(0.01, frame.scale)
+        }
     }
     DescriptionPanel {
         id: description
         objectName: "description"
-        visible: player.panel === "description"
+        open: player.panel === "description"
         v: player.v
         // with Return YouTube Dislike on: the dislikes beside the likes
         d: player.dislikes < 0 ? player.meta.details || {} : Object.assign({}, player.meta.details || {}, {
@@ -647,13 +690,13 @@ FocusScope {
     CommentsPanel {
         id: comments
         objectName: "comments"
-        visible: player.panel === "comments"
+        open: player.panel === "comments"
         onClosed: player.panel = ""
     }
     PlayerPanel {
         id: sidePanel
         objectName: "panel"
-        visible: !!player.panel && player.panel !== "description" && player.panel !== "comments"
+        open: !!player.panel && player.panel !== "description" && player.panel !== "comments"
         options: player.panelOptions
         avatar: player.panel === "channel" ? player.v.avatar || "" : ""
         name: player.panel === "channel" ? player.v.channel || "" : ""

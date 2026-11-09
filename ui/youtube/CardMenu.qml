@@ -3,6 +3,9 @@
 // video is), Remove from watch history (History's cards), Not interested, Don't
 // recommend channel, Share (the link as a QR code) and Go to channel. Each says what it did in a
 // notice. Up and Down move, OK picks, Back closes (or goes back to the menu).
+// It opens whole: the options YouTube sends as a panel of their own (Not interested, Don't
+// recommend channel) were asked for as OK went down (Y.warmMenu), and hold their places until they
+// come; picked before that, they're sent once they do. It rises in, and fades out quicker.
 import QtQuick
 
 FocusScope {
@@ -15,7 +18,14 @@ FocusScope {
     property var playlists: []                // Save to playlist's: [{id, title, saved}]
     property var shared: ({})                 // Share's: {url, qr}
     readonly property bool video: !!item && (item.type === "video" || item.type === "live" || item.type === "short")
-    function fb(kind) { return ((item && item.feedback) || []).find(f => f.kind === kind) || null; }
+    // the card's own feedback options, else the panel's (asked for on OK's press), else, while they
+    // come, their places (a token-less option: sent once it comes)
+    function fb(kind) {
+        if (!item) return null;
+        const have = item.feedback || Y.menuFeedback[item.id];
+        if (have) return have.find(f => f.kind === kind) || null;
+        return Y.menuFeedbackPending(item) && kind !== "remove_history" ? {kind: kind, token: ""} : null;
+    }
     function focusDetail() { return {mode: mode, keys: options.map(o => o.key === "fb" ? o.fb.kind : o.key), at: (options[index] || {}).key || "",
                                      atId: ((options[index] || {}).pl || {}).id || ""}; }
     readonly property var options: {
@@ -46,20 +56,46 @@ FocusScope {
     }
     signal picked(string key, var item)       // what the app does: next, queue, channel
     function open(it, back) {
+        if (!it) return;
         item = it; index = 0; returnFocus = back; mode = "main";
         if (!options.length) return;
+        Y.warmMenu(it);                        // (asked for on OK's press already: here for the Menu key)
+        shut.stop();
+        if (!visible) { sheet.opacity = 0; scrim.opacity = 0; sheet.scale = 0.94; sheet.lift = 28 * Y.u; }
         visible = true;
+        rise.restart();
         forceActiveFocus();
-        // a menu YouTube sends as a panel of its own: Not interested and Don't recommend channel
-        // from it, added as they come (the options above them stay where they are)
-        if (it.menuPanel && !it.feedback && Y.signedIn)
-            Y.call("cardFeedback", {params: it.menuPanel}, r => {
-                const fb = r.feedback || [];
-                if (menu.visible && menu.item && menu.item.id === it.id && fb.length)   // (by id: item reads back as a copy)
-                    menu.item = Object.assign({}, menu.item, {feedback: fb});
-            });
     }
-    function close() { visible = false; mode = "main"; if (returnFocus) returnFocus.forceActiveFocus(); }
+    function close() {
+        rise.stop();
+        shut.restart();
+        mode = "main";
+        if (returnFocus) returnFocus.forceActiveFocus();
+    }
+    readonly property bool shown: visible && activeFocus
+    ParallelAnimation {
+        id: rise
+        NumberAnimation { target: scrim; property: "opacity"; to: 1; duration: Y.tMenu; easing.type: Easing.OutCubic }
+        NumberAnimation { target: sheet; property: "opacity"; to: 1; duration: Y.tMenu; easing.type: Easing.OutCubic }
+        NumberAnimation { target: sheet; property: "scale"; to: 1; duration: Y.tMenu + 60; easing.type: Easing.OutCubic }
+        NumberAnimation { target: sheet; property: "lift"; to: 0; duration: Y.tMenu + 60; easing.type: Easing.OutCubic }
+    }
+    SequentialAnimation {
+        id: shut
+        ParallelAnimation {
+            NumberAnimation { target: scrim; property: "opacity"; to: 0; duration: Y.tOut; easing.type: Easing.InCubic }
+            NumberAnimation { target: sheet; property: "opacity"; to: 0; duration: Y.tOut; easing.type: Easing.InCubic }
+            NumberAnimation { target: sheet; property: "scale"; to: 0.97; duration: Y.tOut; easing.type: Easing.InCubic }
+        }
+        PropertyAction { target: menu; property: "visible"; value: false }
+    }
+    // a mode of its own (Save to…, Share): its rows slide in over the menu's
+    onModeChanged: if (visible && !shut.running) swap.restart()
+    ParallelAnimation {
+        id: swap
+        NumberAnimation { target: sheet; property: "opacity"; from: 0.2; to: 1; duration: Y.tMenu; easing.type: Easing.OutCubic }
+        NumberAnimation { target: sheet; property: "shift"; from: 36 * Y.u; to: 0; duration: Y.tMenu; easing.type: Easing.OutCubic }
+    }
     function needAccount(what) {
         if (Y.signedIn) return false;
         Y.toast("Sign in to " + what + ": the guide's picture, then Add account.");
@@ -100,9 +136,15 @@ FocusScope {
         } else if (o.key === "fb") {
             if (needAccount("tell YouTube what you'd rather not see")) return;
             close();
+            const kind = o.fb.kind;
             const said = ({remove_history: "Removed from watch history", not_interested: "Got it: fewer videos like this",
-                           no_channel: "Got it: no more from this channel"})[o.fb.kind];
-            Y.call("feedback", {token: o.fb.token}, r => Y.toast(r && r.ok === false ? "YouTube didn't take it: try again later" : said), e => Y.toast(e));
+                           no_channel: "Got it: no more from this channel"})[kind];
+            const send = f => Y.call("feedback", {token: f.token}, r => Y.toast(r && r.ok === false ? "YouTube didn't take it: try again later" : said), e => Y.toast(e));
+            if (o.fb.token) send(o.fb);
+            else Y.warmMenu(it, list => {      // (picked before YouTube's panel came: sent once it does)
+                const f = (list || []).find(x => x.kind === kind);
+                if (f) send(f); else Y.toast("YouTube didn't offer that for this video.");
+            });
         } else if (o.key === "share") {
             Y.call("share", {id: it.id}, r => {
                 if (menu.item !== it || !menu.visible) return;
@@ -122,11 +164,18 @@ FocusScope {
     Keys.onBackPressed: { if (mode === "main") close(); else { mode = "main"; index = 0; } }
     Keys.onLeftPressed: {}
     Keys.onRightPressed: {}
-    Rectangle { anchors.fill: parent; color: "#cc000000" }
+    Rectangle { id: scrim; anchors.fill: parent; color: "#cc000000" }
     Column {
-        anchors.centerIn: parent
+        id: sheet
+        property real lift: 0                  // rising in
+        property real shift: 0                 // a mode sliding in
+        x: (parent.width - width) / 2 + shift
+        y: (parent.height - height) / 2 + lift
+        // a list that changes its length while open (YouTube's options not coming) settles there
+        Behavior on y { enabled: menu.visible && !rise.running; NumberAnimation { duration: Y.tFocus; easing.type: Easing.OutCubic } }
         width: 700 * Y.u
         spacing: 14 * Y.u
+        transformOrigin: Item.Center
         Text {
             width: parent.width
             text: menu.mode === "playlists" ? "Save to…" : menu.mode === "share" ? "Share" : menu.item ? menu.item.title : ""
@@ -135,26 +184,12 @@ FocusScope {
             wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
             bottomPadding: 18 * Y.u
         }
-        Repeater {
-            model: menu.options
-            Rectangle {
-                required property var modelData
-                required property int index
-                readonly property bool on: menu.index === index
-                width: parent.width; height: 84 * Y.u; radius: 16 * Y.u
-                color: on ? Y.text : Y.raised
-                Icon { x: 28 * Y.u; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 36 * Y.u; color: parent.on ? Y.ink : Y.text }
-                Text {
-                    x: 90 * Y.u; width: parent.width - 170 * Y.u; anchors.verticalCenter: parent.verticalCenter
-                    text: parent.modelData.label; elide: Text.ElideRight
-                    color: parent.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Medium
-                }
-                Icon {
-                    visible: !!parent.modelData.checked
-                    anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }
-                    name: "check"; size: 36 * Y.u; color: parent.on ? Y.ink : Y.text
-                }
-            }
+        MenuRows {
+            width: parent.width
+            options: menu.options
+            index: menu.index
+            focused: menu.activeFocus || shut.running   // (kept while it fades out)
+            visible: menu.mode !== "share"
         }
         Column {                              // Share: the QR code and the link
             visible: menu.mode === "share"

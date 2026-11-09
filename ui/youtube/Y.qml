@@ -17,6 +17,13 @@ QtObject {
     property var profile: null                // who's watching: {id, account, name, handle, photo, premium}, null: a guest
     readonly property bool signedIn: !!profile
     property bool videoSide: false            // the player's side panel is open: the video sits to its left
+    property real openedW: bigW               // the width of the card a video was opened from (its picture's size)
+    readonly property rect sideRect: Qt.rect(54 * u, 219 * u, 1146 * u, 1146 * u * 9 / 16)   // ... there
+    // motion: one set of timings for the whole app (a key's answer is quick; a panel's slower)
+    readonly property int tFocus: 140         // the focus moving between rows, a row's colours
+    readonly property int tPanel: 260         // a panel opening beside the video, the video moving
+    readonly property int tMenu: 200          // the card menu opening
+    readonly property int tOut: 140           // anything closing (faster than it opened)
     property rect videoRect: Qt.rect(0, 0, 0, 0)   // somewhere else entirely (Shorts: upright, mid-screen)
     property var queue: []                    // cards to play next (a card's menu: Play next, Add to queue)
     property bool queueAuto: false            // the queue is a playlist's rest (it ends with the player)
@@ -160,4 +167,29 @@ QtObject {
     signal signIn()                           // Add account, a "Sign in" button
     signal openList(string title, string browseId)   // Library's tiles: History, Watch later, a playlist
     signal cardMenu(var item, var focusItem)  // OK held (or Menu) on a card: Play next, Add to queue...
+
+    // a card menu's Not interested / Don't recommend channel when YouTube sends them as a panel of
+    // their own (menuPanel): asked for as OK goes down on the card (the menu opens 650 ms later,
+    // whole), kept for the card after: {id: [{kind, label, token}]}
+    property var menuFeedback: ({})
+    property var menuWaiting: ({})            // {id: [callbacks]} while it's on its way
+    signal menuFeedbackReady(string id)
+    function menuFeedbackPending(it) { return !!it && !!it.menuPanel && !it.feedback && signedIn && menuFeedback[it.id] === undefined; }
+    function warmMenu(it, done) {
+        if (!it || !it.menuPanel || it.feedback || !signedIn) { if (done) done([]); return; }
+        if (menuFeedback[it.id] !== undefined) { if (done) done(menuFeedback[it.id]); return; }
+        const id = it.id, first = !menuWaiting[id];
+        if (first) menuWaiting[id] = [];
+        if (done) menuWaiting[id].push(done);
+        if (!first) return;
+        const settle = fb => {
+            const m = Object.assign({}, y.menuFeedback); m[id] = fb; y.menuFeedback = m;
+            const cbs = y.menuWaiting[id] || [];
+            delete y.menuWaiting[id];
+            y.menuFeedbackReady(id);
+            for (const cb of cbs) cb(fb);
+        };
+        call("cardFeedback", {params: it.menuPanel}, r => settle(r.feedback || []), () => settle([]));   // (didn't come: the menu without them)
+    }
+    onProfileChanged: { menuFeedback = {}; menuWaiting = {}; }
 }

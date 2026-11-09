@@ -30,3 +30,5 @@ CommentsPanel 1.0 CommentsPanel.qml
 EndScreen 1.0 EndScreen.qml
 CardMenu 1.0 CardMenu.qml
 Pill 1.0 Pill.qml
+CommentList 1.0 CommentList.qml
+MenuRows 1.0 MenuRows.qml

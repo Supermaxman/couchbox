@@ -39,16 +39,20 @@ Item {
         id: art
         width: card.artW
         height: card.thumbH
-        Rectangle {                          // no picture (yet, or the demo): the title's colours
+        Rectangle {                          // its picture on its way: a quiet grey; none at all (the demo): the title's colours
             anchors.fill: parent
             radius: card.round ? width / 2 : Y.radius
-            gradient: Gradient {
+            color: Y.raised
+            readonly property bool bare: !card.thumb || img.status === Image.Error
+            gradient: bare ? noPicture : undefined
+            Gradient {
+                id: noPicture
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0; color: Qt.hsla(Y.hue(card.item.title), 0.55, 0.32, 1) }
                 GradientStop { position: 1; color: Qt.hsla((Y.hue(card.item.title) + 0.15) % 1, 0.6, 0.14, 1) }
             }
             Text {
-                visible: img.status !== Image.Ready && !card.round
+                visible: parent.bare && !card.round
                 anchors { fill: parent; margins: 26 * Y.u }
                 text: card.title
                 color: "white"
@@ -58,7 +62,7 @@ Item {
                 style: Text.Raised; styleColor: "#60000000"
             }
             Text {
-                visible: img.status !== Image.Ready && card.round
+                visible: parent.bare && card.round
                 anchors.centerIn: parent
                 text: (card.item.title || "?").slice(0, 2)
                 color: "white"
@@ -79,6 +83,8 @@ Item {
             asynchronous: true
             sourceSize: Y.sz(width, height)
             visible: status === Image.Ready && !card.overVideo
+            opacity: status === Image.Ready ? 1 : 0   // (fading in as it comes, not popping)
+            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
         Loader {
             anchors.fill: parent

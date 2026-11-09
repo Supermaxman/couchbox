@@ -127,6 +127,7 @@ def test_comments_page():
     }
     c = Y.parse_comments(resp)
     assert c["items"][0] == {
+        "id": "",
         "author": "@maker",
         "photo": "",
         "text": "Thanks all",
@@ -280,6 +281,15 @@ def test_comment_threads_and_their_replies():
     }
     r = Y.parse_comments(replies)
     assert [x["text"] for x in r["items"]] == ["A reply"] and r["more"] == "tok-more-replies"
+
+
+def test_a_reply_shown_twice_in_a_page_lists_once():
+    """A replies page can hold a reply twice (seen on the TV: one reply, listed two times)."""
+    reply = {"commentRenderer": {"commentId": "Ugx1", "authorText": {"simpleText": "@m"}, "contentText": {"simpleText": "Same one"}}}
+    other = {"commentRenderer": {"commentId": "Ugx2", "authorText": {"simpleText": "@m"}, "contentText": {"simpleText": "Same one"}}}
+    page = {"onResponseReceivedEndpoints": [{"appendContinuationItemsAction": {"continuationItems": [reply, reply, other]}}]}
+    r = Y.parse_comments(page)
+    assert [x["id"] for x in r["items"]] == ["Ugx1", "Ugx2"]  # (the same words twice, but two comments: both)
 
 
 def test_tv_comment_replies_come_from_its_detail_view():
