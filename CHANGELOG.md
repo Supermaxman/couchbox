@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.2](https://github.com/Supermaxman/couchbox/compare/v0.20.1...v0.20.2) (2026-11-09)
+
+
+### Fixed
+
+* **youtube:** comments you can like (every comment opens), no silent first video, the end screen as YouTube's ([#113](https://github.com/Supermaxman/couchbox/issues/113)) ([bf869d1](https://github.com/Supermaxman/couchbox/commit/bf869d1b477d744912a289e98f29503798bc131a))
+* **youtube:** Home ends with YouTube's Refresh tile again, and a new Home that came late is no longer thrown away ([#114](https://github.com/Supermaxman/couchbox/issues/114)) ([82f967c](https://github.com/Supermaxman/couchbox/commit/82f967c5d233f5344390c122efa82c060fc0cd27))
+
 ## [0.20.1](https://github.com/Supermaxman/couchbox/compare/v0.20.0...v0.20.1) (2026-11-09)
 
 
