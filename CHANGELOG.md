@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.3](https://github.com/Supermaxman/couchbox/compare/v0.20.2...v0.20.3) (2026-11-09)
+
+
+### Fixed
+
+* **jellyfin:** the picture again when the web layer comes up white over the video ([#117](https://github.com/Supermaxman/couchbox/issues/117)) ([8563aa4](https://github.com/Supermaxman/couchbox/commit/8563aa477798a4265dcdcbe2639d29d5fbf8bf45))
+* **youtube:** cards scrolled off a row's left edge fade out as in YouTube's TV app ([#119](https://github.com/Supermaxman/couchbox/issues/119)) ([3d6395d](https://github.com/Supermaxman/couchbox/commit/3d6395d798076996699f63e0f43ef3e7491210eb))
+* **youtube:** Home's "Explore more topics" as YouTube's TV app has it: small topic cards, OK searches the topic ([#116](https://github.com/Supermaxman/couchbox/issues/116)) ([9b0a407](https://github.com/Supermaxman/couchbox/commit/9b0a407a82778e58d6d2ca659e6ca2e7d0bda94b))
+
 ## [0.20.2](https://github.com/Supermaxman/couchbox/compare/v0.20.1...v0.20.2) (2026-11-09)
 
 
