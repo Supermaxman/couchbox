@@ -185,6 +185,9 @@ class _Renderer(QQuickFramebufferObject.Renderer):
             TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000), start=it._t_start)
             it._t_load = it._t_loaded = 0.0
         self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
+        if it._await_frame == "render":  # this file's first picture is drawn: what covers it can go
+            it._await_frame = ""
+            it._prop.emit("frame", True)
         _drop_frame_fence()
         if QQuickOpenGLUtils:
             QQuickOpenGLUtils.resetOpenGLState()
@@ -204,6 +207,7 @@ class MpvVideo(QQuickFramebufferObject):
     tracksChanged = Signal()
     subtitleChanged = Signal()
     errorChanged = Signal()
+    hasFrameChanged = Signal()
     _prop = Signal(str, object)  # from mpv's thread to Qt's
 
     def __init__(self, parent=None):
@@ -282,6 +286,11 @@ class MpvVideo(QQuickFramebufferObject):
         self._tracks = []
         self._sid = 0
         self._error = ""
+        # a new file's first picture: until it's drawn the item still holds the file before's last
+        # one, so the apps cover it (hasFrame). "restart": waiting for mpv to have the picture,
+        # "render": for the next render to draw it, "": drawn
+        self._has_frame = False
+        self._await_frame = ""
         self._closed = False
         self._live_cam = False  # loadLive(): a camera (never takes the TV's mode from another player)
         self._shown = True  # the item is visible (apps hide it when the player page isn't on top)
@@ -309,6 +318,12 @@ class MpvVideo(QQuickFramebufferObject):
         def _loaded(ev):
             if self._t_load and not self._t_loaded:
                 self._t_loaded = time.monotonic()
+
+        @self.mpv.event_callback("playback-restart")
+        def _restarted(ev):
+            if self._await_frame == "restart":
+                self._await_frame = "render"
+                self.frameReady.emit()
 
         @self.mpv.event_callback("end-file")
         def _end(ev):
@@ -368,6 +383,10 @@ class MpvVideo(QQuickFramebufferObject):
         elif name == "error":
             self._error = value
             self.errorChanged.emit()
+        elif name == "frame":
+            if not self._await_frame and not self._has_frame:
+                self._has_frame = True
+                self.hasFrameChanged.emit()
 
     @Slot()
     def _on_visible(self):
@@ -440,6 +459,7 @@ class MpvVideo(QQuickFramebufferObject):
             except Exception:  # noqa: BLE001
                 pass
         QTimer.singleShot(2000, _trim)  # the file before's buffers, freed by now
+        self._new_file()
         self.mpv.command("loadfile", url, "replace", -1, ",".join(opts))
         self.mpv.pause = False
 
@@ -453,6 +473,7 @@ class MpvVideo(QQuickFramebufferObject):
         self.endedChanged.emit()
         opts = "cache=no,demuxer-readahead-secs=0,demuxer-lavf-analyzeduration=0.5,demuxer-lavf-probesize=65536,video-latency-hacks=yes"
         self._loads += 1
+        self._new_file()
         self.mpv.command("loadfile", url, "replace", -1, opts)
         self.mpv.pause = False
 
@@ -531,6 +552,13 @@ class MpvVideo(QQuickFramebufferObject):
         """mpv's render update callback (from mpv's thread): Qt draws the next frame."""
         self._debug("update-cb")
         self.frameReady.emit()
+
+    def _new_file(self, wait="restart"):
+        """A file is about to replace what's shown (or nothing will be): no picture of its own yet."""
+        self._await_frame = wait
+        if self._has_frame:
+            self._has_frame = False
+            self.hasFrameChanged.emit()
 
     def _debug(self, msg):
         if _DEBUG and time.monotonic() < self._dbg_until:
@@ -644,6 +672,9 @@ class MpvVideo(QQuickFramebufferObject):
         self._error = ""
         self.endedChanged.emit()
         self._t_load, self._t_loaded, self._t_start = time.monotonic(), time.monotonic(), int(start)
+        # its picture is mpv's already (it opened paused): drawn on the next render, unless a seek
+        # far from where it opened has to decode another first
+        self._new_file("restart" if abs(start - at) > 5 else "render")
         try:
             self.mpv["demuxer-max-bytes"] = (os.environ.get("COUCHBOX_MPV_CACHE") or "120MiB,30MiB").split(",")[0]
             self.mpv.mute = self._mute_was
@@ -680,6 +711,7 @@ class MpvVideo(QQuickFramebufferObject):
     @Slot()
     def stop(self):
         self._cancel_preload()
+        self._new_file("")
         self.mpv.command("stop")
         QTimer.singleShot(1000, _trim)
 
@@ -697,3 +729,4 @@ class MpvVideo(QQuickFramebufferObject):
     subtitles = Property("QVariantList", lambda s: s._tracks, notify=tracksChanged)
     subtitle = Property(int, lambda s: s._sid, notify=subtitleChanged)
     error = Property(str, lambda s: s._error, notify=errorChanged)
+    hasFrame = Property(bool, lambda s: s._has_frame, notify=hasFrameChanged)

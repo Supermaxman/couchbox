@@ -326,10 +326,16 @@ ApplicationWindow {
             onRatePolicyChanged: setRatePolicy(ratePolicy)
             Component.onCompleted: setRatePolicy(ratePolicy)
             readonly property bool placed: Y.videoRect.width > 0          // Shorts
-            x: placed ? Y.videoRect.x : Y.videoSide ? 54 * Y.u : 0
-            y: placed ? Y.videoRect.y : Y.videoSide ? 219 * Y.u : 0
-            width: warming ? 2 : placed ? Y.videoRect.width : Y.videoSide ? 1146 * Y.u : parent.width
-            height: warming ? 2 : placed ? Y.videoRect.height : Y.videoSide ? 645 * Y.u : parent.height
+            // a panel beside the player: the video glides into its place left of it (scaled, not
+            // resized: mpv keeps drawing the same picture, nothing reallocated on the way)
+            property real side: Y.videoSide && !placed ? 1 : 0
+            Behavior on side { NumberAnimation { duration: Y.tPanel; easing.type: Easing.OutCubic } }
+            transformOrigin: Item.TopLeft
+            scale: 1 - side * (1 - Y.sideRect.width / win.width)
+            x: placed ? Y.videoRect.x : side * Y.sideRect.x
+            y: placed ? Y.videoRect.y : side * Y.sideRect.y
+            width: warming ? 2 : placed ? Y.videoRect.width : parent.width
+            height: warming ? 2 : placed ? Y.videoRect.height : parent.height
             visible: win.playing || warming
             // once Home shows, before any video: mpv's output made (a 2-pixel moment of black, muted)
             property bool warming: false
@@ -489,7 +495,7 @@ ApplicationWindow {
                     toast: toast.opacity > 0 ? toastText.text : "", queue: Y.queue.length,
                     signedIn: Y.signedIn, profile: Y.profile ? Y.profile.id : "", card: focusedCard(it),
                     guideAt: guide.activeFocus ? (guide.cur < 0 ? "who" : guide.keyAt(guide.cur)) : ""};
-        if (cardMenu.visible) st.detail = cardMenu.focusDetail();
+        if (cardMenu.shown) st.detail = cardMenu.focusDetail();
         else if (picking) st.detail = profilesPage.focusDetail();
         else if (cur && cur.focusDetail) st.detail = cur.focusDetail();
         else if (!cur && page(section).focusDetail) st.detail = page(section).focusDetail();

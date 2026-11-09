@@ -1,135 +1,188 @@
 // The comments beside the video: who, when, the text, its likes and replies; more load as the
-// list nears its end. Up and Down move; OK on a comment with replies opens them (the comment
-// first, then its replies, more of them as the list nears its end); Back goes back to the
-// comments on the same one, or closes.
+// list nears its end. Up and Down move (the list glides under the focus; a comment keeps its size
+// whether focused or not). OK on a comment with replies, or one cut short, opens it: the comment
+// whole, then its replies (more as the list nears its end), sliding in over the comments; Back
+// slides back to the comments, on the same one, or closes.
 import QtQuick
 
 FocusScope {
     id: panel
+    property bool open: false                 // shown: it slides in from the right (PlayerPage)
     property string token: ""                 // the first page's continuation (the watch page's)
     property string count: ""
-    property var items: []
-    property string more: ""
-    property bool loading: false
+    property string more: ""                  // the comments' next page
+    property string replyMore: ""             // the open comment's replies' next page
+    property bool loading: false              // a page of comments on its way
+    property bool replyLoading: false
     property string problem: ""
-    property var thread: null                 // a comment's replies open: {comment, items, more, index} (the comments, to go back to)
-    function focusDetail() { return {comments: items.length, thread: !!thread, at: list.currentIndex, replies: thread ? items.length - 1 : 0,
-                                     withReplies: items.findIndex(c => !!c.repliesToken)}; }
+    property string replyProblem: ""
+    property var thread: null                 // the comment open: {replies}
+    property int gen: 0                       // which load an answer is for (the player moved on, Back...)
+    property var keys: ({})                   // the comments in the list (a page repeating one: once)
+    property var replyKeys: ({})
+    readonly property var curList: thread ? replies : comments
+    function focusDetail() { return {comments: curList.count, thread: !!thread, at: curList.currentIndex, replies: thread ? Math.max(0, replyModel.count - 1) : 0,
+                                     withReplies: firstWithReplies()}; }
+    function firstWithReplies() {
+        const m = thread ? replyModel : commentModel;
+        for (let i = 0; i < m.count; i++) if (m.get(i).repliesToken) return i;
+        return -1;
+    }
     signal closed()
     x: 1254 * Y.u
     width: 612 * Y.u
     height: parent ? parent.height : 0
+
+    // opening: in from the right; closing: out, quicker
+    visible: open || opacity > 0
+    opacity: open ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: panel.open ? Y.tPanel : Y.tOut; easing.type: Easing.OutCubic } }
+    transform: Translate {
+        x: panel.open ? 0 : 56 * Y.u
+        Behavior on x { NumberAnimation { duration: Y.tPanel; easing.type: Easing.OutCubic } }
+    }
+
+    ListModel { id: commentModel }
+    ListModel { id: replyModel }
+    // one shape for every comment (a ListModel's roles are its first item's)
+    function row(c, parent) {
+        return {key: c.id || [c.author, c.time, String(c.text || "").slice(0, 80)].join("|"), author: c.author || "", photo: c.photo || "",
+                text: c.text || "", time: c.time || "", likes: String(c.likes || ""), replies: c.replies || 0,
+                repliesToken: c.repliesToken || "", pinned: !!c.pinned, isParent: !!parent};
+    }
+    function addTo(model, seen, items) {
+        for (const c of items || []) {
+            const r = row(c, false);
+            if (seen[r.key]) continue;
+            seen[r.key] = true;
+            model.append(r);
+        }
+    }
+
     function load() {
-        items = []; more = ""; problem = ""; thread = null;
+        gen++;
+        commentModel.clear(); replyModel.clear(); keys = {}; replyKeys = {};
+        more = ""; replyMore = ""; problem = ""; replyProblem = ""; loading = false; replyLoading = false;
+        flip.enabled = false; thread = null; flip.enabled = true;   // (on the comments at once)
         if (!token) { problem = "Comments are turned off for this video."; return; }
-        fetch(token);
+        fetchComments(token);
     }
-    function fetch(t) {
+    function fetchComments(t) {
         loading = true;
-        const th = thread;                     // (replies that come after Back aren't the comments')
+        const g = gen;
         Y.call("comments", {token: t}, r => {
-            if (!panel || panel.thread !== th) return;   // (the player closed meanwhile, or Back)
+            if (!panel || panel.gen !== g) return;   // (another video meanwhile)
             loading = false;
-            items = items.concat(r.items || []);
+            addTo(commentModel, keys, r.items);
+            if (comments.currentIndex < 0 && commentModel.count) comments.currentIndex = 0;
             more = r.more || "";
-            if (!items.length) problem = "No comments yet.";
-            else if (thread && items.length === 1) problem = "No replies to show.";
-        }, e => { if (panel) { panel.loading = false; panel.problem = e; } });
+            if (!commentModel.count) problem = "No comments yet.";
+        }, e => { if (panel && panel.gen === g) { panel.loading = false; if (!commentModel.count) panel.problem = e; } });
     }
-    Keys.onUpPressed: list.decrementCurrentIndex()
-    Keys.onDownPressed: { list.incrementCurrentIndex(); if (list.currentIndex >= items.length - 3 && more && !loading) fetch(more); }
-    function openReplies() {
-        const c = items[list.currentIndex];
-        if (!c || !c.repliesToken || thread) return;
-        thread = {comment: c, items: items, more: more, index: list.currentIndex};
-        items = [Object.assign({}, c, {parent: true})]; more = ""; problem = "";
-        list.currentIndex = 0;
-        fetch(c.repliesToken);
+    function fetchReplies(t) {
+        replyLoading = true;
+        const g = gen, th = thread;
+        Y.call("comments", {token: t}, r => {
+            if (!panel || panel.gen !== g || panel.thread !== th) return;   // (Back meanwhile, or another one)
+            replyLoading = false;
+            addTo(replyModel, replyKeys, r.items);
+            replyMore = r.more || "";
+            if (replyModel.count === 1) replyProblem = "No replies to show.";
+        }, e => { if (panel && panel.gen === g && panel.thread === th) { panel.replyLoading = false; if (replyModel.count === 1) panel.replyProblem = e; } });
+    }
+    function openComment() {
+        if (thread) return;
+        const i = comments.currentIndex, c = commentModel.get(i), card = comments.currentItem;
+        if (!c || !(c.repliesToken || (card && card.cut))) return;
+        replyModel.clear();
+        const p = row(c, true);
+        p.key = c.key;
+        replyModel.append(p);
+        replyKeys = {}; replyKeys[c.key] = true;   // (a page of replies starting with it: not twice)
+        replyMore = ""; replyProblem = "";
+        thread = {replies: c.replies || 0};
+        replies.currentIndex = 0;
+        replies.positionViewAtBeginning();
+        if (c.repliesToken) fetchReplies(c.repliesToken);
     }
     function back() {
         if (!thread) { closed(); return; }
-        const t = thread;
-        thread = null; problem = ""; loading = false;
-        items = t.items; more = t.more;
-        list.currentIndex = t.index;
-        list.positionViewAtIndex(t.index, ListView.Contain);
+        thread = null; replyLoading = false;
     }
-    Keys.onReturnPressed: openReplies()
-    Keys.onEnterPressed: openReplies()
+    function down() {
+        const l = curList;
+        l.incrementCurrentIndex();
+        if (thread) { if (l.currentIndex >= replyModel.count - 3 && replyMore && !replyLoading) fetchReplies(replyMore); }
+        else if (l.currentIndex >= commentModel.count - 3 && more && !loading) fetchComments(more);
+    }
+    Keys.onUpPressed: curList.decrementCurrentIndex()
+    Keys.onDownPressed: down()
+    Keys.onReturnPressed: e => { if (!e.isAutoRepeat) openComment(); }
+    Keys.onEnterPressed: e => { if (!e.isAutoRepeat) openComment(); }
     Keys.onEscapePressed: back()
     Keys.onBackPressed: back()
     Keys.onLeftPressed: {}
     Keys.onRightPressed: {}
 
-    Row {
+    // the comments (0) or a comment's replies (1): one slides out to the left as the other comes in
+    // (the one leaving gone in the first half, the one coming in the last two thirds: never both)
+    property real t: thread ? 1 : 0
+    readonly property real commentsA: thread ? Math.max(0, 1 - t * 2) : Math.min(1, Math.max(0, (0.65 - t) / 0.65))
+    readonly property real repliesA: thread ? Math.min(1, Math.max(0, (t - 0.35) / 0.65)) : Math.max(0, t * 2 - 1)
+    Behavior on t { id: flip; NumberAnimation { duration: Y.tPanel; easing.type: Easing.OutCubic } }
+    // loading's placeholders breathe (one clock for all of them)
+    property real pulse: 1
+    SequentialAnimation on pulse {
+        running: panel.visible && (panel.loading || panel.replyLoading) && !Y.shot
+        loops: Animation.Infinite
+        NumberAnimation { to: 0.45; duration: 700; easing.type: Easing.InOutSine }
+        NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+        onRunningChanged: if (!running) panel.pulse = 1
+    }
+
+    Head { opacity: panel.commentsA; x: -48 * Y.u * panel.t; title: "Comments"; count: panel.count }
+    Head { opacity: panel.repliesA; x: 48 * Y.u * (1 - panel.t); title: panel.thread && panel.thread.replies ? "Replies" : "Comment"
+           count: panel.thread && panel.thread.replies ? String(panel.thread.replies) : "" }
+
+    CommentList {
+        id: comments
+        objectName: "commentList"
+        y: 120 * Y.u
+        width: panel.width
+        height: panel.height - y - 30 * Y.u
+        model: commentModel
+        opacity: panel.commentsA
+        x: -48 * Y.u * panel.t
+        live: !panel.thread
+        focused: panel.activeFocus || !panel.open
+        busy: panel.loading
+        note: panel.problem
+        pulse: panel.pulse
+    }
+    CommentList {
+        id: replies
+        objectName: "replyList"
+        y: 120 * Y.u
+        width: panel.width
+        height: panel.height - y - 30 * Y.u
+        model: replyModel
+        replies: true
+        opacity: panel.repliesA
+        x: 48 * Y.u * (1 - panel.t)
+        live: !!panel.thread
+        focused: panel.activeFocus || !panel.open
+        busy: panel.replyLoading
+        note: panel.replyProblem
+        pulse: panel.pulse
+    }
+
+    component Head: Row {
+        property string title
+        property string count
         y: 40 * Y.u
         spacing: 14 * Y.u
-        Text { text: panel.thread ? "Replies" : "Comments"; color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold }
-        Text { text: panel.thread ? String(panel.thread.comment.replies || "") : panel.count; color: Y.dim; font.family: Y.font; font.pixelSize: 32 * Y.u; anchors.baseline: parent.children[0].baseline }
-    }
-    ListView {
-        id: list
-        y: 120 * Y.u
-        width: parent.width
-        height: parent.height - y - 30 * Y.u
-        clip: true
-        spacing: 12 * Y.u
-        interactive: false
-        model: panel.items
-        highlightRangeMode: ListView.ApplyRange
-        preferredHighlightBegin: 0
-        preferredHighlightEnd: height * 0.7
-        highlightMoveDuration: 160
-        delegate: Rectangle {
-            id: c
-            required property var modelData
-            required property int index
-            readonly property bool on: ListView.isCurrentItem && panel.activeFocus
-            readonly property bool reply: !!panel.thread && !c.modelData.parent
-            x: reply ? 40 * Y.u : 0                // replies indented under their comment
-            width: list.width - x
-            height: body.height + 48 * Y.u
-            radius: 16 * Y.u
-            color: on ? Y.text : Y.raised
-            RoundImage { x: 24 * Y.u; y: 24 * Y.u; width: 54 * Y.u; height: width; source: c.modelData.photo || ""; fallback: (c.modelData.author || "").replace("@", "") }
-            Column {
-                id: body
-                x: 96 * Y.u; y: 24 * Y.u
-                width: parent.width - 120 * Y.u
-                spacing: 8 * Y.u
-                Text {
-                    width: parent.width
-                    text: (c.modelData.pinned ? "Pinned  ·  " : "") + c.modelData.author + "  ·  " + c.modelData.time
-                    color: c.on ? "#606060" : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u; font.weight: Font.Medium
-                    elide: Text.ElideRight
-                }
-                Text {
-                    width: parent.width
-                    text: c.modelData.text
-                    color: c.on ? Y.ink : Y.text; font.family: Y.font; font.pixelSize: 25 * Y.u
-                    wrapMode: Text.Wrap; maximumLineCount: c.on ? 12 : 4; elide: Text.ElideRight
-                    lineHeight: 1.1
-                }
-                Row {
-                    spacing: 20 * Y.u
-                    visible: !!c.modelData.likes || c.modelData.replies > 0
-                    Row {
-                        spacing: 8 * Y.u
-                        visible: !!c.modelData.likes
-                        Icon { name: "like"; size: 26 * Y.u; color: c.on ? Y.ink : Y.dim }
-                        Text { text: c.modelData.likes || ""; color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
-                    }
-                    Text { visible: c.modelData.replies > 0; text: c.modelData.replies + (c.modelData.replies === 1 ? " reply" : " replies") + (c.on && c.modelData.repliesToken && !panel.thread ? "  ·  OK to read" : ""); color: c.on ? Y.ink : Y.dim; font.family: Y.font; font.pixelSize: 22 * Y.u }
-                }
-            }
-        }
-    }
-    Text {
-        visible: !!panel.problem || (panel.loading && !panel.items.length)
-        y: 140 * Y.u
-        width: parent.width
-        text: panel.problem || "Loading comments…"
-        color: Y.dim; font.family: Y.font; font.pixelSize: 26 * Y.u
-        wrapMode: Text.WordWrap
+        visible: opacity > 0
+        Text { id: ht; text: parent.title; color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold }
+        Text { text: parent.count; color: Y.dim; font.family: Y.font; font.pixelSize: 32 * Y.u; anchors.baseline: ht.baseline }
     }
 }

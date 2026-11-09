@@ -12,7 +12,8 @@ Rectangle {
     property var subtitles: [{id: 1, title: "English", lang: "en"}]
     property int subtitle: 0
     property string error: ""
-    function load(url, start) { position = start; duration = 3600; paused = false; ended = false; }
+    property bool hasFrame: false                 // the file's first picture drawn (a moment after it opens)
+    function load(url, start) { position = start; duration = 3600; paused = false; ended = false; hasFrame = false; firstFrame.restart(); }
     function loadWith(url, start, opts) { load(url, start); }
     function loadLive(url) { position = 0; duration = 86400; paused = false; }
     function addSubtitle(url) {}
@@ -25,7 +26,8 @@ Rectangle {
     function seek(d) { position = Math.max(0, Math.min(duration, position + d)); }
     function seekTo(p) { position = p; }
     function setSubtitle(s) { subtitle = s; }
-    function stop() {}
+    function stop() { hasFrame = false; firstFrame.stop(); }
+    Timer { id: firstFrame; interval: 400; onTriggered: parent.hasFrame = true }
     function warmUp() {}
     function preload(url, start, opts) {}
     function cancelPreload() {}

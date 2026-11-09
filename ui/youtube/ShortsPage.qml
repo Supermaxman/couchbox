@@ -51,6 +51,7 @@ FocusScope {
     function play(i) {
         if (i < 0 || i >= items.length) return;
         index = i;
+        if (s) video.stop();                   // (the last one's sound and picture gone now, not when this one comes)
         s = null;
         info = {};
         const id = items[i].id;
@@ -136,7 +137,12 @@ FocusScope {
     }
     Rectangle {                                // while it starts: its picture (or its colours, the demo)
         x: page.place.x; y: page.place.y; width: page.place.width; height: page.place.height
-        visible: !page.s || !hasVideo
+        // until this Short's own first picture is drawn (never the one before's), then fading out
+        id: shortCover
+        readonly property bool want: !(page.s && hasVideo && video.hasFrame)
+        visible: opacity > 0
+        onWantChanged: { coverFade.stop(); if (want) opacity = 1; else coverFade.start(); }
+        NumberAnimation { id: coverFade; target: shortCover; property: "opacity"; to: 0; duration: 200; easing.type: Easing.OutCubic }
         gradient: Gradient {
             GradientStop { position: 0; color: Qt.hsla(Y.hue(page.info.title || page.cur.id), 0.4, 0.3, 1) }
             GradientStop { position: 1; color: Qt.hsla((Y.hue(page.info.title || page.cur.id) + 0.2) % 1, 0.5, 0.1, 1) }

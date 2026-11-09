@@ -428,10 +428,12 @@ class Backend(QObject):
         return {"error": "Captions aren't available right now."}
 
     def prefetch(self, vid):
-        """A card that has the focus (or what plays next): its stream worked out now, kept for OK."""
+        """A card that has the focus (or what plays next): its stream worked out now, kept for OK;
+        and its watch page asked for, so OK knows at once where this profile left off."""
         import time
         if self.demo or not vid:
             return {"ok": True}
+        self.warm_watch(vid)
         key = self.signed_key(vid)
         if not key:
             self.worker.prefetch(vid, **self.stream_args())
@@ -449,6 +451,31 @@ class Backend(QObject):
         if pr:
             self.kept[key] = time.time() + self.KEEP_SIGNED
             self.worker.prefetch(vid, key=key, player=pr, **self.stream_args())
+
+    WATCH_FRESH = 90                                 # s: a warmed watch page, good for OK this long
+
+    def warm_watch(self, vid):
+        """The watch page asked for ahead of OK (the player's watch: where this profile left off, so a
+        part-watched video starts there, not at 0:00 and then jumps; the related row; the channel)."""
+        import time
+        w = self.__dict__.setdefault("_watches", {})
+        key = f"{vid}|{self.signed_key(vid)}"
+        if key in w and w[key][0] > time.time():
+            return
+        w[key] = (time.time() + self.WATCH_FRESH, self.pool.submit(self.yt.watch, vid))
+        while len(w) > 12:
+            w.pop(next(iter(w)))
+
+    def watch(self, vid):
+        """The player's watch page: the one warmed for it (once: a later open asks again), else now."""
+        import time
+        e = self.__dict__.get("_watches", {}).pop(f"{vid}|{self.signed_key(vid)}", None)
+        if e and e[0] > time.time():
+            try:
+                return e[1].result(timeout=20)
+            except Exception:  # noqa: BLE001  (it failed: ask again)
+                pass
+        return self.yt.watch(vid)
 
     def stream(self, vid, max_height=None):
         if self.demo:
@@ -558,7 +585,7 @@ class Backend(QObject):
             "search": lambda: self.page((y.remember_search(a["q"]), y.search(a["q"]))[1]),
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
-            "watch": lambda: y.watch(a["id"]),
+            "watch": lambda: self.watch(a["id"]),
             "stream": lambda: self.stream(a["id"], a.get("max_height")),
             "prefetch": lambda: self.prefetch(a["id"]),
             "captions": lambda: self.captions(a["url"]),

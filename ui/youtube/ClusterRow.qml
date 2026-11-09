@@ -42,7 +42,7 @@ FocusScope {
         } else if (k === Qt.Key_Menu) {
             Y.cardMenu(current(), cl);
         } else if (k === Qt.Key_Return || k === Qt.Key_Enter) {
-            if (!e.isAutoRepeat) hold.restart();
+            if (!e.isAutoRepeat) { hold.restart(); Y.warmMenu(current()); }   // (held: the menu opens whole)
         } else {
             e.accepted = false;
             return;

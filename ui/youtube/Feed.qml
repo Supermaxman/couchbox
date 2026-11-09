@@ -62,12 +62,22 @@ FocusScope {
         list.positionViewAtIndex(list.currentIndex, ListView.Beginning);
     }
 
+    // the rows the list shows, by their place in rows: more shelves are added to it, never the
+    // list made again (its rows' pictures blinked and their cards slid back, as more came)
+    ListModel { id: rowModel }
+    function remodel() {
+        rowModel.clear();
+        if (rows.length) rowModel.append(rows.map((_, k) => ({k: k})));
+    }
+    onRowsChanged: remodel()
+    Component.onCompleted: remodel()
+
     ListView {
         id: list
         anchors.fill: parent
         focus: true
         clip: true
-        model: feed.rows
+        model: rowModel
         spacing: feed.rowGap
         cacheBuffer: Math.round(700 * Y.u)     // rows kept made off screen (each with its pictures): a little
         highlightRangeMode: ListView.StrictlyEnforceRange
@@ -83,7 +93,8 @@ FocusScope {
         onCurrentIndexChanged: if (count && currentIndex >= count - 3) feed.loadMore()
         delegate: Loader {
             id: cell
-            required property var modelData
+            required property int k
+            readonly property var modelData: feed.rows[k] || ({})
             required property int index
             readonly property bool current: ListView.isCurrentItem
             width: list.width
@@ -138,16 +149,17 @@ FocusScope {
             if (!feed) return;                 // (gone meanwhile: its page was left)
             loading = false;
             if (more !== token) return;
-            const i = list.currentIndex;
+            let add = [];
             if (gridMore) {
-                const add = [], items = r.items || [];
+                const items = r.items || [];
                 for (let k = 0; k < items.length; k += perRow)
                     add.push({kind: "shelf", title: "", subtitle: "", items: items.slice(k, k + perRow), more: "", fixedRow: !gridScroll});
-                rows = rows.concat(add);
-            } else rows = rows.concat((r.shelves || []).map(s => Object.assign({kind: "shelf"}, s)));
+            } else add = (r.shelves || []).map(s => Object.assign({kind: "shelf"}, s));
             more = r.more || "";
-            list.currentIndex = i;
-            list.positionViewAtIndex(i, ListView.Beginning);
+            // added where they go (rows itself grows in place: what's on screen stays as it is)
+            const base = rows.length;
+            for (const x of add) rows.push(x);
+            if (add.length) rowModel.append(add.map((_, j) => ({k: base + j})));
         }, () => { if (feed) feed.loading = false; });
     }
 }

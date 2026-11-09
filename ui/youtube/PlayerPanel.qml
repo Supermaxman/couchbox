@@ -21,6 +21,16 @@ FocusScope {
     x: 1254 * Y.u
     width: 612 * Y.u
     height: parent ? parent.height : 0
+
+    // opening: in from the right; closing: out, quicker
+    property bool open: false
+    visible: open || opacity > 0
+    opacity: open ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: panel.open ? Y.tPanel : Y.tOut; easing.type: Easing.OutCubic } }
+    transform: Translate {
+        x: panel.open ? 0 : 56 * Y.u
+        Behavior on x { NumberAnimation { duration: Y.tPanel; easing.type: Easing.OutCubic } }
+    }
     Keys.onUpPressed: index = Math.max(0, index - 1)
     Keys.onDownPressed: index = Math.min(options.length - 1, index + 1)
     Keys.onReturnPressed: if (options.length) picked(index)
@@ -74,49 +84,18 @@ FocusScope {
             lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
         }
         Item { width: 1; height: (panel.name ? 18 : panel.levels ? 6 : 30) * Y.u }   // (the bell's levels: their title at y 59, the list 24 higher)
-        Repeater {
-            model: panel.options
-            Rectangle {
-                id: opt
-                required property var modelData
-                required property int index
-                readonly property bool on: panel.index === index && panel.activeFocus
-                width: panel.width
-                height: (panel.channel ? 95 : 90) * Y.u
-                radius: 16 * Y.u
-                color: on ? Y.text : Y.raised
-                Icon {
-                    id: oi
-                    visible: !!opt.modelData.icon
-                    x: 30 * Y.u
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: opt.modelData.icon || ""
-                    size: 38 * Y.u
-                    color: opt.on ? Y.ink : Y.text
-                }
-                Text {
-                    anchors { left: parent.left; leftMargin: opt.modelData.icon ? 96 * Y.u : 24 * Y.u; right: parent.right; rightMargin: 84 * Y.u; verticalCenter: parent.verticalCenter }
-                    text: opt.modelData.label
-                    color: opt.on ? Y.ink : Y.text
-                    font.family: Y.font; font.pixelSize: 30 * Y.u
-                    font.weight: panel.channel || panel.levels ? Font.Medium : Font.DemiBold
-                    elide: Text.ElideRight
-                }
-                Text {
-                    visible: !!opt.modelData.value
-                    anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }
-                    text: opt.modelData.value || ""
-                    color: opt.on ? "#606060" : Y.dim
-                    font.family: Y.font; font.pixelSize: 26 * Y.u
-                }
-                Icon {
-                    visible: !!opt.modelData.checked || !!opt.modelData.trailing
-                    anchors { right: parent.right; rightMargin: 28 * Y.u; verticalCenter: parent.verticalCenter }
-                    name: opt.modelData.trailing || "check"
-                    size: (panel.channel ? 42 : 38) * Y.u
-                    color: opt.on ? Y.ink : Y.text
-                }
-            }
+        MenuRows {
+            width: panel.width
+            options: panel.options
+            index: panel.index
+            focused: panel.activeFocus || !panel.open   // (kept while it slides out)
+            gap: 12 * Y.u
+            rowH: (panel.channel ? 95 : 90) * Y.u
+            iconX: 30 * Y.u; iconSize: 38 * Y.u
+            textX: 96 * Y.u; plainX: 24 * Y.u
+            textSize: 30 * Y.u
+            weight: panel.channel || panel.levels ? Font.Medium : Font.DemiBold
+            trailSize: (panel.channel ? 42 : 38) * Y.u
         }
         Text {
             visible: !!panel.note

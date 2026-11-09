@@ -936,6 +936,7 @@ def _token_in(o: Any) -> str:
 
 def _comment(c: dict[str, Any]) -> dict[str, Any]:
     return {
+        "id": c.get("commentId") or "",
         "author": text(c.get("authorText")),
         "photo": avatar(thumb(c.get("authorThumbnail"), 88)),
         "text": text(c.get("contentText")),
@@ -998,7 +999,19 @@ def parse_comments(resp: dict[str, Any]) -> dict[str, Any]:
         more = next(
             (t for cs in _find(resp.get("continuationContents") or {}, "continuations") if (t := _continuation({"continuations": cs}))), ""
         )
-    return {"items": items, "more": more}
+    return {"items": _unique_comments(items), "more": more}
+
+
+def _unique_comments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each comment once (a page can hold one twice: a reply shown under its thread and again on
+    its own)."""
+    seen, out = set(), []
+    for it in items:
+        key = it.get("id") or (it["author"], it["time"], it["text"])
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
 
 
 def parse_short_sequence(resp: dict[str, Any]) -> dict[str, Any]:
@@ -2021,7 +2034,9 @@ class Demo(YouTube):
             live=kind == "live",
             channelId=cid,
         )
-        if self.profile:  # the menu's feedback options (made up: the demo's feedback does nothing)
+        if self.profile and n % 16 >= 8:  # its menu's Not interested..., as YouTube sends Home's: a panel
+            it["menuPanel"] = f"demo-panel-{n}"
+        elif self.profile:  # the menu's feedback options (made up: the demo's feedback does nothing)
             it["feedback"] = [
                 {"kind": "not_interested", "label": "Not interested", "token": "demo"},
                 {"kind": "no_channel", "label": "Don't recommend channel", "token": "demo"},
@@ -2260,7 +2275,9 @@ class Demo(YouTube):
             "I've watched this three times now.",
             "Can you do one about clocks next?",
             "Love how honest the failures are.",
-            "The diagram at 12:40 explained it better than my teacher did.",
+            "The diagram at 12:40 explained it better than my teacher did. I paused it, drew it out on paper, and finally "
+            "understood why the second version held. Then I showed my kid, and she asked the one question the video never "
+            "answers: what happens when it rains? Honestly that could be its own episode. Maybe two.",
             "First!",
         ]
         return {
@@ -2337,6 +2354,17 @@ class Demo(YouTube):
     def feedback(self, token):
         self.need_profile("tell YouTube what you'd rather not see")
         return {"ok": True}
+
+    def card_feedback(self, params):
+        time.sleep(0.4)  # (YouTube takes about this long: the menu mustn't wait for it, or grow)
+        return {
+            "feedback": [
+                {"kind": "not_interested", "label": "Not interested", "token": "demo"},
+                {"kind": "no_channel", "label": "Don't recommend channel", "token": "demo"},
+            ]
+            if self.profile and params
+            else []
+        }
 
     def edit_playlist(self, edit, add=True):
         return self.save(((edit.get("actions") or [{}])[0]).get("addedVideoId", ""), "WL", add)
