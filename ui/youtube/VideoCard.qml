@@ -3,8 +3,10 @@
 // such as 4K and CC before the views and age). A channel is a round picture with its name
 // centred; a game is a box-art poster. `on` draws the white focus ring and the white title.
 // boxed: a channel page's card, the title and lines in a panel under the picture that turns white
-// with focus.
+// with focus. A topic (Home's "Explore more topics"): a small picture, darkened from the left and
+// the bottom, a search glass top left and the topic's name in bold over its foot; nothing under it.
 import QtQuick
+import QtQuick.Shapes
 
 Item {
     id: card
@@ -27,13 +29,15 @@ Item {
             Y.call("branding", {id: item.id}, r => { if (card) card.brand = r || {}; }, () => {});
     }
     property bool wide: false                 // drawn 16:9 whatever its shape (a hero shelf's row)
-    readonly property string shape: wide ? "wide" : item.shape || "wide"   // wide | poster | square | hero | round
+    readonly property string shape: wide ? "wide" : item.shape || "wide"   // wide | poster | square | hero | topic | round
+    readonly property bool topic: shape === "topic"
+    readonly property real corner: topic ? 18 * Y.u : Y.radius   // (a topic's: 12 px of 1280)
     readonly property bool round: kind === "channel" || shape === "round"
     readonly property bool pillar: kind === "short" && shape === "wide"   // its upright picture whole, not cut to 16:9
-    readonly property real thumbH: Math.round(w * 9 / 16)
+    readonly property real thumbH: Math.round(topic ? w * 8 / 15 : w * 9 / 16)   // (a topic: 405 x 216)
     readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
     width: artW
-    height: art.height + (box ? panel.height : captioned ? caption.implicitHeight + 26 * Y.u : 0)
+    height: art.height + (box ? panel.height : captioned && !topic ? caption.implicitHeight + 26 * Y.u : 0)
 
     Item {
         id: art
@@ -41,8 +45,8 @@ Item {
         height: card.thumbH
         Rectangle {                          // its picture on its way: a quiet grey; none at all (the demo): the title's colours
             anchors.fill: parent
-            radius: card.round ? width / 2 : Y.radius
-            color: Y.raised
+            radius: card.round ? width / 2 : card.corner
+            color: card.topic ? "#212121" : Y.raised
             readonly property bool bare: !card.thumb || img.status === Image.Error
             gradient: bare ? noPicture : undefined
             Gradient {
@@ -52,7 +56,7 @@ Item {
                 GradientStop { position: 1; color: Qt.hsla((Y.hue(card.item.title) + 0.15) % 1, 0.6, 0.14, 1) }
             }
             Text {
-                visible: parent.bare && !card.round
+                visible: parent.bare && !card.round && !card.topic
                 anchors { fill: parent; margins: 26 * Y.u }
                 text: card.title
                 color: "white"
@@ -91,10 +95,70 @@ Item {
             active: card.overVideo && !!card.thumb
             sourceComponent: RoundImage { radius: Y.radius; cover: true; source: card.thumb }
         }
+        Loader {                             // a topic: its picture darkened, the glass and its name on it
+            anchors.fill: parent
+            active: card.topic
+            sourceComponent: Item {
+                // YouTube's TV app's shade: radial-gradient(128.52% 100% at 108.53% 0%), clear at the
+                // top right, dark toward the bottom left; drawn as a circle in a box stretched taller
+                // by the ellipse's proportions, then squeezed back
+                Shape {
+                    id: shade
+                    readonly property real k: 1.2852 * parent.width / Math.max(1, parent.height)
+                    width: parent.width
+                    height: parent.height * k
+                    transform: Scale { yScale: 1 / shade.k }
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        strokeColor: "transparent"; strokeWidth: 0
+                        fillGradient: RadialGradient {
+                            centerX: 1.0853 * card.artW; centerY: 0; centerRadius: 1.2852 * card.artW
+                            focalX: centerX; focalY: 0; focalRadius: 0
+                            GradientStop { position: 0; color: Qt.rgba(0, 0, 0, 0) }
+                            GradientStop { position: 0.1179; color: Qt.rgba(0, 0, 0, 0.008) }
+                            GradientStop { position: 0.2138; color: Qt.rgba(0, 0, 0, 0.027) }
+                            GradientStop { position: 0.2912; color: Qt.rgba(0, 0, 0, 0.055) }
+                            GradientStop { position: 0.3534; color: Qt.rgba(0, 0, 0, 0.098) }
+                            GradientStop { position: 0.4037; color: Qt.rgba(0, 0, 0, 0.145) }
+                            GradientStop { position: 0.4456; color: Qt.rgba(0, 0, 0, 0.2) }
+                            GradientStop { position: 0.4824; color: Qt.rgba(0, 0, 0, 0.263) }
+                            GradientStop { position: 0.5176; color: Qt.rgba(0, 0, 0, 0.33) }
+                            GradientStop { position: 0.5544; color: Qt.rgba(0, 0, 0, 0.396) }
+                            GradientStop { position: 0.5963; color: Qt.rgba(0, 0, 0, 0.48) }
+                            GradientStop { position: 0.6466; color: Qt.rgba(0, 0, 0, 0.56) }
+                            GradientStop { position: 0.7088; color: Qt.rgba(0, 0, 0, 0.64) }
+                            GradientStop { position: 0.7862; color: Qt.rgba(0, 0, 0, 0.718) }
+                            GradientStop { position: 0.8821; color: Qt.rgba(0, 0, 0, 0.84) }
+                            GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.9) }
+                        }
+                        startX: 0; startY: 0
+                        PathLine { x: shade.width; y: 0 }
+                        PathLine { x: shade.width; y: shade.height }
+                        PathLine { x: 0; y: shade.height }
+                        PathLine { x: 0; y: 0 }
+                    }
+                }
+                Icon {                       // the glass: its drawing 30 px across, 18 in and 24 down
+                    x: 14 * Y.u; y: 20 * Y.u
+                    name: "search"; size: 38 * Y.u; weight: 2.5
+                    color: card.on ? Y.text : "white"; opacity: card.on ? 1 : 0.7   // (white at 70%)
+                }
+                Text {                       // the name: up to two lines, its foot 18 above the picture's
+                    x: 18 * Y.u
+                    anchors { bottom: parent.bottom; bottomMargin: 18 * Y.u }
+                    width: parent.width - 36 * Y.u
+                    text: card.title
+                    color: card.on ? Y.text : Qt.rgba(1, 1, 1, 0.7)
+                    font.family: Y.font; font.pixelSize: 30 * Y.u; font.weight: Font.Bold
+                    lineHeightMode: Text.FixedHeight; lineHeight: 42 * Y.u
+                    wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                }
+            }
+        }
         Corners {                            // (over the red bar too: its ends follow the rounding)
             anchors.fill: parent
             z: 1
-            r: card.round ? width / 2 : Y.radius
+            r: card.round ? width / 2 : card.corner
             color: card.behind
             lower: !card.box
             visible: card.behind.a > 0
@@ -147,7 +211,7 @@ Item {
     // views and age 37 under that: badges always sit in a line of text, before it
     Column {
         id: caption
-        visible: !card.box && card.captioned
+        visible: !card.box && card.captioned && !card.topic
         anchors { left: art.left; top: art.bottom; topMargin: 23 * Y.u }
         width: card.artW
         // YouTube's lines, and the views and age from the video's page when its card left them out
@@ -252,7 +316,7 @@ Item {
         x: -Y.ring; y: -Y.ring
         width: card.artW + 2 * Y.ring
         height: (card.box ? art.height + panel.height : art.height) + 2 * Y.ring
-        radius: (card.round ? card.thumbH / 2 : Y.radius) + Y.ring
+        radius: (card.round ? card.thumbH / 2 : card.corner) + Y.ring
         color: "transparent"
         border.color: Y.text
         border.width: Y.ring
