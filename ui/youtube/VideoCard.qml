@@ -114,15 +114,21 @@ Item {
                         fillGradient: RadialGradient {
                             centerX: 1.0853 * card.artW; centerY: 0; centerRadius: 1.2852 * card.artW
                             focalX: centerX; focalY: 0; focalRadius: 0
-                            GradientStop { position: 0; color: "#00000000" }
+                            GradientStop { position: 0; color: Qt.rgba(0, 0, 0, 0) }
                             GradientStop { position: 0.1179; color: Qt.rgba(0, 0, 0, 0.008) }
                             GradientStop { position: 0.2138; color: Qt.rgba(0, 0, 0, 0.027) }
                             GradientStop { position: 0.2912; color: Qt.rgba(0, 0, 0, 0.055) }
                             GradientStop { position: 0.3534; color: Qt.rgba(0, 0, 0, 0.098) }
-                            GradientStop { position: 0.43; color: Qt.rgba(0, 0, 0, 0.17) }
-                            GradientStop { position: 0.57; color: Qt.rgba(0, 0, 0, 0.42) }
-                            GradientStop { position: 0.75; color: Qt.rgba(0, 0, 0, 0.68) }
-                            GradientStop { position: 0.9; color: Qt.rgba(0, 0, 0, 0.85) }
+                            GradientStop { position: 0.4037; color: Qt.rgba(0, 0, 0, 0.145) }
+                            GradientStop { position: 0.4456; color: Qt.rgba(0, 0, 0, 0.2) }
+                            GradientStop { position: 0.4824; color: Qt.rgba(0, 0, 0, 0.263) }
+                            GradientStop { position: 0.5176; color: Qt.rgba(0, 0, 0, 0.33) }
+                            GradientStop { position: 0.5544; color: Qt.rgba(0, 0, 0, 0.396) }
+                            GradientStop { position: 0.5963; color: Qt.rgba(0, 0, 0, 0.48) }
+                            GradientStop { position: 0.6466; color: Qt.rgba(0, 0, 0, 0.56) }
+                            GradientStop { position: 0.7088; color: Qt.rgba(0, 0, 0, 0.64) }
+                            GradientStop { position: 0.7862; color: Qt.rgba(0, 0, 0, 0.718) }
+                            GradientStop { position: 0.8821; color: Qt.rgba(0, 0, 0, 0.84) }
                             GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.9) }
                         }
                         startX: 0; startY: 0
