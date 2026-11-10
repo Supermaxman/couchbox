@@ -68,6 +68,15 @@ X
     systemctl set-default graphical.target >/dev/null 2>&1 || true
     systemctl enable sddm.service NetworkManager.service >/dev/null 2>&1 || true
     systemctl disable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+    # ... and only NetworkManager: unlocking the disk over the network leaves the initrd's
+    # catch-all DHCP config in /run/systemd/network, so a running systemd-networkd would manage
+    # wlan0 too, a second DHCP client beside NetworkManager's. Off from the next boot (stopping it
+    # now would drop the address it holds). Disabled, not masked: dracut copies a mask into the
+    # initrd, where networkd brings up the network that unlocks the disk.
+    for u in systemd-networkd.service systemd-networkd.socket systemd-networkd-varlink.socket \
+             systemd-networkd-varlink-metrics.socket systemd-networkd-resolve-hook.socket; do
+        systemctl disable "$u" >/dev/null 2>&1 || true   # (its sockets would start it again)
+    done
     # SSH starts only when Settings turns it on
     if ! grep -q '"ssh.enabled": true' /etc/couchbox/settings.json 2>/dev/null; then
         systemctl disable ssh.service ssh.socket >/dev/null 2>&1 || true

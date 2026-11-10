@@ -1,0 +1,12 @@
+[Unit]
+Description=Couchbox Wi-Fi watch: reconnects the Wi-Fi when the router stops answering
+Documentation=file:///usr/lib/couchbox/bin/couchbox-wifi-watch
+After=NetworkManager.service
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-wifi-watch
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
