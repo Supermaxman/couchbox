@@ -1,0 +1,11 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Description": "Couchbox: the boot screen's last steps, until Home is up",
+        "Id": "org.couchbox.boot",
+        "License": "Apache-2.0",
+        "Name": "Couchbox boot",
+        "Version": "1.0"
+    },
+    "X-Plasma-MainScript": "defaults"
+}

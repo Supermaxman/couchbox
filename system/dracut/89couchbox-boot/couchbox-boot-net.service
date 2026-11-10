@@ -1,0 +1,13 @@
+# initrd, network unlock only: the boot screen learns whether the network came up. Waits by
+# itself (Type=simple) so a passphrase typed meanwhile never waits for the network.
+[Unit]
+Description=Couchbox boot screen: network up or not
+DefaultDependencies=no
+ConditionKernelCommandLine=rd.neednet=1
+After=couchbox-boot-begin.service
+
+[Service]
+ExecStart=/usr/bin/couchbox-boot-status net
+
+[Install]
+WantedBy=initrd.target
