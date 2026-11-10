@@ -58,5 +58,7 @@ Item {
     Timer { id: recheck; interval: 400; repeat: true; property int n: 0
             onTriggered: { round.check(); if (round.ready || ++n > 10) { stop(); n = 0; } } }
     onUrlChanged: begin()
+    property int retry: Y.retry               // online again: a picture that didn't come, again
+    onRetryChanged: if (!ready) begin()
     Component.onCompleted: begin()
 }
