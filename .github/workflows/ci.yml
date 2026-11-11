@@ -88,7 +88,9 @@ jobs:
               echo "::error::package scripts stop or restart the updater on upgrade"; exit 1; fi
             mkdir -p /src/build && cp ../couchbox_*.deb /src/build/'
       - name: install into a clean Ubuntu 26.10
-        run: docker run --rm -v "$PWD/build:/debs" ubuntu:26.10 sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /debs/couchbox_*.deb >/tmp/apt.log 2>&1 || { tail -40 /tmp/apt.log; exit 1; }; couchbox doctor --container && couchbox config set voice.mode dictation && couchbox config get voice.mode && apt-get purge -y -qq couchbox >/dev/null && test ! -e /etc/couchbox'
+        # --network host: on the arm runner's 2026-11-01 image a container on docker's own network
+        # can't resolve names (apt: Could not resolve 'ports.ubuntu.com')
+        run: docker run --rm --network host -v "$PWD/build:/debs" ubuntu:26.10 sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /debs/couchbox_*.deb >/tmp/apt.log 2>&1 || { tail -40 /tmp/apt.log; exit 1; }; couchbox doctor --container && couchbox config set voice.mode dictation && couchbox config get voice.mode && apt-get purge -y -qq couchbox >/dev/null && test ! -e /etc/couchbox'
       - uses: actions/upload-artifact@v4
         with:
           name: deb
