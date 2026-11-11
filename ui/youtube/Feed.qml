@@ -67,9 +67,16 @@ FocusScope {
     // the rows the list shows, by their place in rows: more shelves are added to it, never the
     // list made again (its rows' pictures blinked and their cards slid back, as more came)
     ListModel { id: rowModel }
+    // what the list's rows show, changed in place only: a row on its way out (its delegate isn't
+    // destroyed at once) keeps its own row. Read from rows, a new page made each row show the new
+    // page's row at its index for a moment (another kind, or none), and Qt crashed when that
+    // changed a shelf's scrolling as it went (Refresh at the end of a long Home: a short new one).
+    property var shown: []
     function remodel() {
         rowModel.clear();
-        if (rows.length) rowModel.append(rows.map((_, k) => ({k: k})));
+        shown.length = 0;
+        for (const r of rows) shown.push(r);
+        if (shown.length) rowModel.append(shown.map((_, k) => ({k: k})));
     }
     onRowsChanged: remodel()
     Component.onCompleted: remodel()
@@ -96,7 +103,7 @@ FocusScope {
         delegate: Loader {
             id: cell
             required property int k
-            readonly property var modelData: feed.rows[k] || ({})
+            readonly property var modelData: feed.shown[k] || ({})
             required property int index
             readonly property bool current: ListView.isCurrentItem
             width: list.width
@@ -195,8 +202,8 @@ FocusScope {
                                                               : Object.assign({kind: "shelf"}, s));
             more = r.more || "";
             // added where they go (rows itself grows in place: what's on screen stays as it is)
-            const base = rows.length;
-            for (const x of add) rows.push(x);
+            const base = shown.length;
+            for (const x of add) { rows.push(x); shown.push(x); }
             if (add.length) rowModel.append(add.map((_, j) => ({k: base + j})));
         }, () => { if (feed) feed.loading = false; });
     }
