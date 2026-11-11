@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.4](https://github.com/Supermaxman/couchbox/compare/v0.20.3...v0.20.4) (2026-11-11)
+
+
+### Fixed
+
+* **network:** the Wi-Fi reconnects by itself when the router stops answering; NetworkManager alone runs the network ([#120](https://github.com/Supermaxman/couchbox/issues/120)) ([424ea61](https://github.com/Supermaxman/couchbox/commit/424ea61e3adb486f78792f962b5858a64e26992d))
+
 ## [0.20.3](https://github.com/Supermaxman/couchbox/compare/v0.20.2...v0.20.3) (2026-11-09)
 
 
