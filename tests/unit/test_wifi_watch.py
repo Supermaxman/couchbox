@@ -53,8 +53,7 @@ def run(tmp: Path, loops: int, dead=(3, 99), state: str | None = None, ethernet=
         (tmp / "router").write_text(state + "\n")
     if ethernet:
         (tmp / "ethernet").touch()
-    env = {**os.environ, "T": str(tmp), "PATH": f"{bin_}:{os.environ['PATH']}",
-           "DEAD_FROM": str(dead[0]), "DEAD_TO": str(dead[1])}
+    env = {**os.environ, "T": str(tmp), "PATH": f"{bin_}:{os.environ['PATH']}", "DEAD_FROM": str(dead[0]), "DEAD_TO": str(dead[1])}
     p = subprocess.Popen(["bash", str(tmp / "watch")], env=env, stdout=subprocess.PIPE, text=True)
     deadline = time.time() + 20
     while len((tmp / "loops").read_text().splitlines()) < loops and time.time() < deadline:
