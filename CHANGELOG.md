@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/Supermaxman/couchbox/compare/v0.23.0...v0.24.0) (2026-11-12)
+
+
+### New
+
+* **frigate:** While you were out: back home, a card on Home offers a short silent reel of what the cameras saw ([#131](https://github.com/Supermaxman/couchbox/issues/131)) ([93d805d](https://github.com/Supermaxman/couchbox/commit/93d805d59564ea3b628dcc166b9b367cce7ef069))
+
+
+### Fixed
+
+* **ci:** install-to-SSD loop check no longer races its own partition re-read ([#130](https://github.com/Supermaxman/couchbox/issues/130)) ([ddf7b21](https://github.com/Supermaxman/couchbox/commit/ddf7b217e99217a672c918acf6e38dc62c940b09))
+
 ## [0.23.0](https://github.com/Supermaxman/couchbox/compare/v0.22.0...v0.23.0) (2026-11-12)
 
 
