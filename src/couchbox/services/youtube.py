@@ -2141,7 +2141,7 @@ class Demo(YouTube):
                 "header": None,
             }
         o = 32 * again
-        return {
+        page = {
             "shelves": [
                 self._shelf("Recommended", o),
                 self._shelf("New to you", o + 8),
@@ -2182,6 +2182,9 @@ class Demo(YouTube):
             "nudge": None,
             "header": None,
         }
+        if again:  # Home again (Refresh): its first page much shorter than the whole Home it replaces, as YouTube's is
+            page["shelves"] = page["shelves"][:2] + page["shelves"][-1:]
+        return page
 
     def browse(self, browse_id, params=""):
         if browse_id in ("FEhistory", "VLWL", "FEplaylist_aggregation", "VLLM"):
