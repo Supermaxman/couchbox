@@ -21,7 +21,7 @@ from couchbox import appctl, secrets, settings
 from couchbox import apps as registry
 from couchbox.services import weather
 
-from . import cdp, streaming, ytnative
+from . import cdp, streaming, watching, ytnative
 
 TV_USER = "tv"
 APP_DIRS = [
@@ -1161,6 +1161,19 @@ def _schemas(st=None):
             ),
         ),
         fn(
+            "watching",
+            "The video playing now (Jellyfin, YouTube) as subtitles and a picture: questions about it, recaps, jumping to a moment.",
+            s(
+                action=act(
+                    ["story", "recent", "find"],
+                    "story: who's this, what's going on, any question about it so far · recent: what did I miss (the last "
+                    "minutes, default 5) · find: the moment described in query, to jump there with media seek",
+                ),
+                minutes={"type": "number"},
+                query=q,
+            ),
+        ),
+        fn(
             "remote",
             "Press remote keys (last resort): up down left right ok back home menu play_pause; 'down*3' repeats.",
             s(keys={"type": "array", "items": {"type": "string"}, "req": True}),
@@ -1212,6 +1225,7 @@ def status_text(name, args):
         "page": lambda: {"read": "Reading the screen", "click": f"Selecting {a.get('target')}", "type": f"Typing “{a.get('text')}”"}.get(
             a.get("action"), "Navigating"
         ),
+        "watching": lambda: {"recent": "Catching up", "find": "Finding that moment"}.get(a.get("action"), "Reading along"),
         "media": lambda: {"status": "Checking what's playing"}.get(a.get("action"), a.get("action", "").capitalize()),
         "remote": lambda: "Pressing " + ", ".join(a.get("keys") or []),
         "tv": lambda: "TV " + str(a.get("action", "")).replace("_", " "),
@@ -1560,6 +1574,10 @@ def movies_tool(action, query=None, type=None, role=None):
     return movie_summary(t)
 
 
+RESULT_CHARS = {"watching": watching.RESULT_CHARS}  # the model reads more of these than TOOL_RESULT_CHARS
+QUICK = {"watching"}  # answered without the model's thinking first: a long text to think over, a minute or more
+
+
 def run_tool(name, args):
     if name in disabled_tools(settings.load()):
         return f"{name} isn't available on this box."
@@ -1569,6 +1587,7 @@ def run_tool(name, args):
         "jellyfin": lambda: jellyfin(args["action"], args.get("query"), args.get("id")),
         "page": lambda: page(args["action"], args.get("target"), args.get("text"), bool(args.get("submit"))),
         "media": lambda: media(args["action"], args.get("seconds")),
+        "watching": lambda: watching.run(args["action"], args.get("minutes"), args.get("query")),
         "remote": lambda: press(args.get("keys") or []),
         "tv": lambda: tv(args["action"], args.get("times") or 1),
         "seerr": lambda: seerr(args["action"], args.get("query"), args.get("id"), args.get("type")),
@@ -1584,7 +1603,8 @@ def run_tool(name, args):
     if not fn:
         return f"Unknown tool {name}."
     try:
-        return str(fn())
+        out = fn()
+        return out if isinstance(out, str) else str(out)  # (watching's Text keeps its picture)
     except KeyError as err:
         return f"Missing argument {err}."
     except Exception as err:  # report to the model, which can try something else

@@ -34,6 +34,25 @@ class Cancelled(Exception):
     pass
 
 
+class PicturesRefused(Exception):
+    """The model server turned down a request with a picture in it (a model that reads text only)."""
+
+
+SCREEN_NOTE = "The TV screen now (the assistant's own bubble may show at the bottom; ignore it):"
+NO_PICTURE = "[a picture of the screen]"
+
+
+def has_picture(messages):
+    return any(isinstance(m.get("content"), list) for m in messages)
+
+
+def drop_pictures(messages):
+    """The pictures in messages replaced by a note (after the request, or for a text-only model)."""
+    for m in messages:
+        if isinstance(m.get("content"), list):
+            m["content"] = " ".join(p.get("text", "") for p in m["content"] if p.get("type") == "text") + " " + NO_PICTURE
+
+
 class Agent:
     def __init__(self, url, model, key, log):
         self.url, self.model, self.key, self.log = url.rstrip("/"), model, key, log
@@ -42,12 +61,18 @@ class Agent:
         self.last = 0.0
         self.asked = False  # the last reply was a question
         self.tool_list = None  # this request's tools: the same for each of its steps
+        self.pictures = True  # the model takes pictures (until its server says otherwise)
+        self.no_think = True  # the server takes chat_template_kwargs (llama.cpp, vLLM: not OpenAI's)
 
     # -------------------------------------------------------------- model calls
-    def chat(self, messages, with_tools=True, cancel=None):
+    def chat(self, messages, with_tools=True, cancel=None, quick=False):
+        """quick: without the model's thinking first (a reasoning model can spend minutes thinking
+        over a long text), where the server lets that be asked for."""
         body = {"model": self.model, "messages": messages}
         if with_tools:
             body["tools"] = self.tool_list or tools.schemas()
+        if quick and self.no_think:
+            body["chat_template_kwargs"] = {"enable_thinking": False}
         for attempt, delay in enumerate((0,) + RETRY_DELAYS):
             if delay:
                 self.log(f"retrying the model in {delay}s")
@@ -57,8 +82,16 @@ class Agent:
                     time.sleep(0.1)
             try:
                 r = requests.post(f"{self.url}/chat/completions", json=body, timeout=300, headers={"Authorization": f"Bearer {self.key}"})
+                if r.status_code == 400 and "chat_template_kwargs" in body and "chat_template_kwargs" in r.text:
+                    self.log("the model server doesn't take chat_template_kwargs: thinking stays on")
+                    self.no_think = False
+                    return self.chat(messages, with_tools, cancel)
                 if r.status_code == 400 and "context" in r.text.lower() and with_tools:
                     raise OverflowError(r.text[:200])
+                refused = r.status_code < 500 or re.search(r"image|vision|multimodal|mmproj", r.text, re.I)
+                if r.status_code >= 400 and r.status_code != 429 and refused and has_picture(messages):
+                    self.log(f"model HTTP {r.status_code} with a picture: {r.text[:200]}")
+                    raise PicturesRefused
                 if r.status_code >= 500 or r.status_code == 429:
                     self.log(f"model HTTP {r.status_code}: {r.text[:200]}")
                     continue
@@ -158,11 +191,7 @@ class Agent:
             if cancel.is_set():
                 raise Cancelled
             status("thinking", "Thinking")
-            try:
-                msg = self.chat([self.system()] + self.history(), cancel=cancel)
-            except OverflowError:
-                self.compact(cancel)
-                msg = self.chat([self.system()] + self.history(), cancel=cancel)
+            msg = self.step(turn, cancel)
             if cancel.is_set():
                 raise Cancelled
             calls = msg.get("tool_calls") or []
@@ -171,11 +200,13 @@ class Agent:
                 entry["tool_calls"] = calls
             turn.append(entry)
             if not calls:
-                reply = (msg.get("content") or "Done.").strip()
+                drop_pictures(turn)  # (kept out of a follow-up's history: only this request needed it)
+                reply = re.sub(r"\n\s*\n+", "\n", (msg.get("content") or "Done.").strip())  # lines, not paragraphs
                 self.asked = reply.endswith("?")
                 self.last = time.time()
                 self.log(f"reply: {reply}")
                 return reply
+            pictures = []
             for c in calls:
                 name = c["function"]["name"]
                 try:
@@ -193,5 +224,28 @@ class Agent:
                     self.log(f"tool {name} {json.dumps(args)}")
                     result = tools.run_tool(name, args)
                 self.log(f"  -> {result[:300]!r}")
-                turn.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": result[:TOOL_RESULT_CHARS]})
+                limit = tools.RESULT_CHARS.get(name, TOOL_RESULT_CHARS)
+                turn.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": str(result)[:limit]})
+                if getattr(result, "image", None) and self.pictures:
+                    pictures.append(result.image)
+            if pictures:  # tool results are text: a picture goes to the model as the user's
+                content = [{"type": "text", "text": SCREEN_NOTE}]
+                content += [{"type": "image_url", "image_url": {"url": url}} for url in pictures[-1:]]
+                turn.append({"role": "user", "content": content})
+        drop_pictures(turn)
         return "I couldn't finish that in time."
+
+    def step(self, turn, cancel):
+        """One model call on the whole conversation: compacted when it's too long for the model,
+        without its pictures when the model doesn't take them."""
+        quick = any(c["function"]["name"] in tools.QUICK for m in turn for c in m.get("tool_calls") or [])
+        for _ in range(3):
+            try:
+                return self.chat([self.system()] + self.history(), cancel=cancel, quick=quick)
+            except OverflowError:
+                self.compact(cancel)
+            except PicturesRefused:
+                self.log("the model doesn't take pictures: answering from the text")
+                self.pictures = False
+                drop_pictures(turn)
+        return self.chat([self.system()] + self.history(), cancel=cancel, quick=quick)

@@ -10,7 +10,7 @@ import org.kde.layershell 1.0 as LayerShell
 Window {
     id: win
     width: Screen.width
-    height: 240
+    height: 380
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
     visible: false
@@ -38,8 +38,9 @@ Window {
             if (!s) { shown = false; return; }
             st = s;
             const age = s.now - s.t;
-            // long enough to read; a question waits for the answer (hold the mic button)
-            const linger = s.question ? 120 : Math.min(8, 3 + (s.reply || "").length / 25);
+            // long enough to read (a recap of three lines: 15 s or so); a question waits for the
+            // answer (hold the mic button)
+            const linger = s.question ? 120 : Math.min(20, 3 + (s.reply || "").length / 16);
             // a notice (the TV switching its refresh rate): for as long as it asked
             shown = s.phase === "notice" ? age < (s.linger || 0)
                   : s.phase !== "idle" && !((s.phase === "done" || s.phase === "error") && age > linger);
@@ -183,7 +184,7 @@ Window {
                     font.pixelSize: 22
                     font.weight: Font.Medium
                     wrapMode: Text.WordWrap
-                    maximumLineCount: 3
+                    maximumLineCount: 7
                     elide: Text.ElideRight
                 }
                 Text {
