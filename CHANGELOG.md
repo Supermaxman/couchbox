@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.5](https://github.com/Supermaxman/couchbox/compare/v0.20.4...v0.20.5) (2026-11-12)
+
+
+### Fixed
+
+* **youtube:** Refresh at the end of Home no longer crashes the app ([#122](https://github.com/Supermaxman/couchbox/issues/122)) ([4c50a74](https://github.com/Supermaxman/couchbox/commit/4c50a74269712fc23422d2274a7b4ec30ab69db0))
+
 ## [0.20.4](https://github.com/Supermaxman/couchbox/compare/v0.20.3...v0.20.4) (2026-11-11)
 
 
