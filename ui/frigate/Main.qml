@@ -29,7 +29,7 @@ ApplicationWindow {
     property int section: 0                  // 0 live, 1 review, 2 timeline, 3 pop-ups
     property int group: 0
     property var alerts: []
-    property string overlay: ""              // "" | camera | player
+    property string overlay: ""              // "" | camera | player | reel
     property string playerFrom: ""           // where Back from a recording goes
     property var typed: null                 // the keyboard pop-up types for this
 
@@ -92,7 +92,8 @@ ApplicationWindow {
     }
     function closePlayer() {
         player.stop();
-        if (playerFrom === "camera") { overlay = "camera"; camera.forceActiveFocus(); camera.start(); }
+        if (playerFrom === "reel") { overlay = "reel"; reel.forceActiveFocus(); reel.play(); }
+        else if (playerFrom === "camera") { overlay = "camera"; camera.forceActiveFocus(); camera.start(); }
         else if (playerFrom === "timeline") { overlay = ""; timeline.forceActiveFocus(); }
         else { overlay = ""; focusPage(); refresh(); if (section === 1) review.load(); }
         updateState();
@@ -104,7 +105,24 @@ ApplicationWindow {
         timeline.forceActiveFocus();
         updateState();
     }
-    function stopVideo() { camera.stop(); player.stop(); }
+    function stopVideo() { camera.stop(); player.stop(); reel.stop(); }
+    // While you were out: the home screen card's reel; leaving it (or its end) goes back home
+    function openReel() {
+        F.call("reel", {}, r => {
+            if (!r.clips.length) { toast.show("Nothing new from the cameras."); return; }
+            stopVideo();
+            reel.clips = r.clips;
+            overlay = "reel";
+            reel.forceActiveFocus();
+            reel.start(0);
+            updateState();
+        }, e => toast.show(e));
+    }
+    function leaveReel(watched) {
+        reel.stop();
+        if (watched) F.call("reelSeen", {}, () => Qt.quit(), () => Qt.quit());
+        else Qt.quit();
+    }
     function openFromArgs() {
         const o = arg("--open");
         if (o) openTarget(o);
@@ -121,6 +139,7 @@ ApplicationWindow {
             stopVideo(); overlay = ""; section = 1; review.tab = o === "detections" ? 1 : 0; focusPage();
         } else if (o === "live") { stopVideo(); overlay = ""; section = 0; focusPage(); }
         else if (o === "popups") { stopVideo(); overlay = ""; section = 3; focusPage(); }
+        else if (o === "reel") openReel();
         else if (o === "timeline" || o.startsWith("timeline:")) {
             const name = o.slice(9).toLowerCase();
             const c = F.cameras.find(x => x.name === name || x.label.toLowerCase() === name);
@@ -130,7 +149,8 @@ ApplicationWindow {
         }
     }
     function updateState() {
-        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : ["live", "review", "timeline", "popups"][section],
+        const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : overlay === "reel" ? "while you were out"
+                          : ["live", "review", "timeline", "popups"][section],
                     group: (F.groups[group] || {}).name || ""};
         if (overlay === "camera") st.camera = camera.cam.label;
         if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + F.seen(player.r);
@@ -236,6 +256,16 @@ ApplicationWindow {
         onOpenReview: (r, list) => win.openReview(r, list, "camera")
         onOpenTimeline: name => win.openTimeline(name)
         onIndexChanged: win.updateState()
+    }
+    ReelPage {
+        id: reel
+        anchors.fill: parent
+        visible: win.overlay === "reel"
+        video: video
+        stills: noVideo
+        onOpenClip: c => win.openReview(c.r, [c.r], "reel")
+        onClosed: win.leaveReel(false)
+        onFinished: win.leaveReel(true)
     }
     PlayerView {
         id: player

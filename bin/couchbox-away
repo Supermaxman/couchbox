@@ -1,0 +1,324 @@
+#!/usr/bin/python3
+"""couchbox-away: "While you were out" for the home screen (couchbox.away). Runs in the TV session
+as the TV user (couchbox-away.service), with the Frigate app's saved sign-in.
+
+Every few seconds it notes whether the household is out: a leaving Moment was started, or the
+TV has been unused (no remote press, nothing playing) for 3 hours. While they're out it looks at
+Frigate's alerts and detections every 10 minutes; the assistant's model (couchbox-voice's
+/look) looks at three frames of the most promising ones, scores how lively each is and captions
+it, and the clips that would make the reel are downloaded ahead. When the remote is pressed
+again, the reel (~/.cache/couchbox-away/reel.json, its clips beside it) and the home screen's
+card are ready within seconds. Nothing worth showing: no card.
+
+  couchbox-away                  run the service
+  couchbox-away --status         whether the household is out, since when, what was found so far
+  couchbox-away --now HOURS      make the reel of the last HOURS now (as if the household had just
+                                 come home) and put the card on the home screen; says how long
+                                 each step took
+  couchbox-away --forget         take the card off the home screen
+"""
+import base64
+import json
+import os
+import signal
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import requests
+
+from couchbox import away, moments, paths, session, settings
+
+TICK = 5               # seconds between looks at the remote
+PLAYING_EVERY = 30     # ... and at what's playing (D-Bus calls)
+QUIET = 60             # while turned off or not set up: how often to check again
+VOICE = "http://127.0.0.1:8790"
+FINAL_BUDGET = 12      # seconds of model looks once the household is back (the card waits for them)
+NO_MODEL_RETRY = 3600  # no model, or one that can't see: ask again this much later
+FRAME = 540            # the frames' height for the model (a cat and a small dog apart at night)
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def arg(name, default=""):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else default
+
+
+def last_key():
+    try:
+        return (paths.run() / session.LAST_KEY).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+class Service:
+    def __init__(self):
+        self.state_file = away.data_dir() / "state.json"
+        st = away.read_json(self.state_file, {}) or {}
+        self.tracker = away.Tracker(st.get("tracker"))
+        self.cands = {c["id"]: c for c in st.get("cands") or []}   # this absence's candidates (with what the model said)
+        self.swept = float(st.get("swept") or 0)
+        self.swept_to = float(st.get("sweptTo") or 0)   # the end of the stretch the last sweep read
+        self.f = None
+        self.f_url = None
+        self.side = {}
+        self.names = {}
+        self.no_model_until = 0.0
+        self.said = ""
+        self.playing = False
+        self.playing_at = 0.0
+
+    def save(self):
+        away.write_json(self.state_file, {"tracker": self.tracker.st, "cands": list(self.cands.values()), "swept": self.swept, "sweptTo": self.swept_to})
+
+    def note(self, problem):
+        if problem != self.said:
+            log(f"{problem} (trying again quietly)" if problem else "Frigate answering again")
+            self.said = problem
+
+    # ------------------------------------------------------------------ Frigate
+    def frigate(self):
+        """The Frigate client, or None (turned off, not set up, not signed in)."""
+        from couchbox.services import frigate
+
+        s = settings.load()
+        if not s["home.away"] or not s["media.frigate.url"]:
+            return None
+        if self.f is None or self.f_url != s["media.frigate.url"]:
+            self.f, self.f_url, self.side = frigate.Frigate(s["media.frigate.url"]), s["media.frigate.url"], {}
+        if not self.f.signed_in:
+            self.f = None                    # (signed in later in the Frigate app: read again next time)
+            self.note("Frigate: not signed in on this TV")
+            return None
+        if not self.side:
+            cfg = self.f.raw_config()
+            self.side = away.sides(cfg)
+            self.names = {n: away.camera_name(n, c.get("friendly_name") or "") for n, c in (cfg.get("cameras") or {}).items()}
+            log("cameras: outside " + (", ".join(c for c, o in self.side.items() if o) or "none")
+                + "; inside " + (", ".join(c for c, o in self.side.items() if not o) or "none"))
+        return self.f
+
+    # ------------------------------------------------------------------ looking
+    def look(self, c):
+        """The model's look at one candidate: True when it answered, False to stop asking for now."""
+        if time.time() < self.no_model_until:
+            return False
+        times, images = [], []
+        for t in away.frame_times(c):          # (a moment Frigate kept no recording of: left out)
+            try:
+                images.append("data:image/jpeg;base64," + base64.b64encode(self.f.frame_jpeg(c["camera"], t, height=FRAME)).decode())
+                times.append(t)
+            except requests.HTTPError:
+                pass
+        if not images:
+            c["tries"] = c.get("tries", 0) + 1
+            return True
+        prompt = away.look_prompt(c, self.names.get(c["camera"], c["camera"]))
+        try:
+            r = requests.post(f"{VOICE}/look", json={"prompt": prompt, "images": images},
+                              headers={"X-Couchbox": "1"}, timeout=90)
+        except requests.RequestException as err:
+            log(f"the model isn't reachable through couchbox-voice: {err}")
+            self.no_model_until = time.time() + 300
+            return False
+        if r.status_code == 409:              # someone is using the assistant: later
+            return False
+        if r.status_code in (404, 501, 503):  # no model, one that reads text only, an older couchbox-voice
+            log(f"no model to look at the clips ({r.status_code}): choosing by Frigate's labels")
+            self.no_model_until = time.time() + NO_MODEL_RETRY
+            return False
+        c["tries"] = c.get("tries", 0) + 1
+        res = away.parse_look(r.json().get("text", "")) if r.ok else None
+        if res:
+            c.update(res, best_t=times[min(res["best"], len(times)) - 1])
+        else:
+            log(f"model on {c['id']}: {r.status_code} {r.text[:200]}")
+        return True
+
+    def sweep(self, since, until, budget=None, stop=lambda: False, rate=away.RATE_PER_SWEEP):
+        """Frigate's review items of the absence so far -> candidates; the model looks at the most
+        promising new ones (for at most budget seconds)."""
+        t0 = time.monotonic()
+        # since the last sweep (an hour back: items that hadn't ended then), else the whole absence
+        after = max(since, self.swept_to - 3600) if self.swept_to else since
+        rows = self.f.review_rows(after, until)
+        for c in away.candidates(rows, self.side, since, until):
+            if c["id"] not in self.cands:
+                self.cands[c["id"]] = c
+            else:
+                self.cands[c["id"]]["end"] = c["end"]
+        todo = sorted((c for c in self.cands.values() if c.get("lively") is None and c.get("tries", 0) < 2),
+                      key=lambda c: -c["score"])[:rate]
+        looked = 0
+        for c in todo:
+            if stop() or (budget is not None and time.monotonic() - t0 > budget):
+                break
+            if not self.look(c):
+                break
+            looked += 1
+        self.swept, self.swept_to = time.time(), until
+        log(f"swept {away.length(until - since)} of absence: {len(rows)} new review items, {len(self.cands)} worth a look, "
+            f"{looked} looked at by the model ({time.monotonic() - t0:.1f}s)")
+        return looked
+
+    # ------------------------------------------------------------------ the reel
+    def fetch(self, picks):
+        """Download each pick's clip and a still of it (kept from earlier sweeps when already there)."""
+        d = away.cache_dir()
+        d.mkdir(parents=True, exist_ok=True)
+
+        def one(c):
+            s, e = away.clip_window(c)
+            key = f"{c['id']}-{s:.0f}".replace("/", "_")
+            clip, still = d / f"{key}.mp4", d / f"{key}.jpg"
+            try:
+                if not clip.exists():
+                    self.f.save_clip(c["camera"], s, e, str(clip))
+                for t in (s + away.CLIP * 0.4, c["start"] + 1, c["thumb"]):   # (a second Frigate didn't keep: the next)
+                    if still.exists() or not t:
+                        break
+                    try:
+                        still.write_bytes(self.f.frame_jpeg(c["camera"], t, height=720))
+                    except requests.HTTPError:
+                        pass
+            except Exception as err:          # noqa: BLE001 - left out of the reel
+                log(f"clip of {c['id']}: {err}")
+                return None
+            return dict(c, file=str(clip), poster=str(still) if still.exists() else "", clipStart=s)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return [x for x in pool.map(one, picks) if x]
+
+    def make_reel(self, since, until):
+        """Choose, download and write the reel and its card; None when there's nothing worth showing."""
+        t0 = time.monotonic()
+        picks = away.choose(list(self.cands.values()))
+        got = self.fetch(picks)
+        if not got:
+            return None
+        clock24 = settings.derived()["clock24"]
+        clips = []
+        for c in got:
+            label = self.names.get(c["camera"], away.camera_name(c["camera"]))
+            clips.append({
+                "file": c["file"],
+                "poster": c["poster"],
+                "camera": c["camera"],
+                "cameraLabel": label,
+                "section": c["section"],
+                "at": c["start"],
+                "when": away.clock(c["start"], clock24),
+                "caption": away.caption(c, label, clock24),
+                "what": c.get("caption") or away.fallback_caption(c["objects"]),
+                "lively": c.get("lively"),
+                "review": {k: c[k] for k in ("id", "camera", "start", "end", "severity", "objects")},
+            })
+        reel = {"since": since, "until": until, "made": time.time(), "clips": clips,
+                "card": away.card(since, until, clips), "seen": None}
+        away.write_json(away.reel_file(), reel)
+        keep = {os.path.basename(x["file"]) for x in clips} | {os.path.basename(x["poster"]) for x in clips if x["poster"]}
+        for p in away.cache_dir().iterdir():
+            if p.name not in keep and p.suffix in (".mp4", ".jpg", ".part"):
+                p.unlink(missing_ok=True)
+        log(f"reel ready: {len(clips)} clips, {reel['card']['subtitle']} ({time.monotonic() - t0:.1f}s to download)")
+        return reel
+
+    def back(self, since, until):
+        """The household is home: the reel of their absence, and the card."""
+        if until - since < away.MIN_AWAY:
+            log(f"back after {away.length(until - since)}: too short for a reel")
+            self.cands = {}
+            return
+        log(f"back after {away.length(until - since)} ({time.strftime('%H:%M', time.localtime(since))} to now)")
+        try:
+            if self.frigate() is None:
+                self.cands = {}
+                return
+            self.sweep(since, until, budget=FINAL_BUDGET)
+            if not self.make_reel(since, until):
+                log("nothing worth showing: no card")
+                away.clear()
+        except Exception as err:              # noqa: BLE001 - no card this time
+            log(f"no reel: {err}")
+        self.cands, self.swept_to = {}, 0.0
+
+    # ------------------------------------------------------------------ the loop
+    def run(self):
+        while True:
+            try:
+                self.step()
+            except Exception as err:          # noqa: BLE001 - logged, tried again
+                log(f"error: {err}")
+                time.sleep(QUIET)
+            time.sleep(TICK)
+
+    def step(self):
+        now = time.time()
+        if now - self.playing_at >= PLAYING_EVERY:
+            self.playing, self.playing_at = session.anything_playing(), now
+        was_out = self.tracker.out
+        ev = self.tracker.tick(now, last_key(), self.playing, moments.left_at())
+        if self.tracker.out and not was_out:
+            log(f"out since {time.strftime('%H:%M', time.localtime(self.tracker.out))} ({self.tracker.st['why']})")
+            self.cands, self.swept, self.swept_to = {}, 0.0, 0.0
+        if ev:
+            self.save()
+            self.back(ev[1], ev[2])
+        elif self.tracker.out and now - self.swept >= away.SWEEP and now - self.tracker.out >= away.EDGE * 2:
+            try:
+                if self.frigate():
+                    start_key = last_key()
+                    self.sweep(self.tracker.out, now, stop=lambda: last_key() > start_key)
+                    self.note("")
+                else:
+                    self.swept = now
+            except Exception as err:          # noqa: BLE001 - Frigate out of reach: next sweep
+                self.swept = now
+                self.note(f"Frigate: {err}")
+        self.save()
+
+
+# ------------------------------------------------------------------ the command line
+def main():
+    if "--status" in sys.argv:
+        st = away.read_json(away.data_dir() / "state.json", {}) or {}
+        tr = st.get("tracker") or {}
+        fmt = lambda t: time.strftime("%a %H:%M", time.localtime(t)) if t else "-"  # noqa: E731
+        print(f"out:        {'since ' + fmt(tr.get('out')) + ' (' + tr.get('why', '') + ')' if tr.get('out') else 'no'}")
+        print(f"TV used:    {fmt(tr.get('busy'))}")
+        cands = st.get("cands") or []
+        print(f"found:      {len(cands)} worth a look, {sum(1 for c in cands if c.get('lively') is not None)} looked at by the model")
+        reel = away.current()
+        print(f"card:       {reel['card']['subtitle'] if reel else 'none'}")
+        return
+    if "--forget" in sys.argv:
+        away.clear()
+        print("The card is off the home screen.")
+        return
+    svc = Service()
+    if "--now" in sys.argv:
+        hours = float(arg("--now", "4"))
+        until = time.time()
+        since = until - hours * 3600
+        svc.cands, svc.swept_to = {}, 0.0
+        if not svc.frigate():
+            sys.exit("Frigate isn't set up or signed in on this TV (or While you were out is off in Settings).")
+        t0 = time.monotonic()
+        svc.sweep(since, until + away.EDGE, budget=600, rate=40)   # (the last minutes too: nobody is arriving)
+        reel = svc.make_reel(since, until)
+        if not reel:
+            sys.exit("Nothing worth showing in that time.")
+        print(json.dumps({"card": reel["card"], "captions": [c["caption"] for c in reel["clips"]],
+                          "seconds": round(time.monotonic() - t0, 1)}, indent=2))
+        return
+    signal.signal(signal.SIGTERM, lambda *a: os._exit(0))
+    log(f"ready: While you were out {'on' if settings.load()['home.away'] else 'off'}")
+    threading.current_thread().name = "away"
+    svc.run()
+
+
+if __name__ == "__main__":
+    main()

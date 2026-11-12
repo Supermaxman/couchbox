@@ -27,7 +27,8 @@ TMDB reads on a box without Seerr, adding the TMDB key), POST /play/jellyfin and
 /moments/start {"id"}, /moments/stop, /moments/wake (a key while a Moment has the picture dark:
 couchbox-input) and /moments/capture (what plays now, for Settings → Moments): Moments, played
 here (couchbox.voice.moments) whichever way they're started; /state says "dark" while one blacks
-the picture.
+the picture. POST /look {"prompt", "images"}: the model looks at camera pictures for the home
+screen's "While you were out" (couchbox-away), refused while the assistant is in use.
 Writes need the header "X-Couchbox: 1" and no foreign Origin, so web pages in the TV's
 browser can't drive it. Code and prompt: couchbox.voice (Python package)."""
 import io
@@ -388,6 +389,26 @@ class Service:
                     return self.send({"ok": False, "result": f"That didn't work: {err}"})
                 self.send({"error": "not found"}, 404)
 
+            def look(self):
+                """While you were out (couchbox-away, the TV user's): the model looks at a few
+                pictures, {"prompt", "images": [data: URLs]} -> {"text"}. Busy (409) while someone is
+                using the assistant; 503 without a model, 501 when it can't read pictures."""
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if svc.mode != "assistant":
+                    return self.send({"error": "no assistant model"}, 503)
+                with svc.lock:
+                    busy = svc.state["phase"] in ("listening", "transcribing", "thinking", "working")
+                if busy:
+                    return self.send({"error": "the assistant is in use"}, 409)
+                images = [str(u) for u in (body.get("images") or [])[:4] if str(u).startswith("data:image/")]
+                try:
+                    text = svc.agent.look(str(body.get("prompt", ""))[:4000], images)
+                except agent_mod.PicturesRefused:
+                    return self.send({"error": "the model doesn't read pictures"}, 501)
+                except Exception as err:            # noqa: BLE001 - the caller falls back to Frigate's labels
+                    return self.send({"error": str(err)}, 502)
+                self.send({"text": text})
+
             def guarded(self):
                 """Writes: our own programs only. A web page can't add the custom header
                 (that needs a CORS preflight we never answer) or hide its Origin."""
@@ -415,6 +436,8 @@ class Service:
                     return self.youtube_search()
                 if self.path.startswith("/moments/"):
                     return self.moment()
+                if self.path == "/look":
+                    return self.look()
                 if self.path == "/typing":           # an app's keyboard pop-up opened / closed
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                     svc.typing_until = time.time() + 120 if body.get("on") else 0.0
@@ -434,6 +457,7 @@ class Service:
                 threading.Thread(target=svc.handle, args=(None, body.get("text", "")), daemon=True).start()
                 self.send({"ok": True, "seq": seq})
 
+        from couchbox.voice import agent as agent_mod
         ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
 
     def run(self):

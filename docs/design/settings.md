@@ -35,6 +35,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `home.clock` | `12h` (US) / `24h` | 12-hour or 24-hour | 12h hard-coded |
 | `home.weather` | `on` when a location is set | Weather in the top bar | `MTV_WEATHER` |
 | `home.continue` | `on` | The Continue watching row under the apps (couchbox-ontv): part-watched Jellyfin, Dropout, 2nd Try and Nebula items and live followed Twitch channels, from the apps on the home row | new |
+| `home.away` | `on` | While you were out (couchbox-away): back home after a leaving Moment or 3 hours with the TV unused, a card first under the apps offers a short, silent reel of what the Frigate cameras saw (outside first, then the pets), captioned by the assistant's model when there is one. Shown when a Frigate server is set | new |
 | `appearance.theme` | `graphite` | graphite, neon, amber, sakura, matrix | `mtv-theme` |
 | `appearance.scale` | `1.5` | UI size (1.0–2.0). Applies with confirmation | `MTV_SCALE` |
 
