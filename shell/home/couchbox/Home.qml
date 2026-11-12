@@ -1,6 +1,8 @@
 // Couchbox: the app row of the home screen, in the order chosen in Settings (HomeData, from
 // couchboxd). Hold OK (or press Menu) on an app for its options; "Move" lifts it: Left and
 // Right carry it, OK drops it, Back puts it back. A glow in the focused app's colour sits behind.
+// Moments (Settings → Moments) come first, each a tile that starts it; the first app has the
+// focus when the row appears, so Left reaches them.
 // Under it, Continue watching (ContinueRow, when there's something to continue): Down reaches it,
 // OK plays the card in its app (couchbox-ontv --open), Up or Back return to the apps.
 import QtQuick
@@ -33,11 +35,12 @@ FocusScope {
         const o = order.slice(); const t = o[i]; o[i] = o[j]; o[j] = t;
         order = o;
         row.currentIndex = j;
+        remember();
     }
     function drop(keep) {
         const a = order[row.currentIndex];
         moving = false;
-        if (keep && row.currentIndex !== movedFrom) tileMenu.run("couchbox home move " + a.app + " " + row.currentIndex);
+        if (keep && row.currentIndex !== movedFrom) tileMenu.run("couchbox home move " + a.app + " " + (row.currentIndex - root.lead));
         else row.currentIndex = movedFrom;
     }
 
@@ -47,6 +50,10 @@ FocusScope {
     readonly property real tileHeight: Math.round(tileWidth * 9 / 16)
 
     readonly property var currentApp: row.model[row.currentIndex] || null
+    readonly property int lead: HomeData.apps.filter(a => !!a.moment).length    // Moments' tiles, before the apps
+    // A new row (an app renamed, a Moment taught) keeps the same tile in focus, else the first app
+    property string focusedId: ""                // the tile last moved to (Left, Right)
+    function remember() { if (row.model[row.currentIndex]) focusedId = row.model[row.currentIndex].id; }
     readonly property bool hasContinue: continueRow.shown
 
     // Continue watching: open a card in its app, as a tile would (the app's window to the front if
@@ -59,6 +66,8 @@ FocusScope {
         else Plasmoid.showAppLaunchScreen(a ? a.name : it.name, a ? (a.tile || a.icon) : "");
         exec.connectSource("/usr/lib/couchbox/bin/couchbox-ontv --open " + quote(it.target));
     }
+    // A Moment's tile: the voice service plays it (couchboxd hands it on), its app comes forward
+    function startMoment(id) { exec.connectSource("/usr/bin/couchbox moment start " + quote(id)); }
     function quote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
     // The home screen came to the front: focus back where it was, and ask for a fresh
     // Continue watching (something was probably just watched)
@@ -117,6 +126,10 @@ FocusScope {
         preferredHighlightEnd: width
         boundsBehavior: Flickable.StopAtBounds
         model: root.moving ? root.order : HomeData.apps
+        onModelChanged: Qt.callLater(() => {
+            const i = model.findIndex(a => a.id === root.focusedId);
+            currentIndex = i >= 0 ? i : Math.min(root.lead, count - 1);
+        })
 
         delegate: AppTile {
             width: root.tileWidth
@@ -125,7 +138,9 @@ FocusScope {
             current: ListView.isCurrentItem && row.activeFocus
             dimmed: row.activeFocus && !ListView.isCurrentItem
             lifted: root.moving && ListView.isCurrentItem
+            playing: !!modelData.moment && modelData.moment === HomeData.activeMoment
             onOptions: (held) => { if (!root.moving) tileMenu.open(modelData, row, held); }
+            onStartMoment: root.startMoment(modelData.moment)
             onDropped: root.drop(true)
         }
 
@@ -148,6 +163,7 @@ FocusScope {
             if (currentIndex > 0) {
                 Bigscreen.NavigationSoundEffects.playMovingSound();
                 decrementCurrentIndex();
+                root.remember();
             }
         }
         Keys.onRightPressed: (event) => {
@@ -155,6 +171,7 @@ FocusScope {
             if (currentIndex < count - 1) {
                 Bigscreen.NavigationSoundEffects.playMovingSound();
                 incrementCurrentIndex();
+                root.remember();
             }
         }
     }
@@ -227,5 +244,6 @@ FocusScope {
         parent: root.Window.contentItem || root
         anchors.fill: parent
         onMoveRequested: root.startMove()
+        onStartRequested: if (root.currentApp && root.currentApp.moment) root.startMoment(root.currentApp.moment)
     }
 }

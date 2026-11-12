@@ -23,7 +23,11 @@ indicator: the TV switching its refresh rate), POST /cancel (the remote's Back b
 the request and hides the indicator; answers whether anything was showing), POST /typing,
 /seerr/... (the Seerr app's allow-listed proxy, adding the API key), /tmdb/... (Movies & TV's
 TMDB reads on a box without Seerr, adding the TMDB key), POST /play/jellyfin and /play/youtube
-{"id"} (play on the TV), POST /search/youtube {"query"} (Search's "On this TV").
+{"id"} (play on the TV), POST /search/youtube {"query"} (Search's "On this TV"), POST
+/moments/start {"id"}, /moments/stop, /moments/wake (a key while a Moment has the picture dark:
+couchbox-input) and /moments/capture (what plays now, for Settings → Moments): Moments, played
+here (couchbox.voice.moments) whichever way they're started; /state says "dark" while one blacks
+the picture.
 Writes need the header "X-Couchbox: 1" and no foreign Origin, so web pages in the TV's
 browser can't drive it. Code and prompt: couchbox.voice (Python package)."""
 import io
@@ -213,7 +217,29 @@ class Service:
             return "Try “pause”, “open YouTube” or “search for …”. The assistant can be set up in Settings → Voice."
         action, arg = cmd
         self.log(f"command: {action} {arg!r}")
+        if action in ("moment", "remember", "stop_moment"):
+            from couchbox import moments as data
+            from couchbox.voice import moments
+            try:
+                if action == "remember":
+                    m, again = moments.teach(arg)
+                    return f"{'Taught again' if again else 'Remembered'}: {m['name']}. Say “play {m['name'].lower()}” to start it."
+                if action == "stop_moment":
+                    return moments.stop()
+                m = data.find(arg)
+                if m:
+                    return moments.start(m["id"])
+                cmd = commands.parse(text, moments=False)   # "play X" that isn't a Moment
+                if not cmd:
+                    return f"There's no Moment called {arg}."
+                action, arg = cmd
+            except moments.MomentFailed as err:
+                return str(err)
         if action == "pause":
+            from couchbox import moments as data
+            if commands.normalize(text).startswith("stop") and data.active_id():
+                from couchbox.voice import moments
+                return moments.stop()       # "stop" while a Moment plays: the sound and picture back too
             return tools.media("pause")
         if action == "play":
             return tools.media("play")
@@ -272,8 +298,9 @@ class Service:
 
             def do_GET(self):
                 if self.path.startswith("/state"):
+                    from couchbox.voice import moments
                     with svc.lock:
-                        return self.send(dict(svc.state, now=time.time()))
+                        return self.send(dict(svc.state, now=time.time(), dark=moments.dark()))
                 if self.path.startswith("/log"):
                     after = int(self.path.partition("after=")[2] or 0)
                     with svc.lock:
@@ -339,6 +366,28 @@ class Service:
                 threading.Thread(target=tools.youtube, args=("search",), kwargs={"query": q}, daemon=True).start()
                 self.send({"result": "searching"})
 
+            def moment(self):
+                """Moments from the phone page and the home screen's tiles (through couchboxd)."""
+                from couchbox.voice import moments
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                what = self.path.removeprefix("/moments/")
+                try:
+                    if what == "start":
+                        svc.log(f"moment: start {body.get('id')!r}")
+                        return self.send({"ok": True, "result": moments.start(str(body.get("id", "")))})
+                    if what == "stop":
+                        return self.send({"ok": True, "result": moments.stop()})
+                    if what == "wake":
+                        return self.send({"ok": True, "woke": moments.wake()})
+                    if what == "capture":
+                        return self.send({"ok": True, "moment": moments.capture()})
+                except moments.MomentFailed as err:
+                    return self.send({"ok": False, "result": str(err)})
+                except Exception as err:            # noqa: BLE001 - said on the phone or the TV
+                    svc.log(f"moment {what}: {err}")
+                    return self.send({"ok": False, "result": f"That didn't work: {err}"})
+                self.send({"error": "not found"}, 404)
+
             def guarded(self):
                 """Writes: our own programs only. A web page can't add the custom header
                 (that needs a CORS preflight we never answer) or hide its Origin."""
@@ -364,6 +413,8 @@ class Service:
                     return self.play()
                 if self.path == "/search/youtube":
                     return self.youtube_search()
+                if self.path.startswith("/moments/"):
+                    return self.moment()
                 if self.path == "/typing":           # an app's keyboard pop-up opened / closed
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                     svc.typing_until = time.time() + 120 if body.get("on") else 0.0
@@ -389,6 +440,8 @@ class Service:
         from couchbox.voice import capture
         os.makedirs("/run/couchbox/voice", exist_ok=True)
         threading.Thread(target=self.serve, daemon=True).start()
+        from couchbox.voice import moments
+        threading.Thread(target=moments.watch, args=(self.log,), daemon=True).start()
         if self.captions:
             threading.Thread(target=self.caption_keeper, daemon=True).start()
         if self.mode == "assistant":

@@ -48,6 +48,11 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
   - *Move* works the same as in Settings, right there on the row.
   - An "All apps" tile at the end of the row opens the grid of every app, hidden ones included.
 
+### 2b. Moments
+| Key | Default | Notes | Prototype |
+|---|---|---|---|
+| `moments.list` | `[]` | Things the household taught the TV by showing it: while something plays in YouTube, Jellyfin, Twitch, Nebula, Dropout or 2nd Try, hold the mic and say "remember this as pet music". Each keeps what plays and its app, a volume (the box's own sound level while it plays: the TV's own volume can't be read or set to a number over HDMI-CEC), repeat, a dark picture (black over everything, the sound plays on, any key brings the picture back) and "played when leaving the house" (the box notes when it starts: `couchbox.moments.left_at()`). Started by voice ("play pet music"), from its tile on the home row (after the apps) or the phone page; stopping it puts the sound level and the picture back. Never started by anything but a person. The page renames, changes, starts and deletes them | new |
+
 ### 3. Apps and media servers
 | Key | Default | Notes | Prototype |
 |---|---|---|---|

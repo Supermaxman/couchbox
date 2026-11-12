@@ -9,10 +9,14 @@ FocusScope {
     property var app: null
     property Item returnTo: null
     signal moveRequested()
+    signal startRequested()
     visible: false
     z: 50
 
-    readonly property var options: !app ? [] : [
+    readonly property var options: !app ? [] : app.moment ? [
+        {label: "Start", act: () => { close(); menu.startRequested(); }},
+        {label: "Change in Settings", act: () => { run("/usr/lib/couchbox/bin/couchbox-settings --page moments --in"); close(); }},
+    ] : [
         {label: "Move", act: () => { close(); menu.moveRequested(); }},
         ...(app.hideable === false ? [] : [{label: "Hide from the home screen", act: () => { run("couchbox home hide " + app.app); close(); }}]),
         {label: "More in Settings", act: () => { run("/usr/lib/couchbox/bin/couchbox-settings"); close(); }},

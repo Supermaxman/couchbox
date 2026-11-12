@@ -157,7 +157,10 @@ def window_classes(app_id, name):
 
 
 def raise_window(app_id, name):
-    want = json.dumps(window_classes(app_id, name))
+    classes = window_classes(app_id, name)
+    if app_id == "couchbox-yt.desktop" and yt_native():  # not VacuumTube, when it's open too
+        classes.remove("rocks.shy.VacuumTube")
+    want = json.dumps(classes)
     kwin_script(
         f"const want = {want};\n"
         "for (const w of workspace.windowList()) if (w.normalWindow && (want.includes(w.resourceClass)"
@@ -1136,6 +1139,7 @@ def _schemas(st=None):
             )
         )
     out += [
+        moments_schema(fn, s, act, q, st),
         fn("say", "Show a short message now, while you keep working.", s(text={"type": "string", "req": True})),
         fn(
             "page",
@@ -1185,6 +1189,62 @@ def _schemas(st=None):
         ),
     ]
     return out
+
+
+def moments_schema(fn, s, act, q, st):
+    from couchbox import moments
+
+    taught = ", ".join(m["name"] for m in moments.all(st))
+    return fn(
+        "moments",
+        "Moments: things the household taught the TV to play by name (pet music...). A Moment beats a search.",
+        s(
+            action=act(
+                ["play", "stop", "remember", "forget", "list"],
+                "play: start the Moment called name · stop: the one playing (sound and picture back as they were) · remember: save "
+                "what plays now as name; repeat, dark (black picture, sound on), leaving (played when going out), volume (5-100) "
+                "only if said · forget · list",
+            ),
+            name={"type": "string", "description": ("Taught: " + taught)[:300] if taught else "None taught yet"},
+            repeat={"type": "boolean"},
+            dark={"type": "boolean"},
+            leaving={"type": "boolean"},
+            volume={"type": "integer"},
+        ),
+    )
+
+
+def moments_tool(args):
+    """The moments tool (couchbox.voice.moments does the work)."""
+    from couchbox import moments
+
+    from . import moments as player
+
+    action, name = args.get("action"), str(args.get("name") or "").strip()
+    known = ", ".join(m["name"] for m in moments.all()) or "none yet"
+    try:
+        if action == "remember":
+            m, again = player.teach(name, args.get("volume"), args.get("repeat"), args.get("dark"), args.get("leaving"))
+            return (
+                f"{'Taught again' if again else 'Remembered'}: {m['name']}, {moments.describe(m)}. Reply that it's saved and that "
+                f"saying “play {m['name'].lower()}” starts it (or its tile on the home screen, or the phone page). It never starts "
+                "by itself: don't say it plays when they leave."
+            )
+        if action == "stop":
+            return player.stop()
+        if action == "list":
+            return "\n".join(f"{m['name']}: {moments.describe(m)}" for m in moments.all()) or "No Moments yet."
+        m = moments.find(name)
+        if not m:
+            return f"No Moment called “{name}”. Moments: {known}."
+        if action == "play":
+            return player.start(m["id"])
+        if action == "forget":
+            player.forget(m["id"])
+            return f"Forgot {m['name']}."
+    except player.MomentFailed as err:
+        return str(err)
+    return f"Unknown action {action}."
 
 
 def status_text(name, args):
@@ -1250,6 +1310,12 @@ def status_text(name, args):
         }.get(a.get("action"), "Checking your places"),
         "movies": lambda: f"Looking up {a.get('query')}" if a.get("query") else "Opening Movies & TV",
         "say": lambda: str(a.get("text", "")),
+        "moments": lambda: {
+            "play": f"Starting {a.get('name')}",
+            "remember": f"Remembering this as {a.get('name')}",
+            "stop": "Stopping it",
+            "forget": f"Forgetting {a.get('name')}",
+        }.get(a.get("action"), "Checking the Moments"),
     }.get(name, lambda: name)()
 
 
@@ -1598,6 +1664,7 @@ def run_tool(name, args):
         "maps": lambda: maps_tool(args["action"], args.get("query"), args.get("mode"), args.get("time"), args.get("origin")),
         "movies": lambda: movies_tool(args["action"], args.get("query"), args.get("type"), args.get("role")),
         "say": lambda: "Shown.",
+        "moments": lambda: moments_tool(args),
         **{t: (lambda t=t: run_streaming(t, args)) for t in streaming.SITES},
     }.get(name)
     if not fn:
@@ -1613,7 +1680,16 @@ def run_tool(name, args):
 
 def screen_summary():
     """One line about what's in front (any app, from KWin) and what it's playing, given to the
-    model with each request: "play the newest one" means the app in front."""
+    model with each request: "play the newest one" means the app in front. A Moment playing is
+    named first ("stop" means it)."""
+    from couchbox import moments
+
+    a = moments.read_state().get("active")
+    head = f"Moment playing: {a['name']}. " if a else ""
+    return head + _screen()
+
+
+def _screen():
     a = app_of_window(active_window())
     if a == "home":
         return "Screen: the home screen."
