@@ -1,0 +1,13 @@
+[Unit]
+Description=Couchbox morning show: made overnight, offered on the home screen until noon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-morning
+Restart=on-failure
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target

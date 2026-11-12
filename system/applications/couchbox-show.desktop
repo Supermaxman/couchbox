@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Morning show
+Comment=This morning's show about the house: yesterday's backyard, the night, the pets, the weather, new videos
+Icon=weather-clear
+Categories=AudioVideo;Video;
+NoDisplay=true
+Exec=/usr/lib/couchbox/bin/couchbox-show
+StartupWMClass=couchbox-show

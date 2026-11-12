@@ -11,8 +11,10 @@ The server is Settings → Apps → Frigate server (media.frigate.url). The Pyth
 (couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
 the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
 
-  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups | reel]
-                                     (reel: the home screen's While you were out, couchbox-away)
+  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups | reel
+                          | recording:CAMERA@START-END]
+                                     (reel: the home screen's While you were out, couchbox-away;
+                                     recording: a camera from a time, Back leaves: the morning show)
   couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...] [--reel REEL.JSON]
                                      render once off screen (made-up cameras, no server)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1.

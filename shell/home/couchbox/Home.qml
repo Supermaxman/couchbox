@@ -1,8 +1,9 @@
 // Couchbox: the app row of the home screen, in the order chosen in Settings (HomeData, from
 // couchboxd). Hold OK (or press Menu) on an app for its options; "Move" lifts it: Left and
 // Right carry it, OK drops it, Back puts it back. A glow in the focused app's colour sits behind.
-// Moments (Settings → Moments) come first, each a tile that starts it; the first app has the
-// focus when the row appears, so Left reaches them.
+// The morning show's tile (couchbox.show, mornings until noon) comes first, then Moments
+// (Settings → Moments), each a tile that starts it; the first app has the focus when the row
+// appears, so Left reaches them. OK on the show's tile opens the Morning show app.
 // Under it, Continue watching (ContinueRow, when there's something to continue): Down reaches it,
 // OK plays the card in its app (couchbox-ontv --open), Up or Back return to the apps.
 import QtQuick
@@ -24,7 +25,7 @@ FocusScope {
     property var order: []
     property int movedFrom: -1
     function startMove() {
-        order = HomeData.apps.slice();
+        order = HomeData.rowApps.slice();
         movedFrom = row.currentIndex;
         moving = true;
         row.forceActiveFocus();
@@ -50,7 +51,7 @@ FocusScope {
     readonly property real tileHeight: Math.round(tileWidth * 9 / 16)
 
     readonly property var currentApp: row.model[row.currentIndex] || null
-    readonly property int lead: HomeData.apps.filter(a => !!a.moment).length    // Moments' tiles, before the apps
+    readonly property int lead: HomeData.rowApps.filter(a => !!a.moment || !!a.show).length    // the show's and Moments' tiles, before the apps
     // A new row (an app renamed, a Moment taught) keeps the same tile in focus, else the first app
     property string focusedId: ""                // the tile last moved to (Left, Right)
     function remember() { if (row.model[row.currentIndex]) focusedId = row.model[row.currentIndex].id; }
@@ -125,7 +126,7 @@ FocusScope {
         preferredHighlightBegin: 0
         preferredHighlightEnd: width
         boundsBehavior: Flickable.StopAtBounds
-        model: root.moving ? root.order : HomeData.apps
+        model: root.moving ? root.order : HomeData.rowApps
         onModelChanged: Qt.callLater(() => {
             const i = model.findIndex(a => a.id === root.focusedId);
             currentIndex = i >= 0 ? i : Math.min(root.lead, count - 1);
@@ -139,8 +140,9 @@ FocusScope {
             dimmed: row.activeFocus && !ListView.isCurrentItem
             lifted: root.moving && ListView.isCurrentItem
             playing: !!modelData.moment && modelData.moment === HomeData.activeMoment
-            onOptions: (held) => { if (!root.moving) tileMenu.open(modelData, row, held); }
+            onOptions: (held) => { if (!root.moving && !modelData.show) tileMenu.open(modelData, row, held); }
             onStartMoment: root.startMoment(modelData.moment)
+            onStartShow: root.openItem(modelData)
             onDropped: root.drop(true)
         }
 

@@ -1,0 +1,253 @@
+#!/usr/bin/python3
+"""couchbox-show: the morning show (couchbox.show) as a TV app, started by OK on its tile at the
+front of the home screen. It plays this morning's show silently with captions: yesterday's
+backyard sped up, the night's camera moments, the pets' best of yesterday, the radar with
+today's forecast (fetched as it plays), and the YouTube subscriptions' new videos. Left/Right:
+the clip or part before or after; OK on a camera moment opens it in the Frigate app at that
+time, OK on a video plays it in the YouTube app; Back leaves. Watched to the end, its tile goes.
+couchbox-morning (the TV user's service) makes the show overnight; the QML is in
+/usr/share/couchbox/ui/show.
+
+  couchbox-show [--open morning]
+  couchbox-show --demo --shot FILE [--keys right,ok,...] [--part KIND] [--file SHOW.JSON]
+                                     render once off screen (a made-up show; --file: a real one
+                                     couchbox-morning wrote; --part: start at that part)
+Tests: COUCHBOX_MUTE=1 (no sound).
+"""
+import json
+import locale
+import os
+import sys
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from couchbox import paths, settings  # noqa: E402
+
+QML = os.environ.get("COUCHBOX_SHOW_QML", str(paths.share() / "ui/show/Main.qml"))
+SITE = "show"
+
+
+def arg(name):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else ""
+
+
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")   # libmpv draws on Qt Quick's thread
+os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"
+
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QUrl, Signal, Slot  # noqa: E402
+from PySide6.QtGui import QGuiApplication, QKeyEvent  # noqa: E402
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
+
+from couchbox import away, show  # noqa: E402
+
+
+class Backend(QObject):
+    """QML's way to the show: call(id, op, args) answers later with reply(id, json)."""
+    reply = Signal(int, str)
+
+    def __init__(self, demo):
+        super().__init__()
+        from couchbox.services import radar, weather
+
+        self.demo = demo
+        self.pool = ThreadPoolExecutor(max_workers=4)
+        # (screenshots of a real show: COUCHBOX_SHOW_PLACE="lat,lon,name,units" for its real weather)
+        self.place = os.environ.get("COUCHBOX_SHOW_PLACE", "")
+        live = not demo or bool(self.place)
+        self.weather = weather.Weather(demo=not live)
+        self.radar = radar.Radar(demo=not live)
+
+    def show(self):
+        """This morning's show as the player takes it ({"parts": []} when there's none)."""
+        from couchbox.services import frigate
+
+        if self.demo:
+            s = away.read_json(Path(arg("--file"))) if arg("--file") else show.demo_show()
+        else:
+            s = show.current()
+        if not s:
+            return {"parts": []}
+        now = time.time()
+        for p in s["parts"]:
+            for c in p.get("clips") or []:
+                objs = c["review"].get("objects") or []
+                c["kind"] = frigate.kind(objs[0]) if objs else "object"
+                c["target"] = f"frigate:recording:{c['camera']}@{c['review']['start']:.0f}-{c['review']['end']:.0f}"
+            for v in p.get("videos") or []:
+                v["ago"] = show.when_published(v["at"], now)
+        start = arg("--part")
+        if start:
+            s["start"] = next((i for i, p in enumerate(s["parts"]) if p["kind"] == start), 0)
+        return s
+
+    def weather_now(self):
+        """Today's forecast line and the radar's last hour, as the show reaches its weather."""
+        from couchbox.services import radar, weather
+
+        if self.place:
+            lat, lon, name, units = self.place.split(",")
+            place = {"name": name, "lat": float(lat), "lon": float(lon), "units": units}
+        elif self.demo:
+            place = {"name": "Riverton", "lat": 47.6, "lon": -122.3, "units": "imperial"}
+        else:
+            place = weather.place_from_settings()
+        if not place:
+            return {"forecast": None, "radar": None}
+        clock24 = settings.derived()["clock24"]
+        out = {"forecast": None, "radar": None}
+        try:
+            out["forecast"] = show.forecast(self.weather.get(place, clock24=clock24))
+        except weather.WeatherError as err:
+            print(f"forecast: {err}", flush=True)
+        try:
+            out["radar"] = self.radar.frames(place, clock24=clock24, tz=None if self.demo else settings.load()["time.timezone"])
+        except radar.RadarError as err:
+            print(f"radar: {err}", flush=True)
+        return out
+
+    def open(self, target):
+        from couchbox import ontv
+
+        if self.demo:
+            print(f"open {target}", flush=True)
+            return {"ok": True}
+        return {"ok": True, "did": ontv.open_target(target)}
+
+    def seen(self):
+        if not self.demo:
+            show.mark_seen()
+        return {"ok": True}
+
+    def run(self, op, a):
+        ops = {
+            "show": lambda: self.show(),
+            "weather": lambda: self.weather_now(),
+            "open": lambda: self.open(a["target"]),
+            "seen": lambda: self.seen(),
+        }
+        return ops[op]()
+
+    @Slot(int, str, str)
+    def call(self, rid, op, args):
+        def work():
+            try:
+                out = self.run(op, json.loads(args or "{}"))
+            except Exception as err:
+                traceback.print_exc()
+                out = {"error": str(err) or err.__class__.__name__}
+            self.reply.emit(rid, json.dumps(out))
+        self.pool.submit(work)
+
+
+class Control(QObject):
+    """The control socket (couchbox.appctl): a second launch (OK on the tile again) comes here."""
+    command = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.server = None
+        self.state = {"page": "starting"}
+
+    def start(self):
+        from couchbox import appctl
+        try:
+            self.server = appctl.Server(SITE, self.handle)
+            self.server.start()
+        except OSError as err:
+            print(f"control socket: {err}", flush=True)
+
+    @Slot(str)
+    def setState(self, js):
+        try:
+            self.state = json.loads(js)
+        except ValueError:
+            pass
+
+    def handle(self, req):
+        op = req.get("op")
+        if op == "ping":
+            return {"ok": True, "site": SITE}
+        if op == "state":
+            return dict(self.state, site="Morning show")
+        if op == "open":
+            self.command.emit(json.dumps(req))
+            return {"ok": True}
+        return {"error": f"unknown op {op}"}
+
+
+class Shooter(QObject):
+    """--shot: save the window to a PNG; --keys: remote key presses."""
+    window = None
+
+    @Slot(str)
+    def save(self, path):
+        from couchbox import qtcheck
+
+        qtcheck.clipped(self.window)
+        self.window.grabWindow().save(path)
+
+    @Slot(str)
+    def press(self, name):
+        key = {"up": Qt.Key_Up, "down": Qt.Key_Down, "left": Qt.Key_Left, "right": Qt.Key_Right,
+               "ok": Qt.Key_Return, "back": Qt.Key_Escape}.get(name)
+        if key is not None:
+            for t in (QEvent.KeyPress, QEvent.KeyRelease):
+                QCoreApplication.sendEvent(self.window, QKeyEvent(t, key, Qt.NoModifier))
+
+
+def forward_to_running():
+    from couchbox import appctl
+    if "--shot" in sys.argv or not appctl.running(SITE):
+        return False
+    appctl.call(SITE, {"op": "open", "target": "morning"})
+    return True
+
+
+def main():
+    demo = "--demo" in sys.argv
+    if "--shot" in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.OpenGL)
+    app = QGuiApplication(sys.argv)
+    locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
+    if forward_to_running():
+        sys.exit(0)
+    app.setApplicationName("couchbox-show")
+    app.setApplicationDisplayName("Morning show")
+    app.setDesktopFileName("couchbox-show")          # Wayland app id: matches couchbox-show.desktop
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        from couchbox import player
+        qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")
+    else:                                            # no GPU off screen: a stand-in for the video
+        os.environ["COUCHBOX_NO_VIDEO"] = "1"
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(str(paths.share() / "ui"))
+    if os.environ.get("COUCHBOX_NO_VIDEO"):
+        engine.addImportPath(str(paths.share() / "ui/stubs"))
+    backend = Backend(demo)
+    shooter = Shooter()
+    control = Control()
+    if "--shot" not in sys.argv:
+        control.start()
+    ctx = engine.rootContext()
+    ctx.setContextProperty("backend", backend)
+    ctx.setContextProperty("control", control)
+    ctx.setContextProperty("shooter", shooter)
+    ctx.setContextProperty("noVideo", bool(os.environ.get("COUCHBOX_NO_VIDEO")))
+    engine.load(QUrl.fromLocalFile(QML))
+    if not engine.rootObjects():
+        sys.exit("Main.qml didn't load")
+    shooter.window = engine.rootObjects()[0]
+    code = app.exec()
+    if control.server:
+        control.server.close()
+    backend.pool.shutdown(wait=False, cancel_futures=True)
+    os._exit(code)
+
+
+if __name__ == "__main__":
+    main()

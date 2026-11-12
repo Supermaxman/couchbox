@@ -11,6 +11,7 @@ Item {
     property int zoom: 8
     property bool running: true
     property real textSize: 19 * u
+    property bool showTime: true             // the frame's time, bottom left
     readonly property var frames: info ? info.frames : []
     readonly property var src: info ? info.source : null
     readonly property real tile: 256 * u     // a map tile on screen
@@ -117,7 +118,7 @@ Item {
     }
     Text {                                       // the frame's time
         readonly property var f: loop.frames[loop.fi] || null
-        visible: !!f
+        visible: !!f && loop.showTime
         anchors { left: parent.left; bottom: parent.bottom; margins: 12 * loop.u }
         text: f ? f.label + (f.nowcast ? "  forecast" : "") : ""
         color: f && f.nowcast ? "#fbbf24" : "white"

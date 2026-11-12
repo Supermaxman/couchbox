@@ -95,6 +95,14 @@ shot home-continue-card couchbox-ontv --keys down,right
 shot home-continue-empty couchbox-ontv --empty
 shot home-away couchbox-ontv --away --keys down
 shot home-away-only couchbox-ontv --away --empty --keys down
+# the morning show: its tile first on the home row (in focus), then each part of a made-up show
+shot home-morning couchbox-ontv --morning
+shot home-morning-tile couchbox-ontv --morning --keys left
+shot show-yard couchbox-show
+shot show-night couchbox-show --part night
+shot show-pets couchbox-show --part pets
+shot show-weather couchbox-show --part weather
+shot show-videos couchbox-show --part videos --keys right
 # Movies & TV with made-up titles: home, a movie, a show (and its seasons row), a season,
 # a person (known for, a filmography), search, the top-rated grid
 shot movies-home couchbox-movies

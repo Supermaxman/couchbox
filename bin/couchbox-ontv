@@ -19,9 +19,10 @@ Continue watching is off.
   couchbox-ontv --list              the row as the home screen has it
   couchbox-ontv --once              look now, without the service, and print the row
   couchbox-ontv --search TEXT       what Search's "On this TV" finds, app by app
-  couchbox-ontv --demo --shot FILE [--keys down,right,...] [--empty] [--away]
+  couchbox-ontv --demo --shot FILE [--keys down,right,...] [--empty] [--away] [--morning]
                                     draw the home screen's rows off screen, with made-up items
-                                    (--away: While you were out's card first)
+                                    (--away: While you were out's card first; --morning: the
+                                    morning show's tile first on the app row)
 """
 import json
 import os
@@ -248,6 +249,7 @@ Window {
             focus: true
             interactive: false
             model: demoApps
+            currentIndex: demoApps.length > 1 && demoApps[0].show ? 1 : 0   // (as Home: the first app)
             delegate: Rectangle {
                 required property var modelData
                 required property int index
@@ -257,7 +259,8 @@ Window {
                 color: "#1d2028"
                 scale: cur ? 1.1 : 1
                 z: cur ? 1 : 0
-                Image { anchors.fill: parent; source: "file://" + modelData.tile; sourceSize.width: 800; fillMode: Image.PreserveAspectCrop }
+                Image { anchors.fill: parent; visible: !modelData.show; source: modelData.show ? "" : "file://" + modelData.tile; sourceSize.width: 800; fillMode: Image.PreserveAspectCrop }
+                ShowFace { anchors.fill: parent; visible: !!modelData.show; show: modelData.show ? modelData : null; radius: parent.radius }
                 Rectangle {
                     anchors.fill: parent; anchors.margins: -4; radius: parent.radius + 4
                     color: "transparent"; border.color: Style.ring; border.width: 2.5; visible: parent.cur
@@ -337,6 +340,10 @@ def shot():
         except (OSError, subprocess.CalledProcessError):
             tile = str(svg)
         apps.append({"app": a, "name": ontv.NAMES.get(a, a.title()), "tile": tile, "glow": glow.group(1) if glow else ""})
+    if "--morning" in sys.argv:                      # the morning show's tile first, the first app in focus
+        from couchbox import away, show
+
+        apps.insert(0, away.read_json(Path(arg("--file")))["tile"] if arg("--file") else show.demo_show()["tile"])   # (--file: a real one)
     engine = QQmlApplicationEngine()
     shooter = Shooter()
     ctx = engine.rootContext()
