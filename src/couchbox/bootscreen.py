@@ -28,8 +28,7 @@ DEVICE_TIMEOUT = "2"
 # quiet kernel and systemd, the splash, no kernel messages above errors, no blinking cursor, the
 # splash on the TV even though the serial console is on too, and rd.driver.export: what Ubuntu's
 # dracut does anyway (its copymods hook), said outright so it doesn't print a warning on the TV
-SPLASH_ARGS = ("quiet", "splash", "loglevel=3", "vt.global_cursor_default=0", "plymouth.ignore-serial-consoles",
-               "rd.driver.export")
+SPLASH_ARGS = ("quiet", "splash", "loglevel=3", "vt.global_cursor_default=0", "plymouth.ignore-serial-consoles", "rd.driver.export")
 
 
 def video_args() -> list[str]:
@@ -114,8 +113,10 @@ def apply() -> str:
     if not (root / THEME / "couchbox.plymouth").exists():
         return "no theme"
     plymouth = f"/{THEME}/couchbox.plymouth"
-    sh(["update-alternatives", "--quiet", "--install", "/usr/share/plymouth/themes/default.plymouth",
-        "default.plymouth", plymouth, "150"], check=False)
+    sh(
+        ["update-alternatives", "--quiet", "--install", "/usr/share/plymouth/themes/default.plymouth", "default.plymouth", plymouth, "150"],
+        check=False,
+    )
     sh(["update-alternatives", "--quiet", "--set", "default.plymouth", plymouth], check=False)
     conf = root / CONF
     old = conf.read_text() if conf.exists() else ""
