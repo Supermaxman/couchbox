@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/Supermaxman/couchbox/compare/v0.20.5...v0.21.0) (2026-11-12)
+
+
+### New
+
+* **voice:** ask the assistant about what's playing: who's this, what did I miss, skip to a moment ([#125](https://github.com/Supermaxman/couchbox/issues/125)) ([8364f7e](https://github.com/Supermaxman/couchbox/commit/8364f7ebffdcaa0b5a665b0f125feeac2e65488d))
+
 ## [0.20.5](https://github.com/Supermaxman/couchbox/compare/v0.20.4...v0.20.5) (2026-11-12)
 
 
