@@ -4,6 +4,7 @@
   couchbox config list | get KEY | set KEY VALUE | reset KEY | env | schema
   couchbox secret set NAME [VALUE|-] | clear NAME | status
   couchbox home rebuild [--restart] | row | move APP INDEX | hide APP | show APP
+  couchbox moment list | start ID | stop     Moments (the home screen's tiles start them)
   couchbox doctor [--json] [--post-update] [--container]
   couchbox update status | check | install | rollback
   couchbox pair-remote [ADDRESS]
@@ -237,6 +238,9 @@ def main(argv: list[str] | None = None) -> None:
     h.add_argument("action", choices=["rebuild", "row", "move", "hide", "show"])
     h.add_argument("args", nargs="*")
     h.add_argument("--restart", action="store_true")
+    mo = sub.add_parser("moment")
+    mo.add_argument("action", choices=["list", "start", "stop"])
+    mo.add_argument("id", nargs="?")
     d = sub.add_parser("doctor")
     d.add_argument("--json", action="store_true")
     d.add_argument("--post-update", action="store_true")
@@ -269,6 +273,21 @@ def main(argv: list[str] | None = None) -> None:
         cmd_secret(a)
     elif a.cmd == "home":
         cmd_home(a)
+    elif a.cmd == "moment":
+        if a.action == "start" and not a.id:
+            p.error("moment start needs the Moment's id (couchbox moment list)")
+        r = (
+            _call("moments.list")
+            if a.action == "list"
+            else _call("moments.start", id=a.id)
+            if a.action == "start"
+            else _call("moments.stop")
+        )
+        if a.action == "list" and r:
+            for m in r["moments"]:
+                print(f"{m['id']}\t{m['name']}\t{r['describe'][m['id']]}" + ("\t(playing)" if m["id"] == r["active"] else ""))
+        elif r:
+            print(r["result"])
     elif a.cmd == "doctor":
         cmd_doctor(a)
     elif a.cmd == "update":

@@ -35,6 +35,7 @@ Window {
                 return;
             let s = null;
             try { s = JSON.parse(x.responseText); } catch (e) { }
+            darkOn = !!(s && s.dark);           // (no answer: never left black with no way back)
             if (!s) { shown = false; return; }
             st = s;
             const age = s.now - s.t;
@@ -49,7 +50,39 @@ Window {
         x.send();
     }
 
+    // The dark layer comes up once the pill has gone (the reply to "play pet music" is read
+    // first), so the pill, mapped after it, always shows above it.
+    property bool darkOn: false
+    onDarkOnChanged: updateDark()
+    function updateDark() {
+        if (darkOn && !shown && !dark.visible) { dark.visible = true; black.opacity = 1; }
+        else if (!darkOn && dark.visible) { black.opacity = 0; darkHide.restart(); }
+    }
+    Timer { id: darkHide; interval: 950; onTriggered: if (!win.darkOn) dark.visible = false }
+    Window {
+        id: dark
+        transientParent: null               // a window of its own, not the pill's (unmapped while idle)
+        width: Screen.width
+        height: Screen.height
+        color: "transparent"
+        flags: Qt.FramelessWindowHint | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+        visible: false
+        LayerShell.Window.scope: "couchbox-moment-dark"
+        LayerShell.Window.layer: LayerShell.Window.LayerOverlay
+        LayerShell.Window.anchors: LayerShell.Window.AnchorTop | LayerShell.Window.AnchorBottom | LayerShell.Window.AnchorLeft | LayerShell.Window.AnchorRight
+        LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityNone
+        LayerShell.Window.exclusionZone: -1
+        Rectangle {
+            id: black
+            anchors.fill: parent
+            color: "black"
+            opacity: 0
+            Behavior on opacity { NumberAnimation { duration: 900; easing.type: Easing.InOutQuad } }
+        }
+    }
+
     onShownChanged: {
+        win.updateDark();
         if (shown) { win.visible = true; pill.opacity = 1; pill.lift = 0; }
         else { pill.opacity = 0; pill.lift = 24; hideTimer.restart(); }
     }

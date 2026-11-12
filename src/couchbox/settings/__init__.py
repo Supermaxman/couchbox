@@ -143,6 +143,16 @@ def validate(key: str, value: Any) -> Any:
                 raise SettingsError(f"{label}: bad entry {v!r}")
         if key == "home.web_apps":
             return [_web_app(v) for v in value]
+        if key == "moments.list":
+            from couchbox import moments
+
+            try:
+                out = [moments.clean(v) for v in value]
+            except moments.MomentError as e:
+                raise SettingsError(str(e)) from None
+            if len({m["id"] for m in out}) != len(out):
+                raise SettingsError("Moments: two have the same id")
+            return out
         return value
     if t == "object":
         if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):

@@ -1,5 +1,6 @@
 // couchbox: one tile of the home row: the app's artwork (rendered by couchbox-home from
-// image/theme/tiles), or its icon and name on a plain card when it has none.
+// image/theme/tiles), or its icon and name on a plain card when it has none. A Moment's tile
+// (app.moment: Settings → Moments) shows what it plays, its name and its app; OK starts it.
 import QtQuick
 import QtQuick.Effects
 
@@ -11,11 +12,15 @@ Item {
     id: tile
 
     property var app            // {id (desktop file), app, name, icon, tile, glow, hideable} from HomeData
+                                // (a Moment: {moment, name, title, art, plays, badge, glow})
+    property bool playing: false        // a Moment's: it's the one playing now
     property bool current: false
     property bool dimmed: false
     property bool lifted: false         // being moved along the row
     signal options(bool held)           // held: OK is still down (it opened them)
     signal dropped()
+    signal startMoment()
+    readonly property bool isMoment: !!(app && app.moment)
 
     readonly property real radius: Math.round(width * 0.045)
 
@@ -27,6 +32,7 @@ Item {
 
     function launch() {
         Bigscreen.NavigationSoundEffects.playClickedSound();
+        if (isMoment) { startMoment(); return; }
         const list = Plasmoid.applicationListModel;
         if (list.isApplicationRunning(app.id)) {
             list.maximizeApplication(app.id);
@@ -92,7 +98,7 @@ Item {
         Column {
             anchors.centerIn: parent
             spacing: 8
-            visible: !art.visible
+            visible: !art.visible && !tile.isMoment
             Kirigami.Icon {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: tile.height * 0.42
@@ -107,6 +113,12 @@ Item {
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
             }
+        }
+
+        Loader {
+            anchors.fill: parent
+            active: tile.isMoment
+            sourceComponent: momentFace
         }
 
         // Unfocused tiles sit back a little while the row has focus
@@ -133,7 +145,9 @@ Item {
 
     Text {
         anchors { top: parent.bottom; topMargin: 14; horizontalCenter: parent.horizontalCenter }
-        text: tile.app.name
+        width: Math.min(implicitWidth, tile.width)
+        elide: Text.ElideRight
+        text: tile.isMoment ? (tile.app.title || "") : tile.app.name
         color: Style.text
         font.family: Style.font
         font.pixelSize: 14
@@ -148,6 +162,101 @@ Item {
             tile.ListView.view.currentIndex = index;
             tile.ListView.view.forceActiveFocus();
             tile.launch();
+        }
+    }
+
+    // A Moment: its picture (or its app's colour), its name, its app's tile small, and Playing
+    Component {
+        id: momentFace
+        Item {
+            readonly property color tint: tile.app.glow || "#7aa2ff"
+            Rectangle {
+                anchors.fill: parent
+                radius: tile.radius
+                visible: pic.status !== Image.Ready
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: Qt.darker(tint, 2.2) }
+                    GradientStop { position: 1; color: Qt.darker(tint, 4.0) }
+                }
+            }
+            Image {
+                id: pic
+                anchors.fill: parent
+                source: tile.app.art || ""
+                sourceSize.width: 640
+                asynchronous: true
+                fillMode: Image.PreserveAspectCrop
+                smooth: true
+                mipmap: true
+                visible: false
+            }
+            // rounded like the card, with a shade at the bottom for the name
+            Rectangle { id: picMask; anchors.fill: parent; radius: tile.radius; visible: false; layer.enabled: true }
+            MultiEffect {
+                anchors.fill: parent
+                source: pic
+                maskEnabled: true
+                maskSource: picMask
+                visible: pic.status === Image.Ready
+            }
+            Rectangle {
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                height: parent.height * 0.62
+                radius: tile.radius
+                gradient: Gradient {
+                    GradientStop { position: 0; color: "transparent" }
+                    GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.82) }
+                }
+            }
+            Text {
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: Math.round(parent.height * 0.1) }
+                text: tile.app.name
+                color: "white"
+                elide: Text.ElideRight
+                maximumLineCount: 2
+                wrapMode: Text.WordWrap
+                font.family: Style.font
+                font.pixelSize: Math.round(parent.height * 0.19)
+                font.weight: Font.Bold
+            }
+            Rectangle {                     // the app it plays in: its tile, small
+                anchors { left: parent.left; top: parent.top; margins: 8 }
+                width: 56; height: 32
+                radius: 5
+                color: Qt.rgba(0, 0, 0, 0.7)
+                border.color: Qt.rgba(1, 1, 1, 0.3)
+                border.width: 1
+                clip: true
+                visible: badgeArt.status === Image.Ready
+                Image {
+                    id: badgeArt
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    source: tile.app.badge ? "file://" + tile.app.badge : ""
+                    sourceSize.width: 160
+                    fillMode: Image.PreserveAspectCrop
+                    smooth: true
+                    mipmap: true
+                }
+            }
+            Rectangle {                     // the one playing now
+                anchors { right: parent.right; top: parent.top; margins: 8 }
+                visible: tile.playing
+                width: playingText.implicitWidth + 16
+                height: playingText.implicitHeight + 6
+                radius: height / 2
+                color: tint
+                Text {
+                    id: playingText
+                    anchors.centerIn: parent
+                    text: "Playing"
+                    color: "#0b0d12"
+                    font.family: Style.font
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                }
+            }
         }
     }
 }

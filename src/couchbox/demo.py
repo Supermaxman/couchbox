@@ -101,6 +101,33 @@ class Runner:
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
 
+# Made-up Moments (Settings → Moments, the home screen's tiles): the first one playing
+DEMO_MOMENTS = [
+    {
+        "name": "Pet music",
+        "app": "youtube",
+        "target": "video:AAAAAAAAAAA",
+        "title": "Calm piano for dogs, 10 hours",
+        "volume": 40,
+        "repeat": True,
+        "dark": True,
+        "leaving": True,
+    },
+    {"name": "Rainy evening", "app": "jellyfin", "target": "0123456789abcdef0123456789abcdef", "title": "Rain on a tin roof"},
+    {"name": "Speedrun marathon", "app": "twitch", "target": "play:live:example", "title": "Speedrun marathon, live"},
+]
+
+
+def demo_moments() -> None:
+    from couchbox import moments, settings
+
+    if not settings.get("moments.list"):
+        settings.update({"moments.list": DEMO_MOMENTS})
+    st = moments.read_state()
+    st["active"] = {"id": "pet-music", "name": "Pet music", "app": "youtube", "target": "video:AAAAAAAAAAA", "since": time.time()}
+    moments.write_state(st)
+
+
 def start(share: str | None = None) -> Path:
     root = Path(tempfile.mkdtemp(prefix="couchbox-demo-"))
     src = Path(share or os.environ.get("COUCHBOX_SHARE") or "/usr/share/couchbox")
@@ -153,6 +180,7 @@ def start(share: str | None = None) -> Path:
 
     remote.pair, remote.list_devices, remote.forget = fake_pair, fake_devices, fake_forget
     settings._schema_cache.clear()
+    demo_moments()
     from couchbox.daemon import server
 
     loop = asyncio.new_event_loop()

@@ -15,6 +15,9 @@ make, which posts it the same way) opens in its app on the TV: YouTube, Twitch, 
 Jellyfin, else the Search app's web view (couchbox.links). POST /send {"url": ...} with the
 X-Couchbox-Token header, SEND_LIMIT a minute.
 
+Moments (couchbox.moments): a button each starts one on the TV, and Stop stops the one playing
+(POST /moments lists them, /moments/start {"id"}, /moments/stop); the voice service plays them.
+
 The page's Enter (and "Type + Enter") is the keypad Enter key, so our TV apps' keyboard
 pop-up can tell "done typing" from the remote's OK (Return). Its address as a QR code, for
 the pop-up to show: /run/couchbox/phone/phone.png and phone.url. They use https://<tailnet name>
@@ -34,6 +37,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from evdev import UInput, ecodes as e
@@ -42,6 +46,7 @@ from couchbox import links, secrets, settings  # noqa: E402
 from couchbox.voice import cdp, tools  # noqa: E402
 
 PORT = 8791
+VOICE = "http://127.0.0.1:8790"            # couchbox-voice: plays Moments
 LAST_KEY = "/run/couchbox/last-key"      # couchbox-memory: someone is using the TV
 PHONE_DIR = "/run/couchbox/phone"           # phone.url, phone.png (systemd RuntimeDirectory)
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
@@ -231,6 +236,14 @@ PAGE = r"""<!doctype html>
   .paste { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-height: 40px; padding: 0 12px;
            font-size: 14px; color: var(--dim); background: var(--card2); border-radius: 10px; }
   .paste:active { transform: translateY(-50%) scale(0.95); }
+  .moments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .moments button { min-height: 64px; padding: 10px 14px; flex-direction: column; align-items: flex-start; justify-content: center;
+                    gap: 2px; text-align: left; font-weight: 650; }
+  .moments button small { font-size: 13px; font-weight: 500; color: var(--dim); }
+  .moments button.on { border-color: var(--accent); background: var(--card2); }
+  .moments button.on small { color: var(--accent2); }
+  #momentmsg { margin: 0; color: var(--dim); font-size: 15px; }
+  #momentmsg:empty { display: none; }
   #sendmsg { margin: 0; color: var(--dim); font-size: 15px; min-height: 20px; }
   #sendmsg.ok { color: var(--accent2); }
   #sendmsg.bad { color: #ff9b9b; }
@@ -285,6 +298,12 @@ PAGE = r"""<!doctype html>
     <div><button data-key="play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path d="M4 5l9 7-9 7z" fill="currentColor"/><path d="M16 5v14M20 5v14"/></svg></button>Play</div>
   </div>
 </div>
+<section class="card" id="momentscard" hidden>
+  <b>Moments</b>
+  <div class="moments" id="moments"></div>
+  <button id="stopmoment" hidden>Stop</button>
+  <p id="momentmsg"></p>
+</section>
 <form class="card" id="sendtv" novalidate onsubmit="event.preventDefault(); sendLink()">
   <b>Send to TV</b>
   <div class="field">
@@ -369,6 +388,49 @@ for (const b of document.querySelectorAll("[data-key]")) {
   for (const e of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(e, stop);
   b.addEventListener("contextmenu", ev => ev.preventDefault());
 }
+// Moments: a button each starts it on the TV; Stop stops the one playing
+const momentsCard = document.getElementById("momentscard"), momentsBox = document.getElementById("moments"),
+      stopMoment = document.getElementById("stopmoment"), momentMsg = document.getElementById("momentmsg");
+async function momentCall(path, body) {
+  if (!window.TOKEN) return null;
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-Couchbox-Token": window.TOKEN},
+                                 body: JSON.stringify(body || {})});
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+async function loadMoments() {
+  const r = await momentCall("/moments");
+  if (!r) return;
+  momentsCard.hidden = !r.moments.length;
+  momentsBox.replaceChildren(...r.moments.map(m => {
+    const b = document.createElement("button");
+    const on = m.id === r.active;
+    b.className = on ? "on" : "";
+    b.append(m.name);
+    const sub = document.createElement("small");
+    sub.textContent = on ? "Playing" : m.plays;
+    b.append(sub);
+    b.onclick = async () => {
+      momentMsg.textContent = "Starting " + m.name + "…";
+      const res = await momentCall("/moments/start", {id: m.id});
+      momentMsg.textContent = res ? res.result : "The TV isn't answering.";
+      loadMoments();
+    };
+    return b;
+  }));
+  const playing = r.moments.find(m => m.id === r.active);
+  stopMoment.hidden = !playing;
+  if (playing) stopMoment.textContent = "Stop " + playing.name;
+}
+stopMoment.onclick = async () => {
+  const res = await momentCall("/moments/stop");
+  momentMsg.textContent = res ? res.result : "The TV isn't answering.";
+  loadMoments();
+};
+loadMoments();
+setInterval(() => { if (!document.hidden) loadMoments(); }, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadMoments(); });
 // Send to TV: a link opens in its app on the TV (it can take a while if the app has to start)
 const link = document.getElementById("link"), sendBtn = document.getElementById("sendbtn"),
       sendMsg = document.getElementById("sendmsg"), paste = document.getElementById("paste");
@@ -550,6 +612,29 @@ class Handler(BaseHTTPRequestHandler):
             print(f"  {res.message}", flush=True)
         self.reply(200 if res.ok else 400 if not res.app else 502, {"ok": res.ok, "result": res.message})
 
+    def moments(self):
+        """POST /moments: the Moments and the one playing; /moments/start {"id"}, /moments/stop:
+        handed to the voice service, which plays them."""
+        from couchbox import moments
+        if self.path == "/moments":
+            ms = moments.all()
+            return self.reply(200, {"moments": [{"id": m["id"], "name": m["name"], "plays": moments.NAMES[m["app"]]} for m in ms],
+                                    "active": moments.active_id()})
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 1024)) or b"{}")
+        except ValueError:
+            body = {}
+        used()
+        req = urllib.request.Request(VOICE + self.path, json.dumps({"id": str(body.get("id", ""))}).encode(),
+                                     {"Content-Type": "application/json", "X-Couchbox": "1"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                res = json.load(r)
+        except (OSError, ValueError):
+            res = {"ok": False, "result": "The TV's voice service isn't running, and it plays Moments."}
+        print(f"{self.client_address[0]} {self.path} {body.get('id', '')}: {'ok' if res.get('ok') else 'failed'}", flush=True)
+        self.reply(200, {"ok": bool(res.get("ok")), "result": res.get("result") or "Done."})
+
     def do_POST(self):
         if not self.allowed():
             return
@@ -559,6 +644,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/send":
             return self.send_link()
+        if self.path in ("/moments", "/moments/start", "/moments/stop"):
+            return self.moments()
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             if self.path == "/type":

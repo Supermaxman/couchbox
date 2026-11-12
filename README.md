@@ -32,6 +32,7 @@
   - voice (any OpenAI-compatible speech-to-text and model endpoint);
   - Tailscale, SSH, disk encryption (with Tang network unlock, over Wi-Fi too);
   - updates.
+- **Moments:** teach the TV something by showing it. While a video, show or stream plays, hold the mic and say "remember this as pet music"; then "play pet music", its tile on the home row or a button on the phone page starts it again, with its own volume, repeat and a dark screen if you want one. Settings → Moments changes them.
 - **Customizable home row:** reorder, hide, rename apps, add websites as apps (Settings → Home screen, or hold OK on a tile).
 - **Everything optional:** with no AI endpoint, no Jellyfin, no Tailscale and no encryption, it's still a complete TV box. Each of those turns on in Settings when you want it.
 - **Updates:** signed releases from GitHub Releases. Updates install automatically when you're not watching, which is the default, or only when you choose (Manual). You can roll back to the previous version.

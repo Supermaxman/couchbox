@@ -187,3 +187,40 @@ def test_one_link_opens_at_a_time(opened):
     with phone._opening:
         status, res = send(base + "/send", b'{"url": "https://example.com/"}', token=token)
     assert status == 429 and "still opening" in res["result"]
+
+
+def test_moments_list_and_start_through_the_voice_service(server, monkeypatch):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from couchbox import settings
+
+    phone, base = server
+    asked = []
+
+    class Voice(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            asked.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"]))), self.headers.get("X-Couchbox")))
+            out = json.dumps({"ok": True, "result": "Playing Pet music."}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+    voice = ThreadingHTTPServer(("127.0.0.1", 0), Voice)
+    threading.Thread(target=voice.serve_forever, daemon=True).start()
+    monkeypatch.setattr(phone, "VOICE", f"http://127.0.0.1:{voice.server_address[1]}")
+    settings.update({"moments.list": [{"name": "Pet music", "app": "youtube", "target": "video:dQw4w9WgXcQ", "title": "Calm"}]})
+    assert post(base + "/moments", {})[0] == 401
+    token = secrets.ensure_token()
+    assert post(base + "/moments", {}, token) == (
+        200,
+        {"moments": [{"id": "pet-music", "name": "Pet music", "plays": "YouTube"}], "active": None},
+    )
+    assert post(base + "/moments/start", {"id": "pet-music"}, token) == (200, {"ok": True, "result": "Playing Pet music."})
+    assert asked == [("/moments/start", {"id": "pet-music"}, "1")]
+    page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+    assert 'id="momentscard"' in page
+    voice.shutdown()

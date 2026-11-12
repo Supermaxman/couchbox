@@ -1,8 +1,9 @@
 """The TV home screen, built from the apps registry and settings.
 
 build() writes everything the home screen reads:
-  /var/lib/couchbox/home/home.json   the row (watched by the home QML: changes show at once), and
-                                     where couchbox-ontv keeps Continue watching
+  /var/lib/couchbox/home/home.json   the row (watched by the home QML: changes show at once): a
+                                     tile per Moment (couchbox.moments), the apps, then Settings;
+                                     and where couchbox-ontv keeps Continue watching
   /var/lib/couchbox/home/tiles/*.png tile artwork (from share/tiles/*.svg)
   /usr/local/share/applications/couchbox-web-*.desktop   website launchers
   ~tv/.local/share/applications/<id>  renamed apps / extra launch arguments (same storage id)
@@ -20,7 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from couchbox import apps, ontv, paths, settings
+from couchbox import apps, moments, ontv, paths, settings
 from couchbox.system import sh
 
 log = logging.getLogger("couchbox.home")
@@ -119,6 +120,15 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
     for a in apps.home_row(s):
         png, glow = render_tile(a.tile)
         out.append({"id": a.desktop, "app": a.id, "name": a.name, "icon": a.icon, "tile": png, "glow": glow, "hideable": a.hideable})
+    # Moments (Settings → Moments): a tile each, before the apps (the first app still has the focus:
+    # Left reaches them), in their app's colour
+    glows = {x["app"]: (x["glow"], x["tile"]) for x in out}
+    tiles = []
+    for t in moments.tiles(s):
+        if t["plays"] in glows:  # (its app hidden or not set up: it couldn't start)
+            t["glow"], t["badge"] = glows[t["plays"]]
+            tiles.append(t)
+    out[0:0] = tiles
     w = None
     if d["weather"]:
         w = {"lat": s["location.lat"], "lon": s["location.lon"], "name": s["location.name"], "units": d["units"]}
@@ -162,6 +172,8 @@ def build(restart_shell: bool = False) -> dict[str, Any]:
     user_apps = tv_home() / ".local/share/applications"
     favs = []
     for i, entry in enumerate(data["apps"]):
+        if entry.get("moment"):
+            continue
         src = find_desktop(entry["id"])
         if not src:
             continue

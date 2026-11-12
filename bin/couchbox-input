@@ -15,6 +15,8 @@ pop-up is showing, it's dismissed instead; otherwise KEY_ESC.
 "popup-or:KEY_ENTER" (OK): while the Frigate pop-up shows (couchbox-frigate-popup), OK opens
 its camera in the Frigate app and the press (its repeats and release too) ends there; otherwise
 KEY_ENTER. Both only stat the pop-up's flag file unless it's showing, so the keys aren't slowed.
+While a Moment has the picture dark (couchbox-voice's flag file), any key brings the picture back
+and does nothing else (the Moment plays on).
 "media:playpause" (and play, pause, stop, next, previous, rewind, forward) goes to
 couchbox-mediakeys, which plays or pauses whatever is playing (the app in front's player, else
 the one playing, else the one paused last) over MPRIS; with nothing to control, or if that
@@ -76,6 +78,7 @@ RESCAN_SECONDS = 3
 LAST_KEY = "/run/couchbox/last-key"   # touched on every press: couchbox-memory's "someone is using the TV"
 RUN_REPEAT_SECONDS = 0.25   # a held key re-runs its command at most this often
 UINPUT_NAME = "couchbox-input"
+DARK_FLAG = "/run/couchbox/voice/moment-dark"   # couchbox-voice: a Moment has the picture dark
 MOUSE_NAME = "couchbox-input-mouse"
 MOUSE_SPEED = (250, 1400)    # pointer speed in mouse mode, px/s: when an arrow is pressed, after MOUSE_RAMP
 MOUSE_RAMP = 1.2             # seconds held to reach full speed
@@ -236,6 +239,18 @@ def voice_cancel():
         return False
 
 
+def moment_wake():
+    """The picture back, while a Moment has it dark: True if it was (the key ends there)."""
+    if not os.path.exists(DARK_FLAG):
+        return False
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8790/moments/wake", data=b"{}", method="POST", headers={"X-Couchbox": "1"})
+        with urllib.request.urlopen(req, timeout=0.5) as r:
+            return bool(json.load(r).get("woke"))
+    except (OSError, ValueError):
+        return False
+
+
 _popup = {}   # the Frigate pop-up's flag file, worked out once
 
 
@@ -301,6 +316,7 @@ def run(sections):
     last_scan = {}  # fd -> MSC_SCAN value of the event frame being read
     last_run = {}   # command -> when it last ran
     swallowed = set()  # voice-or keys whose press went to couchbox-voice (drop their release too)
+    woke = set()       # keys whose press brought a dark Moment's picture back (their repeats and release too)
     next_scan = 0.0
     # Mouse mode ("mouse-mode" button): the arrows move a pointer, OK clicks, Rewind and
     # Fast-forward scroll. For page controls that focus navigation can't reach.
@@ -370,6 +386,14 @@ def run(sections):
                 os.utime(LAST_KEY)
             except OSError:
                 pass
+        if value == 1 and moment_wake():
+            woke.add(label)
+            print(f"key {label} -> the picture back (a Moment had it dark)", flush=True)
+            return
+        if label in woke:
+            if value == 0:
+                woke.discard(label)
+            return
         if target == ("mouse",):
             if value == 1:
                 mouse_mode(not mouse["on"])

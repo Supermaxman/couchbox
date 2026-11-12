@@ -17,6 +17,7 @@ QtObject {
     readonly property bool clock24: !!(data && data.clock24)
     readonly property string continueFile: data && data.continueWatching ? data.continueWatching.file || "" : ""
     property var continueItems: []
+    property string activeMoment: ""        // the Moment playing (couchbox.moments' state, by the voice service)
     property string last: ""
     property string lastContinue: ""
 
@@ -30,6 +31,11 @@ QtObject {
         read("/var/lib/couchbox/home/home.json", text => {
             if (!text || text === d.last) return;
             try { d.data = JSON.parse(text); d.last = text; } catch (e) {}
+        });
+        read("/var/lib/couchbox/moments.json", text => {
+            let id = "";
+            try { const a = JSON.parse(text).active; id = a ? a.id : ""; } catch (e) {}
+            if (id !== d.activeMoment) d.activeMoment = id;
         });
         if (!d.continueFile) {
             if (d.continueItems.length) d.continueItems = [];

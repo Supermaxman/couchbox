@@ -108,6 +108,7 @@ STEPS: list[tuple[tuple[str, ...], Callable[[dict[str, Any]], None], str]] = [
     (
         (
             "home.",
+            "moments.",
             "apps.disabled",
             "apps.web_cache_mb",
             "location.",

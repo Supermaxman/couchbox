@@ -17,7 +17,7 @@ shot() {  # shot NAME APP ARGS...
     echo "ok $name"
   fi
 }
-for p in network home apps voice remote display time access security updates system; do
+for p in network home moments apps voice remote display time access security updates system; do
   shot "settings-$p" couchbox-settings --page "$p" --in
 done
 # the Frigate app with made-up cameras: dashboard, a camera full screen (and its strip),

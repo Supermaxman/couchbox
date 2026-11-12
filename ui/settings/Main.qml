@@ -22,6 +22,7 @@ Window {
     readonly property var sections: [
         {id: "network", name: "Network", icon: "📶"},
         {id: "home", name: "Home screen", icon: "🏠"},
+        {id: "moments", name: "Moments", icon: "✨"},
         {id: "apps", name: "Apps and media", icon: "🎬"},
         {id: "voice", name: "Voice", icon: "🎙️"},
         {id: "remote", name: "Remote and TV", icon: "📺"},

@@ -9,6 +9,10 @@ parse(text) -> (action, argument) or None
   "volume up" / "turn it down" / "mute"   ("tv", "volume_up" | "volume_down" | "mute")
   "turn off the tv" / "tv off"     ("tv", "off")
   "search for cats" / "find cats" / "youtube cats"   ("search", "cats")
+  "remember this as pet music"     ("remember", "pet music")
+  "play pet music" / "start bedtime"   ("moment", "pet music"): the caller starts the Moment of
+                                   that name, else parses it again with moments=False
+  "stop the moment"                ("stop_moment", "")
 Anything else is None: the caller says it didn't understand (or types it, when a text box is open).
 """
 
@@ -24,6 +28,9 @@ _RULES: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"^(mute|unmute)( the tv| it)?$"), "tv", "mute"),
     (re.compile(r"^(turn )?(off the tv|the tv off|tv off)$"), "tv", "off"),
 ]
+_REMEMBER = re.compile(r"^(please )?(remember|save) (this|that|it|what'?s (on|playing))( one)? as (?P<name>.+)$")
+_MOMENT = re.compile(r"^(please )?(play|start|put on) (?P<name>.+)$")
+_STOP_MOMENT = re.compile(r"^(stop|end)( the)? moment$")
 _OPEN = re.compile(r"^(open|launch|start|go to|switch to|show me)( the)? (?P<app>.+?)( app)?$")
 _SEARCH = re.compile(r"^(search( youtube)? for|search|find|look up|youtube) (?P<q>.+)$")
 
@@ -34,10 +41,18 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", t)
 
 
-def parse(text: str) -> tuple[str, str] | None:
+def parse(text: str, moments: bool = True) -> tuple[str, str] | None:
     t = normalize(text)
     if not t:
         return None
+    m = _REMEMBER.match(t)
+    if m:
+        return "remember", m.group("name").strip()
+    if _STOP_MOMENT.match(t):
+        return "stop_moment", ""
+    m = _MOMENT.match(t)
+    if moments and m and m.group("name") not in ("it", "that", "the video"):
+        return "moment", m.group("name").strip()
     for rx, action, arg in _RULES:
         if rx.match(t):
             return action, arg

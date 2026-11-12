@@ -757,4 +757,14 @@ def setup_save(step: int, completed: list[str] | None = None, done: bool = False
 
 
 # ------------------------------------------------------------------ the rest lives in modules
-from . import api_assistant, api_display, api_encryption, api_extra, api_remote, api_setup, api_updates, api_weather  # noqa: E402,F401
+from . import (  # noqa: E402,F401
+    api_assistant,
+    api_display,
+    api_encryption,
+    api_extra,
+    api_moments,
+    api_remote,
+    api_setup,
+    api_updates,
+    api_weather,
+)
