@@ -65,9 +65,11 @@ done)
     old=$(cat "$PACE" 2>/dev/null)
     # shellcheck disable=SC2086  # three numbers
     set -- ${old:-100 40 180}
-    w=$(span wifi unlock); u=$(span unlock start); s=$(span start end)
+    # a step that took far longer than usual (the unlock server was down, say) keeps its old pace
+    keep() { [ -n "$1" ] && [ "$1" -le $(($2 * 3 + 50)) ] && echo "$1" || echo "$2"; }
+    w=$(keep "$(span wifi unlock)" "$1"); u=$(keep "$(span unlock start)" "$2"); s=$(keep "$(span start end)" "$3")
     mkdir -p "${PACE%/*}"
-    printf '%s %s %s\n' "${w:-$1}" "${u:-$2}" "${s:-$3}" > "$PACE.new" && mv "$PACE.new" "$PACE"
+    printf '%s %s %s\n' "$w" "$u" "$s" > "$PACE.new" && mv "$PACE.new" "$PACE"
     ;;
 log)
     # the last lines so far, then each new one, until Plymouth is gone; the state about once a second

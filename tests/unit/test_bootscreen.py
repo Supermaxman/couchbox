@@ -36,9 +36,17 @@ def test_splash_args_are_added_once():
     out = bootscreen.with_splash("root=/dev/mapper/root quiet rd.neednet=1 video=HDMI-A-1:3840x2160@30\n")
     assert out == (
         "root=/dev/mapper/root quiet rd.neednet=1 splash loglevel=3 vt.global_cursor_default=0"
-        " plymouth.ignore-serial-consoles video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60\n"
+        " plymouth.ignore-serial-consoles rd.driver.export video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60\n"
     )
     assert bootscreen.with_splash(out) == out
+
+
+def test_plymouth_waits_2_s_for_a_display():
+    ubuntu = "# Administrator customizations go in this file\n#[Daemon]\n"
+    assert bootscreen.with_device_timeout(ubuntu) == ubuntu + "[Daemon]\nDeviceTimeout=2\n"
+    mine = "[Daemon]\nTheme=x\nDeviceTimeout = 8\n[Other]\nA=1\n"
+    assert bootscreen.with_device_timeout(mine) == "[Daemon]\nTheme=x\nDeviceTimeout=2\n[Other]\nA=1\n"
+    assert bootscreen.with_device_timeout(bootscreen.with_device_timeout(mine)) == bootscreen.with_device_timeout(mine)
 
 
 def test_first_apply_makes_a_test_boot_with_the_splash(box, runner):
@@ -49,6 +57,7 @@ def test_first_apply_makes_a_test_boot_with_the_splash(box, runner):
     new = (fw / "new/cmdline.txt").read_text()
     assert new.startswith(CMDLINE.strip() + " quiet splash")
     assert (fw / "current/cmdline.txt").read_text() == CMDLINE  # the known-good boot is untouched
+    assert "DeviceTimeout=2" in (box / bootscreen.CONF).read_text()
 
 
 def test_nothing_to_do_once_the_test_boot_is_current(box, runner):

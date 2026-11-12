@@ -41,8 +41,16 @@ box that unlocks its disk over the network spends most of its boot there.
 - `plymouth-quit.service.d/couchbox.conf`: saves the pace and quits with `--retain-splash`,
   so the last frame stays until the TV session draws.
 - The kernel command line gets `quiet splash loglevel=3 vt.global_cursor_default=0
-  plymouth.ignore-serial-consoles` and `video=<output>:<display.mode>`: the boot uses the TV
-  session's resolution, so the TV doesn't switch modes (and go black) at the hand-over.
+  plymouth.ignore-serial-consoles rd.driver.export` and `video=<output>:<display.mode>`: the
+  boot uses the TV session's resolution, so the TV doesn't switch modes (and go black) at the
+  hand-over. (`rd.driver.export` is what Ubuntu's dracut does anyway; said outright, it stops
+  a deprecation warning being printed on the TV.)
+- `/etc/plymouth/plymouthd.conf` gets `DeviceTimeout=2`: a Pi's initrd has no DRM device, only
+  the firmware's framebuffer, and Plymouth waits that long for one before drawing on it
+  (Ubuntu's 8 s left the TV black for the first 10 s).
+- The real system's log feeder must not `Conflicts=` with `plymouth-quit.service`: both start
+  in the same boot transaction and systemd drops one of them, which left the boot screen up
+  over the TV session in testing.
 
 ## Installing it safely
 

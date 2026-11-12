@@ -21,9 +21,15 @@ log = logging.getLogger(__name__)
 THEME = "usr/share/plymouth/themes/couchbox"
 MODULE = "usr/lib/dracut/modules.d/89couchbox-boot"
 HELPER = "usr/lib/couchbox/bin/couchbox-boot-status"
-# quiet kernel and systemd, the splash, no kernel messages above errors, no blinking cursor, and
-# the splash on the TV even though the serial console is on too
-SPLASH_ARGS = ("quiet", "splash", "loglevel=3", "vt.global_cursor_default=0", "plymouth.ignore-serial-consoles")
+CONF = "etc/plymouth/plymouthd.conf"
+# The initrd has no DRM device on a Pi (the firmware's framebuffer is plain fbdev), and Plymouth
+# waits DeviceTimeout (Ubuntu: 8 s) for one before drawing on it: the TV stayed black that long.
+DEVICE_TIMEOUT = "2"
+# quiet kernel and systemd, the splash, no kernel messages above errors, no blinking cursor, the
+# splash on the TV even though the serial console is on too, and rd.driver.export: what Ubuntu's
+# dracut does anyway (its copymods hook), said outright so it doesn't print a warning on the TV
+SPLASH_ARGS = ("quiet", "splash", "loglevel=3", "vt.global_cursor_default=0", "plymouth.ignore-serial-consoles",
+               "rd.driver.export")
 
 
 def video_args() -> list[str]:
@@ -42,11 +48,35 @@ def with_splash(cmdline: str) -> str:
     return " ".join(words + [w for w in SPLASH_ARGS if w not in words] + video) + "\n"
 
 
+def with_device_timeout(conf: str) -> str:
+    """plymouthd.conf with DeviceTimeout set in its [Daemon] section (other settings stay)."""
+    out, in_daemon, done = [], False, False
+    for line in conf.splitlines():
+        t = line.strip()
+        if t.startswith("["):
+            if in_daemon and not done:
+                out.append(f"DeviceTimeout={DEVICE_TIMEOUT}")
+                done = True
+            in_daemon = t == "[Daemon]"
+        elif in_daemon and t.replace(" ", "").startswith("DeviceTimeout="):
+            if not done:
+                out.append(f"DeviceTimeout={DEVICE_TIMEOUT}")
+                done = True
+            continue
+        out.append(line)
+    if not done:
+        if not in_daemon:
+            out.append("[Daemon]")
+        out.append(f"DeviceTimeout={DEVICE_TIMEOUT}")
+    return "\n".join(out) + "\n"
+
+
 def fingerprint() -> str:
-    """What the boot image's splash is made of: the theme, the dracut module and the helper."""
+    """What the boot image's splash is made of: the theme, the dracut module, the helper and
+    Plymouth's settings."""
     h = hashlib.sha256()
     root = paths.root()
-    for base in (THEME, MODULE, HELPER):
+    for base in (THEME, MODULE, HELPER, CONF):
         p = root / base
         for f in sorted([p] if p.is_file() else p.rglob("*") if p.is_dir() else []):
             if f.is_file():
@@ -87,6 +117,11 @@ def apply() -> str:
     sh(["update-alternatives", "--quiet", "--install", "/usr/share/plymouth/themes/default.plymouth",
         "default.plymouth", plymouth, "150"], check=False)
     sh(["update-alternatives", "--quiet", "--set", "default.plymouth", plymouth], check=False)
+    conf = root / CONF
+    old = conf.read_text() if conf.exists() else ""
+    if with_device_timeout(old) != old:
+        conf.parent.mkdir(parents=True, exist_ok=True)
+        conf.write_text(with_device_timeout(old))
     fw = paths.boot_firmware()
     if not (fw / "current/cmdline.txt").exists():
         return "no piboot layout"  # not a Pi with flash-kernel's try-once boot: leave it alone
