@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/Supermaxman/couchbox/compare/v0.22.0...v0.23.0) (2026-11-12)
+
+
+### New
+
+* **weather:** rain and warning pop-ups in the camera pop-up's corner ([#124](https://github.com/Supermaxman/couchbox/issues/124)) ([77b5ca8](https://github.com/Supermaxman/couchbox/commit/77b5ca8ad3b42cbf0f8b10095955bdefa91f1bf3))
+
 ## [0.22.0](https://github.com/Supermaxman/couchbox/compare/v0.21.0...v0.22.0) (2026-11-12)
 
 
