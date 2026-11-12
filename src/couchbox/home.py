@@ -22,7 +22,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from couchbox import apps, away, moments, ontv, paths, settings, show
+from couchbox import apps, away, dayreel, moments, ontv, paths, settings, show
 from couchbox.system import sh
 
 log = logging.getLogger("couchbox.home")
@@ -137,9 +137,11 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
     cw = {"file": str(ontv.continue_file(tv_home()))} if s["home.continue"] else None
     # While you were out: the TV user's couchbox-away service puts its card in this file
     aw = {"file": str(away.reel_file(tv_home()))} if s["home.away"] and s["media.frigate.url"] else None
+    # Today at home: the TV user's couchbox-morning service puts its card in this file
+    dy = {"file": str(dayreel.card_file(tv_home()))} if s["home.day"] and s["media.frigate.url"] else None
     # The morning show: the TV user's couchbox-morning service writes it here; its tile goes first
     mo = {"file": str(show.show_file(tv_home()))} if s["home.morning"] else None
-    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw, "away": aw, "morning": mo}
+    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw, "away": aw, "day": dy, "morning": mo}
 
 
 def _write(path: Path, text: str, owner: str | None = None) -> None:

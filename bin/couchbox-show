@@ -9,9 +9,13 @@ couchbox-morning (the TV user's service) makes the show overnight; the QML is in
 /usr/share/couchbox/ui/show.
 
   couchbox-show [--open morning]
-  couchbox-show --demo --shot FILE [--keys right,ok,...] [--part KIND] [--file SHOW.JSON]
+  couchbox-show --reels [--open ID]  the Reels app (couchbox-reels, its own tile on the home row):
+                                     every kept reel (couchbox.reels), newest first; --open: play
+                                     that one (Today at home's card), and leave at its end
+  couchbox-show --demo --shot FILE [--keys right,ok,...] [--part KIND] [--file SHOW.JSON] [--reels]
                                      render once off screen (a made-up show; --file: a real one
-                                     couchbox-morning wrote; --part: start at that part)
+                                     couchbox-morning wrote; --part: start at that part; --reels:
+                                     made-up reels)
 Tests: COUCHBOX_MUTE=1 (no sound).
 """
 import json
@@ -26,7 +30,8 @@ from pathlib import Path
 from couchbox import paths, settings  # noqa: E402
 
 QML = os.environ.get("COUCHBOX_SHOW_QML", str(paths.share() / "ui/show/Main.qml"))
-SITE = "show"
+REELS = "--reels" in sys.argv
+SITE = "reels" if REELS else "show"
 
 
 def arg(name):
@@ -41,7 +46,7 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox import away, show  # noqa: E402
+from couchbox import away, dayreel, reels, show  # noqa: E402
 
 
 class Backend(QObject):
@@ -62,14 +67,18 @@ class Backend(QObject):
 
     def show(self):
         """This morning's show as the player takes it ({"parts": []} when there's none)."""
-        from couchbox.services import frigate
-
         if self.demo:
             s = away.read_json(Path(arg("--file"))) if arg("--file") else show.demo_show()
         else:
             s = show.current()
         if not s:
             return {"parts": []}
+        return self.ready(s)
+
+    def ready(self, s):
+        """A show's clips and videos as the player takes them."""
+        from couchbox.services import frigate
+
         now = time.time()
         for p in s["parts"]:
             for c in p.get("clips") or []:
@@ -82,6 +91,40 @@ class Backend(QObject):
         if start:
             s["start"] = next((i for i, p in enumerate(s["parts"]) if p["kind"] == start), 0)
         return s
+
+    # ------------------------------------------------------------------ the Reels app
+    def kept(self):
+        return reels.demo_reels() if self.demo else reels.all_reels()
+
+    def reel_list(self):
+        """The kept reels, newest first, under the week or month they're from."""
+        from couchbox.services import frigate
+
+        clock24 = settings.derived()["clock24"]
+        groups = []
+        for r in self.kept():
+            x = reels.listing(r, clock24)
+            objs = (r["clips"][0].get("review") or {}).get("objects") or []
+            x["first"] = frigate.kind(objs[0]) if objs else "object"
+            g = reels.group(r)
+            if not groups or groups[-1]["name"] != g:
+                groups.append({"name": g, "reels": []})
+            groups[-1]["reels"].append(x)
+        return {"groups": groups}
+
+    def reel(self, rid):
+        """A kept reel as a show of one part."""
+        r = next((x for x in self.kept() if x["id"] == rid), None) if self.demo else reels.get(rid)
+        if not r:
+            return {"parts": []}
+        x = reels.listing(r, settings.derived()["clock24"])
+        part = {"kind": "clips", "title": f"{x['title']}  ·  {x['day']}", "clips": r["clips"], "seconds": away.CLIP * len(r["clips"])}
+        return self.ready({"parts": [part]})
+
+    def reel_seen(self, rid):
+        if not self.demo:
+            dayreel.mark_seen(rid)
+        return {"ok": True}
 
     def weather_now(self):
         """Today's forecast line and the radar's last hour, as the show reaches its weather."""
@@ -127,6 +170,9 @@ class Backend(QObject):
             "weather": lambda: self.weather_now(),
             "open": lambda: self.open(a["target"]),
             "seen": lambda: self.seen(),
+            "reels": lambda: self.reel_list(),
+            "reel": lambda: self.reel(a["id"]),
+            "reelSeen": lambda: self.reel_seen(a.get("id", "")),
         }
         return ops[op]()
 
@@ -171,7 +217,7 @@ class Control(QObject):
         if op == "ping":
             return {"ok": True, "site": SITE}
         if op == "state":
-            return dict(self.state, site="Morning show")
+            return dict(self.state, site="Reels" if REELS else "Morning show")
         if op == "open":
             self.command.emit(json.dumps(req))
             return {"ok": True}
@@ -202,7 +248,7 @@ def forward_to_running():
     from couchbox import appctl
     if "--shot" in sys.argv or not appctl.running(SITE):
         return False
-    appctl.call(SITE, {"op": "open", "target": "morning"})
+    appctl.call(SITE, {"op": "open", "target": arg("--open") or ("reels" if REELS else "morning")})
     return True
 
 
@@ -216,9 +262,10 @@ def main():
     locale.setlocale(locale.LC_NUMERIC, "C")         # libmpv needs it
     if forward_to_running():
         sys.exit(0)
-    app.setApplicationName("couchbox-show")
-    app.setApplicationDisplayName("Morning show")
-    app.setDesktopFileName("couchbox-show")          # Wayland app id: matches couchbox-show.desktop
+    name = "couchbox-reels" if REELS else "couchbox-show"
+    app.setApplicationName(name)
+    app.setApplicationDisplayName("Reels" if REELS else "Morning show")
+    app.setDesktopFileName(name)                     # Wayland app id: matches its .desktop
     if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
         from couchbox import player
         qmlRegisterType(player.MpvVideo, "CouchPlayer", 1, 0, "MpvVideo")

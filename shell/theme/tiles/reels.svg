@@ -1,0 +1,28 @@
+<svg data-couchbox-glow="#fb7185" xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <!-- couchbox home tile: Reels (every reel the cameras made, couchbox.reels). Rendered to PNG by
+       couchbox-home (rsvg-convert); data-couchbox-glow is the colour of the glow behind it. -->
+  <defs>
+    <clipPath id="r"><rect width="800" height="450" rx="36"/></clipPath>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="0.3" cy="0.3" r="1">
+      <stop offset="0" stop-color="#3b1d2a"/><stop offset="0.55" stop-color="#1a1118"/><stop offset="1" stop-color="#09090b"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.2" cy="0.9" r="0.6">
+      <stop offset="0" stop-color="#fb7185" stop-opacity="0.32"/><stop offset="1" stop-color="#fb7185" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="800" height="450" fill="url(#bg)"/>
+    <rect width="800" height="450" fill="url(#glow)"/>
+    <g transform="translate(128 150)">
+      <rect x="44" y="0" width="150" height="100" rx="20" fill="#fb7185" opacity="0.35"/>
+      <rect x="22" y="22" width="150" height="100" rx="20" fill="#fb7185" opacity="0.6"/>
+      <rect x="0" y="44" width="150" height="100" rx="20" fill="#fb7185"/>
+      <path d="M60 72 L60 116 L98 94 Z" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+    </g>
+    <text x="370" y="258" font-family="Inter, DejaVu Sans, sans-serif" font-size="92" font-weight="700" fill="#fafafa">Reels</text>
+    <rect width="800" height="450" fill="url(#sheen)"/>
+  </g>
+</svg>

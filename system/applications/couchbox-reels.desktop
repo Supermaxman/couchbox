@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Reels
+Comment=Every reel the cameras made: today at home, while you were out, the morning shows
+Icon=folder-videos
+Categories=AudioVideo;Video;
+Exec=/usr/lib/couchbox/bin/couchbox-reels
+StartupWMClass=couchbox-reels

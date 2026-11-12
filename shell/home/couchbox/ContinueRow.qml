@@ -27,13 +27,14 @@ FocusScope {
     }
 
     // A fresh list keeps the same card in focus (it may have moved), else the same place;
-    // While you were out's card, when it arrives, has the focus (it comes first)
+    // While you were out's or Today at home's card, when it arrives, has the focus (they come first)
     property string focusedKey: ""
-    property bool hadAway: false
+    property string hadFirst: ""
+    function welcome(x) { return x.key === "away" || x.key === "day"; }
     onItemsChanged: {
-        const away = items.length > 0 && items[0].key === "away";
-        if (away && !hadAway) focusedKey = "away";
-        hadAway = away;
+        const first = items.length > 0 && welcome(items[0]) ? items[0].key : "";
+        if (first && first !== hadFirst) focusedKey = first;
+        hadFirst = first;
         let i = items.findIndex(x => x.key === focusedKey);
         if (i < 0) i = Math.min(Math.max(0, list.currentIndex), items.length - 1);
         list.currentIndex = i;
@@ -42,8 +43,8 @@ FocusScope {
 
     Text {
         id: label
-        // only the While you were out card: the household just came home
-        text: root.items.length === 1 && root.items[0].key === "away" ? "Welcome back" : "Continue watching"
+        // only While you were out's or Today at home's cards: the household just came home
+        text: root.items.length > 0 && root.items.every(root.welcome) ? "Welcome back" : "Continue watching"
         color: list.activeFocus ? Style.text : Style.textDim
         font.family: Style.font
         font.pixelSize: 19

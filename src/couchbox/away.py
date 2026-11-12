@@ -207,8 +207,11 @@ def base_score(c: dict[str, Any]) -> float:
     return max(0.0, min(10.0, s))
 
 
-def candidates(reviews: list[dict[str, Any]], side: dict[str, bool], since: float, until: float) -> list[dict[str, Any]]:
-    """Frigate's review items (/api/review rows) of an absence, as reel candidates, oldest first."""
+def candidates(
+    reviews: list[dict[str, Any]], side: dict[str, bool], since: float, until: float, section_of: Any = section
+) -> list[dict[str, Any]]:
+    """Frigate's review items (/api/review rows) of an absence, as reel candidates, oldest first
+    (section_of: which part of the reel an item goes in, None to leave it out)."""
     out = []
     for r in reviews:
         start, end = r.get("start_time") or 0, r.get("end_time")
@@ -223,7 +226,7 @@ def candidates(reviews: list[dict[str, Any]], side: dict[str, bool], since: floa
                 o.split("-verified")[0] for o in (data.get("objects") or []) + (data.get("sub_labels") or []) if isinstance(o, str)
             )
         )
-        sec = section(objects, side[cam])
+        sec = section_of(objects, side[cam])
         if not sec:
             continue
         c = {
@@ -285,11 +288,11 @@ VOICE = "http://127.0.0.1:8790"
 FRAME = 540  # the frames' height for the model (a cat and a small dog apart at night)
 
 
-def look(f: Any, c: dict[str, Any], camera_label: str, log: Any = print) -> str:
+def look(f: Any, c: dict[str, Any], camera_label: str, log: Any = print, prompt: str = "") -> str:
     """The model's look at one candidate (three frames through couchbox-voice's /look), written
     into c (lively, best, caption, best_t). Answers "ok" (looked, or nothing to look at: try
     counted), "busy" (someone is using the assistant), "none" (no model that sees: 404, 501,
-    503), or "down" (couchbox-voice out of reach)."""
+    503), or "down" (couchbox-voice out of reach). prompt: another question than LOOK's."""
     import requests
 
     times, images = [], []
@@ -304,7 +307,10 @@ def look(f: Any, c: dict[str, Any], camera_label: str, log: Any = print) -> str:
         return "ok"
     try:
         r = requests.post(
-            f"{VOICE}/look", json={"prompt": look_prompt(c, camera_label), "images": images}, headers={"X-Couchbox": "1"}, timeout=90
+            f"{VOICE}/look",
+            json={"prompt": prompt or look_prompt(c, camera_label), "images": images},
+            headers={"X-Couchbox": "1"},
+            timeout=90,
         )
     except requests.RequestException as err:
         log(f"the model isn't reachable through couchbox-voice: {err}")
