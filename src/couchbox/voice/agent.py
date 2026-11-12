@@ -106,6 +106,28 @@ class Agent:
                 self.log(f"model unreachable: {err}")
         raise RuntimeError("The assistant model server isn't answering.")
 
+    def warm(self):
+        """Have the model server load the model, and read the instructions and tools every request
+        starts with (its prompt cache keeps them), ahead of a question: when someone sits down at
+        the TV. A model server that has been idle can take a minute to answer its first request."""
+        self.tool_list = self.tool_list or tools.schemas()
+        body = {
+            "model": self.model,
+            "messages": [self.system(), {"role": "user", "content": "(warming up: answer OK)"}],
+            "tools": self.tool_list,
+            "max_tokens": 1,
+        }
+        if self.no_think:
+            body["chat_template_kwargs"] = {"enable_thinking": False}
+        t = time.monotonic()
+        try:
+            r = requests.post(f"{self.url}/chat/completions", json=body, timeout=180, headers={"Authorization": f"Bearer {self.key}"})
+        except (requests.ConnectionError, requests.Timeout) as err:
+            self.log(f"warming the model: {err}")
+            return False
+        self.log(f"warmed the model: HTTP {r.status_code} in {time.monotonic() - t:.1f}s")
+        return r.ok
+
     # -------------------------------------------------------------- memory
     def system(self):
         """Only what rarely changes, so the model server's prompt cache keeps it (with the tools,

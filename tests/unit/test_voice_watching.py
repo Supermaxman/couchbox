@@ -289,7 +289,7 @@ class Server:
             r.raise_for_status = lambda: (_ for _ in ()).throw(RuntimeError(r.text))
             return r
         msg = self.script.pop(0)
-        r.status_code, r.text = 200, ""
+        r.status_code, r.text, r.ok = 200, "", True
         r.raise_for_status = lambda: None
         r.json = lambda: {"choices": [{"message": msg}], "usage": {}}
         return r
@@ -349,3 +349,13 @@ def test_a_server_without_template_switches_keeps_thinking(ask):
     a, reply = ask(s, "what did I miss")
     assert reply == "Theo came in late." and a.no_think is False
     assert "chat_template_kwargs" not in s.bodies[-1]
+
+
+def test_warming_the_model_reads_the_usual_start(monkeypatch):
+    s = Server([{"role": "assistant", "content": "O"}])
+    monkeypatch.setattr(agent.requests, "post", s)
+    a = agent.Agent("http://x", "m", "k", lambda *_: None)
+    assert a.warm()
+    body = s.bodies[0]
+    assert body["max_tokens"] == 1 and body["messages"][0] == a.system() and body["tools"] == tools.schemas()
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
