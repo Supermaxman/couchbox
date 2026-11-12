@@ -1,11 +1,13 @@
 # The journal into the boot screen's log panel, from the switch to the real system until the
-# boot screen hands over to the TV session.
+# boot screen hands over to the TV session (it stops by itself once Plymouth has quit).
+# No Conflicts= with plymouth-quit.service: both start in the same boot transaction, and
+# systemd would drop one of them, leaving the boot screen up over the TV session.
 [Unit]
 Description=Couchbox boot screen: log panel
 DefaultDependencies=no
 After=systemd-journald.service
-Before=plymouth-quit.service
-Conflicts=plymouth-quit.service shutdown.target
+Conflicts=shutdown.target
+Before=shutdown.target
 ConditionPathExists=/run/plymouth/pid
 
 [Service]

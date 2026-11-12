@@ -10,7 +10,7 @@ Rectangle {
 
     // the boot screen's layout: drawn at 3840x2160, scaled to fit, centred
     readonly property real s: Math.min(width / 3840, height / 2160)
-    readonly property real top: (height - 2160 * s) / 2
+    readonly property real oy: (height - 2160 * s) / 2
     function px(v) { return Math.round(v * s) }
 
     property real progress: 0.85 + 0.15 * Math.min(stage, 6) / 6
@@ -21,14 +21,14 @@ Rectangle {
         width: px(300); height: px(270)
         smooth: true
         x: (root.width - width) / 2
-        y: root.top + px(760) - height / 2
+        y: root.oy + px(760) - height / 2
     }
 
     Rectangle {
         id: track
         width: px(720); height: px(10); radius: height / 2
         x: (root.width - width) / 2
-        y: root.top + px(1080)
+        y: root.oy + px(1080)
         color: Qt.rgba(1, 1, 1, 0.12)
 
         Item {
@@ -52,7 +52,7 @@ Rectangle {
         color: "#f5f6f8"
         opacity: 0.72
         anchors.horizontalCenter: parent.horizontalCenter
-        y: root.top + px(1130)
+        y: root.oy + px(1130)
         renderType: Text.NativeRendering
     }
 }

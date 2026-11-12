@@ -26,6 +26,7 @@ steps[0] = "wifi"; steps[1] = "unlock"; steps[2] = "start";
 expect[0] = 10; expect[1] = 4; expect[2] = 18;   # seconds, until the first boot is measured
 began[0] = -1; began[1] = -1; began[2] = -1;
 net_unlock = 0;
+pace_known = 0;         # until couchbox-boot-status has said how this box unlocks
 cur = -1;               # the step under way
 now = 0;                # seconds since Plymouth started (see on_progress)
 prog_last = 0; now_at_prog = 0;
@@ -190,8 +191,8 @@ fun stuck() {
 
 # The passphrase is wanted from the person in front of the TV.
 fun needs_you() {
-    if (!pw_asked) return 0;
-    return stuck() || !net_unlock || pw_typed || pw_wrong;
+    if (!pw_asked || !booting || cur >= 2) return 0;    # (from step 2 on the disk is unlocked)
+    return stuck() || (pace_known && !net_unlock) || pw_typed || pw_wrong;
 }
 
 # A step running well past its usual time opens the log by itself.
@@ -296,6 +297,7 @@ fun on_status(s) {
     if (kind == "pace") {
         for (i = 0; i < 3; i++) global.expect[i] = number(field(s, 2 + i)) / 10;
         global.net_unlock = (field(s, 5) == "1");
+        global.pace_known = 1;
         segments();
     } else if (kind == "step") {
         w = field(s, 2);
@@ -309,6 +311,7 @@ Plymouth.SetUpdateStatusFunction(on_status);
 
 fun on_root_mounted() {
     if (cur < 2) { global.cur = 2; global.began[2] = now; }
+    global.pw_asked = 0; global.pw_bullets = 0; global.pw_typed = 0;
 }
 Plymouth.SetRootMountedFunction(on_root_mounted);
 
