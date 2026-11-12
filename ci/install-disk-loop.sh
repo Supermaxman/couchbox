@@ -65,10 +65,20 @@ import sys
 from couchbox import install_disk
 install_disk.copy(sys.argv[1], lambda s: print(s.get('step'), s.get('percent')), source=sys.argv[2])
 " "$DST" "$W/src"
-partx -u "$DST" 2>/dev/null || true
-waitdev "${DST}p2"
+# copy() made both partitions and used them: don't partx -u here, it deletes and re-adds them
+# under new device numbers, and the check then raced the node loop (/dev/loopNp1 stale or gone)
+waitdev "${DST}p1"; waitdev "${DST}p2"
 
 echo "== check"
+failed() {  # what the check saw: each partition's node against the kernel, and what is on it
+  echo "FAILED (exit $1) at line $2: $3"
+  lsblk -o NAME,MAJ:MIN,PARTUUID,LABEL,FSTYPE "$DST"
+  for p in "$DST"p*; do
+    echo "$p: node $(stat -c %Hr:%Lr "$p"), kernel $(cat "/sys/block/${DST#/dev/}/${p#/dev/}/dev" 2>&1)"
+    blkid -p "$p"
+  done
+}
+trap 'failed $? $LINENO "$BASH_COMMAND"' ERR
 root_uuid=$(blkid -s PARTUUID -o value "${DST}p2"); boot_uuid=$(blkid -s PARTUUID -o value "${DST}p1")
 [[ $(blkid -s LABEL -o value "${DST}p1") == system-boot && $(blkid -s TYPE -o value "${DST}p1") == vfat ]]
 [[ $(blkid -s LABEL -o value "${DST}p2") == writable && $(blkid -s TYPE -o value "${DST}p2") == ext4 ]]
