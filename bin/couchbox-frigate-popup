@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 """couchbox-frigate-popup: a camera's live picture in a corner of the TV, over whatever is on
 (YouTube, Jellyfin, Twitch, the home screen, anything), when Frigate sees something the
-household asked about. Runs in the TV session as the TV user (couchbox-frigate-popup.service).
+household asked about; and in the same corner, weather worth interrupting for: rain due in the
+next 20 minutes, or an official warning. Runs in the TV session as the TV user
+(couchbox-frigate-popup.service).
 
 Every 2 seconds it asks Frigate for its review items of the last two minutes (with the Frigate
 app's saved sign-in, ~/.local/share/couchbox-frigate/session.json). An item still going on, or
@@ -26,6 +28,17 @@ $XDG_RUNTIME_DIR/couchbox/frigate-popup.shown is there.
   couchbox-frigate-popup --status         what it's showing, cooldowns, sign-in, the settings
   couchbox-frigate-popup --demo --shot FILE [--test] [--size S] [--position P] [--picture P]
                                           render one pop-up off screen (made-up cameras)
+Weather (couchbox.weather_popup's rules; Settings → Apps and media → Weather pop-ups): every 5
+minutes it asks Open-Meteo for the next hours in 15-minute steps, and every 2 minutes the US
+National Weather Service for warnings (where it covers), for the town in Settings → Time. A
+shower about to start, or a new warning, pops up once with the radar's last hour as a loop: OK
+opens the Weather app's radar, Back dismisses it. A camera always comes first: weather waits
+while one shows, and a camera that pops up over the weather sends it back to wait. Nothing pops
+in a kind's quiet hours, and nothing while the Weather app is in front.
+
+  couchbox-frigate-popup --test-weather rain|warning    ask it to show a made-up one now
+  couchbox-frigate-popup --demo --shot FILE --weather rain|warning|snow    render one off screen
+  couchbox-frigate-popup --shot FILE --weather now     ... what the real forecast would pop up now
 Not signed in, or Frigate out of reach: it says so once in its log and keeps trying quietly.
 """
 import json
@@ -36,15 +49,21 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from couchbox import frigate_popup as fp
 from couchbox import paths, settings
+from couchbox import weather_popup as wp
 
 QML = os.environ.get("COUCHBOX_FRIGATE_POPUP_QML", str(paths.share() / "ui/frigate/Popup.qml"))
 BIN = os.path.dirname(os.path.realpath(__file__))
 POLL = 2           # seconds between looks at Frigate
 RETRY = 10         # ... while it can't be reached or isn't signed in
 CONFIG_EVERY = 600  # the cameras' names and streams, read again this often
+WEATHER_APP = "couchbox-weather"   # the Weather app's window (its Wayland app id)
+RAIN_EVERY = 300   # the 15-minute rain forecast, asked this often
+ALERTS_EVERY = 120  # the Weather Service's warnings
 
 
 def log(msg):
@@ -61,6 +80,8 @@ def cli():
 
     if "--status" in sys.argv:
         req = {"op": "status"}
+    elif "--test-weather" in sys.argv:
+        req = {"op": "test", "weather": arg("--test-weather", "rain")}
     else:
         cam = arg("--test")
         req = {"op": "test", "camera": "" if cam.startswith("--") else cam}
@@ -71,12 +92,12 @@ def cli():
     except RuntimeError as err:
         sys.exit(str(err))
     if req["op"] == "test":
-        print(f"Showing {r.get('camera')} (a test pop-up).")
+        print(f"Showing {r.get('camera') or r.get('weather')} (a test pop-up).")
     else:
         print(json.dumps(r, indent=2))
 
 
-if "--status" in sys.argv or ("--test" in sys.argv and "--shot" not in sys.argv):
+if "--status" in sys.argv or "--test-weather" in sys.argv or ("--test" in sys.argv and "--shot" not in sys.argv):
     cli()
     sys.exit(0)
 
@@ -89,11 +110,11 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
-from couchbox.services import frigate  # noqa: E402
+from couchbox.services import frigate, radar, weather  # noqa: E402
 
 KWIN_RAISE = """
 for (const w of workspace.windowList())
-  if (w.normalWindow && (w.resourceClass === "couchbox-frigate" || w.desktopFileName === "couchbox-frigate")) {
+  if (w.normalWindow && (w.resourceClass === "APP" || w.desktopFileName === "APP")) {
     w.minimized = false; w.fullScreen = true; workspace.activeWindow = w; break;
   }
 """
@@ -113,6 +134,8 @@ class Popup(QObject):
         self.demo = demo
         self.lock = threading.RLock()
         self.wake = threading.Event()
+        self.wake_weather = threading.Event()
+        self.wx_due = True
         self.picker = fp.Picker()
         self.current = None         # what's showing: {id, camera, label, seen, test, shownAt, deadline, ...}
         self.problem = ""           # why Frigate can't be asked (logged once)
@@ -121,6 +144,11 @@ class Popup(QObject):
         self.cams = {}              # name -> config()'s camera (label, stream, aspect), in Frigate's order
         self.cams_at = 0.0
         self.flag = None if demo else fp.flag_path()   # --demo: leave a real pop-up's flag alone
+        self.tracker = wp.Tracker()
+        self.waiting = []           # weather pop-ups waiting for the corner (a camera showing), warnings first
+        self.weather = weather.Weather(demo=demo)
+        self.radar = radar.Radar(demo=demo)
+        self.wx_problem = ""
         self.load_settings()
 
     # ------------------------------------------------------------------ settings
@@ -128,9 +156,19 @@ class Popup(QObject):
         values = settings.load()
         old = getattr(self, "p", None)
         self.p = fp.prefs(values)
+        self.wx = wp.prefs(values)
         self.url = values.get("media.frigate.url", "")
+        self.place = weather.place_from_settings(values)
+        if self.demo:                            # --demo: a made-up town (as the Weather app's)
+            self.place = {"name": "Lakeside", "lat": 45.6, "lon": -122.7, "units": "imperial", "clock24": False}
+        self.tz = values.get("time.timezone") or None
         if old is None:
             return
+        x = self.current
+        if x and x["type"] == "weather" and not x["test"] and not self.wx[x["weather"]]:
+            self.hide("turned off")
+        self.wx_due = True                       # ask again now, with the new settings
+        self.wake_weather.set()
         if not self.p["enabled"] and old["enabled"]:
             self.hide("turned off")
         if any(old.get(k) != self.p.get(k) for k in ("position", "size", "picture")):
@@ -147,7 +185,8 @@ class Popup(QObject):
         while True:
             try:
                 for ev in ipc.subscribe(["settings"]):
-                    if any(k.startswith("media.frigate.") for k in (ev.get("data") or {})):
+                    if any(k.startswith(("media.frigate.", "weather.popup.", "location.", "time.", "home.clock"))
+                           for k in (ev.get("data") or {})):
                         self.load_settings()
             except Exception:  # noqa: BLE001  (daemon restarting): try again
                 pass
@@ -257,7 +296,7 @@ class Popup(QObject):
                 log(f"{item['cameraLabel']}: {fp.seen(item)} (not shown: the Frigate app is in front)")
             else:
                 self.show(self.item_popup(item))
-        elif showing and not showing["test"] and not self.demo and fp.is_frigate(self.front()):
+        elif showing and showing["type"] == "camera" and not showing["test"] and not self.demo and fp.is_frigate(self.front()):
             self.hide("the Frigate app came to the front")
         return POLL
 
@@ -265,7 +304,7 @@ class Popup(QObject):
         """The event on screen: still going, or ended? (It stays until a little after it ends.)"""
         with self.lock:
             x = self.current
-            if not x or x["test"]:
+            if not x or x["test"] or x["type"] != "camera":
                 return
             it = next((i for i in items if i["id"] == x["id"]), None)
             if it is None:
@@ -285,15 +324,169 @@ class Popup(QObject):
         if x and time.time() > x["deadline"] + 3:
             self.hide("timeout", x["id"])
 
+    # ------------------------------------------------------------------ weather
+    def weather_poll(self):
+        """Rain every RAIN_EVERY seconds, warnings every ALERTS_EVERY, and weather that waited for
+        the corner as soon as it's free (hide() wakes this)."""
+        rain_at = alerts_at = 0.0
+        while True:
+            if self.wx_due:
+                self.wx_due, rain_at, alerts_at = False, 0.0, 0.0
+            now = time.time()
+            try:
+                if now >= rain_at:
+                    rain_at = now + self.check_rain(now)
+                if now >= alerts_at:
+                    alerts_at = now + self.check_alerts(now)
+                self.offer_waiting()
+            except Exception as err:  # noqa: BLE001 - never stop watching over one bad answer
+                log(f"weather: {err.__class__.__name__}: {err}")
+                rain_at, alerts_at = max(rain_at, now + 60), max(alerts_at, now + 60)
+            self.wake_weather.wait(max(1.0, min(rain_at, alerts_at) - time.time()))
+            self.wake_weather.clear()
+
+    def local(self, now):
+        try:
+            return datetime.fromtimestamp(now, ZoneInfo(self.tz)) if self.tz else datetime.fromtimestamp(now)
+        except (ValueError, KeyError):
+            return datetime.fromtimestamp(now)
+
+    def wx_note(self, why):
+        """Say once why the weather can't be asked, and once that it can again."""
+        if why != self.wx_problem:
+            log(f"{why} (trying again quietly)" if why else "the weather services are answering again")
+            self.wx_problem = why
+
+    def check_rain(self, now):
+        """Rain due soon: pop it (once). Returns how long to wait before asking again."""
+        w = self.wx
+        if not w["rain"] or not self.place or wp.quiet(w["rain_quiet"], self.local(now)):
+            return 60
+        try:
+            m15 = self.weather.minutely(self.place)
+        except weather.WeatherError as err:
+            self.wx_note(str(err))
+            return 120
+        self.wx_note("")
+        r = self.tracker.next_rain(m15, now)
+        if r:
+            self.tracker.rained(r)
+            self.offer(self.rain_item(r))
+        return RAIN_EVERY
+
+    def check_alerts(self, now):
+        """New official warnings: pop each (once; in quiet hours they wait, while still in effect)."""
+        w = self.wx
+        if not w["warnings"] or not self.place:
+            return 60
+        try:
+            alerts = self.weather.active_alerts(self.place, self.place.get("clock24", False))
+        except weather.WeatherError as err:
+            self.wx_note(str(err))
+            return 120
+        self.wx_note("")
+        new = self.tracker.next_warnings(alerts, now)
+        if new and not wp.quiet(w["warnings_quiet"], self.local(now)):
+            for a in new:
+                self.tracker.warned_of(a, now)
+                self.offer(self.warning_item(a))
+        return ALERTS_EVERY
+
+    def rain_item(self, r, test=False):
+        what = "snow" if r.get("snow") else "rain"
+        return {"type": "weather", "weather": "rain", "id": f"{'test-' if test else ''}rain-{int(r['start'])}", "rain": r,
+                "icon": what, "color": "#38bdf8", "test": test, "seconds": wp.RAIN_SECONDS}
+
+    def warning_item(self, a, test=False):
+        return {"type": "weather", "weather": "warnings", "id": f"{'test-' if test else ''}warning-{a.get('key') or a.get('id')}",
+                "label": a.get("event") or "Weather warning", "ends": a.get("ends") or 0, "icon": "alert",
+                "color": a.get("color") or "#ef4444", "test": test, "seconds": wp.WARNING_SECONDS}
+
+    def still_good(self, item, now):
+        """Whether weather that waited for the corner is still worth showing."""
+        if item["weather"] == "rain":
+            ok = now < item["rain"]["start"] + wp.LATE
+        else:
+            ok = not item["ends"] or item["ends"] > now
+        return ok and self.wx[item["weather"]] and not wp.quiet(self.wx[item["weather"] + "_quiet"], self.local(now))
+
+    def offer(self, item):
+        """Show weather now if the corner is free (or shows weather that matters less), else wait."""
+        if not self.demo and fp.is_app(self.front(), WEATHER_APP):
+            log(f"{item['id']}: not shown (the Weather app is in front)")
+            return
+        self.show_weather(item)
+
+    def wait_for_corner(self, item):
+        """(Under self.lock.) Weather that waits for the corner: warnings first, then the oldest."""
+        if all(w["id"] != item["id"] for w in self.waiting):
+            self.waiting.append(item)
+            self.waiting.sort(key=lambda w: w["weather"] != "warnings")
+
+    def offer_waiting(self):
+        with self.lock:
+            if self.current or not self.waiting:
+                return
+            now = time.time()
+            self.waiting = [w for w in self.waiting if self.still_good(w, now)]
+            if not self.waiting:
+                return
+            item = self.waiting.pop(0)
+        self.show_weather(item)
+
+    def show_weather(self, item):
+        """Show a weather pop-up, with the radar's last hour (when there is one), unless a camera
+        (or a warning, for rain) has the corner: then it waits."""
+        now = time.time()
+        x = dict(item, item=item)
+        clock24 = bool(self.place and self.place.get("clock24"))
+        if item["weather"] == "rain":
+            x["label"], x["seen"] = wp.rain_text(item["rain"], now)
+        else:
+            x["seen"] = wp.until_text(item["ends"], now, self.local(now).tzinfo, clock24)
+        try:
+            info = self.radar.frames(self.place, clock24=clock24, tz=self.tz) if self.place else None
+        except radar.RadarError as err:
+            log(f"radar: {err}")
+            info = None
+        if info:                                 # the last hour, and what's forecast after it
+            past = [f for f in info["frames"] if not f["nowcast"]]
+            newest = past[-1]["time"] if past else now
+            info = dict(info, frames=[f for f in info["frames"] if f["nowcast"] or f["time"] >= newest - 3600])
+        x.update(radar=info, shownAt=now, deadline=now + item["seconds"])
+        with self.lock:
+            y = self.current
+            if not item["test"] and y and (y["type"] == "camera" or (y["weather"] == "warnings" and item["weather"] == "rain")):
+                self.wait_for_corner(item)
+                return False
+            self.current = x
+            self.write_flag(x)
+        log(f"showing {x['label']}: {x['seen']}{' (test)' if x['test'] else ''}")
+        js = {k: v for k, v in x.items() if k not in ("item", "rain")}
+        self.present.emit(json.dumps(dict(js, left=item["seconds"], total=item["seconds"], look=self.look_now())))
+        return True
+
+    def test_weather(self, kind, test=True):
+        """Show a made-up rain (snow) or warning pop-up now."""
+        now = time.time()
+        if kind in ("warning", "warnings"):
+            item = self.warning_item({"id": f"{now:.3f}", "event": "Severe Thunderstorm Warning", "ends": now + 3600,
+                                      "color": "#ef4444"}, test=test)
+        else:
+            item = self.rain_item({"start": now + 15 * 60, "end": now + 75 * 60, "snow": kind == "snow"}, test=test)
+        self.show_weather(item)
+        return {"ok": True, "weather": "a warning" if item["weather"] == "warnings" else item["icon"]}
+
     # ------------------------------------------------------------------ showing and hiding
     def item_popup(self, item):
         kinds = [k for k in item.get("kinds") or [] if k.get("kind") != "motion"]
-        return {"id": item["id"], "camera": item["camera"], "label": item.get("cameraLabel") or item["camera"],
+        return {"type": "camera", "id": item["id"], "camera": item["camera"], "label": item.get("cameraLabel") or item["camera"],
                 "seen": fp.seen(item), "kind": (kinds[0]["kind"] if kinds else "motion"), "severity": item.get("severity"),
                 "live": bool(item.get("live")), "end": item.get("end") or 0, "test": False}
 
     def show(self, x):
-        """Show (or replace what shows with) x."""
+        """Show (or replace what shows with) x: a camera always gets the corner; weather showing
+        goes back to wait for it."""
         f = self.client()
         cam = self.cams.get(x["camera"]) or {"label": x["label"], "stream": x["camera"], "aspect": 16 / 9}
         now = time.time()
@@ -302,6 +495,9 @@ class Popup(QObject):
             x.update(label=cam["label"] or x["label"], aspect=cam.get("aspect") or 16 / 9, shownAt=now, seconds=p["seconds"],
                      deadline=fp.deadline(now, p["seconds"], now, x.get("live"), x.get("end")),
                      video=f.live(cam["stream"])["url"] if p["picture"] == "live" else "")
+            y = self.current
+            if y and y["type"] == "weather" and not y["test"]:
+                self.wait_for_corner(y["item"])
             self.current = x
             self.write_flag(x)
         log(f"showing {x['label']}: {x['seen']}{' (test)' if x['test'] else ''}")
@@ -309,17 +505,19 @@ class Popup(QObject):
 
     def hide(self, why, rid=None):
         """Close the pop-up (only if it's still `rid`, when given). Dismissed, opened or timed
-        out, its camera waits out the cooldown (not after a test)."""
+        out, its camera waits out the cooldown (not after a test). Then weather that waited for
+        the corner has its turn."""
         with self.lock:
             x = self.current
             if not x or (rid and x["id"] != rid):
                 return False
             self.current = None
-            if not x["test"] and why in ("back", "ok", "timeout"):
+            if x["type"] == "camera" and not x["test"] and why in ("back", "ok", "timeout"):
                 self.picker.closed(x["camera"], time.time(), self.p["cooldown"])
             self.drop_flag()
         log(f"hid {x['label']} ({why})")
         self.dismiss.emit()
+        self.wake_weather.set()
         return True
 
     @Slot(str)
@@ -347,7 +545,7 @@ class Popup(QObject):
         try:
             self.flag.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.flag.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"id": x["id"], "camera": x["camera"], "t": time.time()}) + "\n")
+            tmp.write_text(json.dumps({"id": x["id"], "type": x["type"], "camera": x.get("camera", ""), "t": time.time()}) + "\n")
             tmp.replace(self.flag)
         except OSError as err:
             log(f"can't write {self.flag}: {err}")
@@ -367,6 +565,8 @@ class Popup(QObject):
             return {"ok": True, "site": fp.SITE}
         if op == "status":
             return self.status()
+        if op == "test" and req.get("weather"):
+            return self.test_weather(str(req["weather"]))
         if op == "test":
             return self.test(str(req.get("camera") or ""))
         if op == "key":
@@ -385,6 +585,10 @@ class Popup(QObject):
         if k == "back":
             self.hide("back")
             return {"handled": True, "did": f"dismissed {x['label']}"}
+        if k == "ok" and x["type"] == "weather":
+            self.hide("ok")
+            threading.Thread(target=open_radar, daemon=True).start()
+            return {"handled": True, "did": "opened the radar"}
         if k == "ok":
             self.hide("ok")
             threading.Thread(target=self.open_camera, args=(x["camera"],), daemon=True).start()
@@ -402,7 +606,7 @@ class Popup(QObject):
                 appctl.call("frigate", {"op": "open", "target": target}, timeout=10)
             except Exception as err:  # noqa: BLE001
                 log(f"the Frigate app: {err}")
-            kwin_script(KWIN_RAISE)
+            kwin_script(KWIN_RAISE.replace("APP", fp.APP))
             return
         cmd = [os.path.join(BIN, "couchbox-frigate"), "--open", target]
         unit = f"--unit=app-couchbox\\x2dfrigate@popup{int(time.time())}.service"
@@ -430,7 +634,7 @@ class Popup(QObject):
         cam = cam or next((cams[n] for n in self.p["cameras"] if n in cams), None) or next(iter(cams.values()), None)
         if not cam:
             return {"error": "Frigate has no cameras to show."}
-        self.show({"id": f"test-{time.time():.3f}", "camera": cam["name"], "label": cam["label"], "seen": "Test pop-up",
+        self.show({"type": "camera", "id": f"test-{time.time():.3f}", "camera": cam["name"], "label": cam["label"], "seen": "Test pop-up",
                    "kind": "object", "severity": "alert", "live": False, "end": 0, "test": True})
         return {"ok": True, "camera": cam["label"]}
 
@@ -442,7 +646,7 @@ class Popup(QObject):
         f = self.f
         showing = None
         if x:
-            showing = {k: x[k] for k in ("id", "camera", "label", "seen", "test")}
+            showing = {k: x.get(k) for k in ("id", "type", "camera", "label", "seen", "test")}
             showing["left"] = round(x["deadline"] - now, 1)
         return {
             "enabled": self.p["enabled"],
@@ -452,11 +656,32 @@ class Popup(QObject):
             "showing": showing,
             "cooldowns": cooling,
             "settings": self.p,
+            "weather": {"settings": self.wx, "place": bool(self.place), "problem": self.wx_problem,
+                        "waiting": [w["label"] for w in self.waiting], "rainUntil": round(self.tracker.rain_until)},
         }
 
 
+def open_radar():
+    """The Weather app's radar: the running app (brought to the front), or a new one."""
+    from couchbox import appctl
+
+    if appctl.running("weather"):
+        try:
+            appctl.call("weather", {"op": "open", "target": "radar"}, timeout=10)
+        except Exception as err:  # noqa: BLE001
+            log(f"the Weather app: {err}")
+        kwin_script(KWIN_RAISE.replace("APP", WEATHER_APP))
+        return
+    cmd = [os.path.join(BIN, "couchbox-weather"), "--open", "radar"]
+    unit = f"--unit=app-couchbox\\x2dweather@popup{int(time.time())}.service"
+    try:
+        subprocess.run(["systemd-run", "--user", "--quiet", "--collect", unit, *cmd], capture_output=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError):
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, start_new_session=True)
+
+
 def kwin_script(js):
-    """Run a KWin script in this session (bring the Frigate app to the front)."""
+    """Run a KWin script in this session (bring an app to the front)."""
     import tempfile
 
     import dbus
@@ -474,7 +699,7 @@ def kwin_script(js):
         time.sleep(0.5)
         scripting.unloadScript(name, dbus_interface="org.kde.kwin.Scripting")
     except Exception as err:  # noqa: BLE001
-        log(f"can't bring the Frigate app to the front: {err}")
+        log(f"can't bring the app to the front: {err}")
     finally:
         os.unlink(path)
 
@@ -538,7 +763,11 @@ def main():
     if not engine.rootObjects():
         sys.exit("Popup.qml didn't load")
     shooter.window = engine.rootObjects()[0]
-    if shot:                                         # what the service would show (Popup.qml saves it)
+    if shot and arg("--weather") == "now":           # what the weather would pop up now (real forecast)
+        QTimer.singleShot(300, lambda: (popup.check_alerts(time.time()), popup.check_rain(time.time())))
+    elif shot and "--weather" in sys.argv:           # a made-up weather pop-up (--test: labelled as one)
+        QTimer.singleShot(300, lambda: popup.test_weather(arg("--weather", "rain"), test="--test" in sys.argv))
+    elif shot:                                       # what the service would show (Popup.qml saves it)
         QTimer.singleShot(300, lambda: popup.test("") if "--test" in sys.argv else popup.check())
     else:
         from couchbox import appctl
@@ -546,6 +775,7 @@ def main():
             appctl.Server(fp.SITE, popup.handle).start()
         threading.Thread(target=popup.poll, name="poll", daemon=True).start()
         threading.Thread(target=popup.watch_settings, name="settings", daemon=True).start()
+        threading.Thread(target=popup.weather_poll, name="weather", daemon=True).start()
         notifier = quit_on_signals(app)  # noqa: F841 - kept while the loop runs
         log(f"ready: pop-ups {'on' if popup.p['enabled'] else 'off'}"
             f"{'' if popup.url else ' (no Frigate server set)'}")

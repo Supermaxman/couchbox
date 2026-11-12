@@ -38,6 +38,10 @@ shot frigate-popups-camera couchbox-frigate --open popups --keys down,down,down,
 shot frigate-popups-last couchbox-frigate --open popups --keys $d30
 shot frigate-popup couchbox-frigate-popup
 shot frigate-popup-test couchbox-frigate-popup --test --size small --position bottom-left
+# weather in the same corner: rain due soon, an official warning, snow in a small one
+shot weather-popup-rain couchbox-frigate-popup --weather rain
+shot weather-popup-warning couchbox-frigate-popup --weather warning
+shot weather-popup-snow couchbox-frigate-popup --weather snow --size small --position bottom-left
 shot frigate-popup-snapshots couchbox-frigate-popup --picture snapshots --size large --position top-left
 # the Weather app with a made-up fortnight: Today, the 14 days, a day in detail (from an hour
 # picked on Today, and from the list), the alert, the radar (playing; paused a frame back, zoomed in)

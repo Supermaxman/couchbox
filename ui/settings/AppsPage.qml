@@ -17,6 +17,20 @@ SettingsPage {
     }
     // the YouTube tile's app ("native" means hardware HEVC elsewhere on this page)
     readonly property var ytApps: ({native: "Couchbox's own", vacuumtube: "VacuumTube"})
+    // quiet hours: "22:00-07:00" as the clock shows it ("10 PM to 7 AM"), or none
+    readonly property var quietChoices: ["", "21:00-07:00", "22:00-07:00", "22:00-08:00", "23:00-07:00", "00:00-07:00"]
+    function hhmm(t) {
+        const h = parseInt(t.slice(0, 2)), m = t.slice(3);
+        if (T.settings["home.clock"] === "24h") return t;
+        return (h % 12 || 12) + (m === "00" ? "" : ":" + m) + (h < 12 ? " AM" : " PM");
+    }
+    function quietName(v) { return v ? (v.slice(0, 5) === "00:00" ? "Midnight" : hhmm(v.slice(0, 5))) + " to " + hhmm(v.slice(6)) : "None"; }
+    function quietRow(key) {
+        const v = T.settings[key];
+        return T.row(key, {kind: "choice", value: quietName(v),
+                           act: () => T.pick(T.label(key), quietChoices.map(x => ({label: quietName(x), value: x})), v, x => T.set(key, x))});
+    }
+    readonly property bool place: !!(T.settings["location.name"] || T.settings["location.lat"] || T.settings["location.lon"])
     readonly property var unofficial: [["dropout", "Dropout"], ["2ndtry", "2nd Try"], ["nebula", "Nebula"], ["twitch", "Twitch"]]
     rows: {
         T.rev;
@@ -35,6 +49,13 @@ SettingsPage {
             T.section("Frigate"),
             T.row("media.frigate.url", {help: "Your Frigate server (cameras), e.g. https://frigate.example.ts.net or http://192.168.1.20:8971. The Frigate tile shows once it's set; sign in from the app."}),
             T.row("media.frigate.popup.enabled"),
+            T.section("Weather pop-ups"),
+            T.row("weather.popup.rain", {help: place ? T.spec("weather.popup.rain").help : "Set your town in Settings → Time first."}),
+            quietRow("weather.popup.rain_quiet"),
+            T.row("weather.popup.warnings"),
+            quietRow("weather.popup.warnings_quiet"),
+            T.action("Show a test pop-up", () => T.pick("Test pop-up", [{label: "Rain soon", value: "rain"}, {label: "Weather warning", value: "warning"}], "",
+                                                      k => T.call("weather.popup_test", {kind: k}, () => T.toast("Showing a test pop-up."), e => T.toast(e)))),
             T.section("Search"),
             T.row("apps.search.ai_answer", {help: s["voice.llm.url"] ? "A short answer written by the assistant's model from Google's results, shown above them and labelled AI. Summarize and Ask work on any page either way."
                                                                    : "Needs the voice assistant's model (Settings → Voice). Then Search can also summarize pages."}),

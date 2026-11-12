@@ -1,6 +1,7 @@
 // couchbox-frigate-popup's window: a camera's live picture in a corner of the TV, over whatever
-// is on, when Frigate sees something (bin/couchbox-frigate-popup decides what and for how long;
-// this draws it). A layer-shell overlay like the voice indicator: it never takes the keyboard
+// is on, when Frigate sees something; or weather worth interrupting for (rain due soon, an
+// official warning) with the radar's last hour as a loop (bin/couchbox-frigate-popup decides what
+// and for how long; this draws it). A layer-shell overlay like the voice indicator: it never takes the keyboard
 // from the app below (OK and Back reach the service through couchbox-input instead), and it's
 // unmapped while nothing shows. The video is mpv's, muted, stopped as soon as it hides. Set to
 // snapshots (or when live video doesn't come through) it shows the camera's picture every second.
@@ -8,12 +9,13 @@ import QtQuick
 import QtQuick.Window
 import CouchPlayer
 import org.kde.layershell 1.0 as LayerShell
+import "../weather" as Wx
 
 Window {
     id: win
     readonly property bool still: shot !== ""            // --shot: drawn over a stand-in for the TV
     readonly property real u: (still ? 1080 : Screen.height) / 1080
-    property var p: ({})                     // what shows: the service's present() (camera, label, seen, video, test...)
+    property var p: ({})                     // what shows: the service's present() (type, camera, label, seen, video, test...)
     property var look: ({position: "top-right", size: "medium", picture: "live"})
     property bool shown: false
     property bool connected: false           // live frames are coming in
@@ -26,7 +28,8 @@ Window {
     readonly property real cardW: ({small: 420, medium: 560, large: 760}[look.size] || 560) * u
     readonly property real mx: 56 * u        // clear of the TV's overscan, like the apps' F.edge
     readonly property real my: 44 * u
-    readonly property color sevColor: p.test ? F.accent : p.severity === "alert" ? F.alert : F.detection
+    readonly property bool wx: p.type === "weather"        // weather: a radar loop instead of a camera
+    readonly property color sevColor: p.test ? F.accent : wx ? p.color : p.severity === "alert" ? F.alert : F.detection
 
     width: still ? 1920 : cardW + 2 * mx
     height: still ? 1080 : card.height + 2 * my
@@ -54,10 +57,15 @@ Window {
     }
 
     function open(x) {
-        const same = shown && p.camera === x.camera && p.video === x.video;  // a newer event, same camera: keep the picture
+        const same = shown && p.type !== "weather" && x.type !== "weather" && p.camera === x.camera && p.video === x.video;  // a newer event, same camera: keep the picture
         p = x;
         if (x.look) look = x.look;
-        if (!same) {
+        if (x.type === "weather") {
+            stopVideo();
+            stills = false; snapBase = ""; pics.reset();
+            radarLoop.info = x.radar || null;
+        } else if (!same) {
+            radarLoop.info = null;
             stopVideo();
             stills = !x.video;
             snapBase = popup.snapshot(x.camera, F.px(cardW * 9 / 16));
@@ -94,7 +102,7 @@ Window {
     }
     Timer { id: ends; onTriggered: popup.expired(win.p.id || "") }
     NumberAnimation { id: bar; target: win; property: "frac"; to: 0 }
-    Timer { id: hideTimer; interval: 320; onTriggered: if (!win.shown && !win.still) { win.visible = false; win.snapBase = ""; pics.reset(); } }
+    Timer { id: hideTimer; interval: 320; onTriggered: if (!win.shown && !win.still) { win.visible = false; win.snapBase = ""; pics.reset(); radarLoop.info = null; } }
     // no frames for 12 s: pictures instead
     Timer { id: watchdog; interval: 12000; onTriggered: if (win.shown && !win.connected) { win.stopVideo(); win.stills = true; } }
 
@@ -132,24 +140,40 @@ Window {
             width: card.width - 2 * card.pad
             spacing: 14 * win.u
 
-            Item {                                   // the camera, what was seen, LIVE or TEST
+            Item {                                   // the camera, what was seen, LIVE or TEST (weather: what's coming)
                 width: parent.width
-                height: 56 * win.u
+                height: Math.max(56 * win.u, heads.implicitHeight)
                 KindBadge {
                     id: badge
                     anchors.verticalCenter: parent.verticalCenter
                     kind: win.p.kind || "object"
                     size: 52 * win.u
                     fill: Qt.rgba(win.sevColor.r, win.sevColor.g, win.sevColor.b, 0.85)
+                    visible: !win.wx
+                }
+                Rectangle {                          // weather: rain, snow (drawn in colour) or a warning sign
+                    anchors.fill: badge
+                    visible: win.wx
+                    radius: width / 2
+                    color: win.p.icon === "alert" ? Qt.rgba(win.sevColor.r, win.sevColor.g, win.sevColor.b, 0.85) : F.panel2
+                    Image {
+                        anchors.centerIn: parent
+                        width: parent.width * (win.p.icon === "alert" ? 0.56 : 0.86); height: width
+                        sourceSize: F.sz(width, height)
+                        source: win.wx ? Qt.resolvedUrl("../weather/icons/" + (win.p.icon === "alert" ? "g-alert" : win.p.icon) + ".svg") : ""
+                    }
                 }
                 Column {
-                    anchors { left: badge.right; leftMargin: 16 * win.u; right: pill.left; rightMargin: 14 * win.u; verticalCenter: parent.verticalCenter }
+                    id: heads
+                    anchors { left: badge.right; leftMargin: 16 * win.u; right: pill.visible ? pill.left : parent.right; rightMargin: pill.visible ? 14 * win.u : 0; verticalCenter: parent.verticalCenter }
                     spacing: 2 * win.u
-                    Text { width: parent.width; text: win.p.label || ""; color: F.text; font.family: F.font; font.pixelSize: 28 * win.u; font.weight: Font.Bold; elide: Text.ElideRight }
+                    Text { width: parent.width; text: win.p.label || ""; color: F.text; font.family: F.font; font.pixelSize: 28 * win.u; font.weight: Font.Bold
+                           wrapMode: win.wx ? Text.WordWrap : Text.NoWrap; maximumLineCount: 2; elide: Text.ElideRight; lineHeight: 0.95 }
                     Text { width: parent.width; text: win.p.seen || ""; color: F.text2; font.family: F.font; font.pixelSize: 21 * win.u; elide: Text.ElideRight }
                 }
                 Rectangle {
                     id: pill
+                    visible: !win.wx || !!win.p.test         // weather says what it is in its words
                     anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                     width: pillRow.implicitWidth + 24 * win.u; height: pillRow.implicitHeight + 12 * win.u; radius: 8 * win.u
                     color: win.p.test ? F.accent : win.connected ? F.alert : F.panel2
@@ -157,7 +181,7 @@ Window {
                         id: pillRow
                         anchors.centerIn: parent
                         spacing: 7 * win.u
-                        Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 9 * win.u; height: width; radius: width / 2; color: "white"; visible: !win.p.test && !win.stills }
+                        Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 9 * win.u; height: width; radius: width / 2; color: "white"; visible: !win.p.test && !win.stills && !win.wx }
                         Text { text: win.p.test ? "TEST" : win.stills ? "PICTURE" : "LIVE"; color: "white"; font.family: F.font; font.pixelSize: 17 * win.u; font.weight: Font.Bold }
                     }
                 }
@@ -171,14 +195,14 @@ Window {
                 clip: true
                 Image {                              // nothing yet
                     anchors.centerIn: parent
-                    visible: !win.connected && a.status !== Image.Ready && b.status !== Image.Ready
+                    visible: !win.wx && !win.connected && a.status !== Image.Ready && b.status !== Image.Ready
                     width: 64 * win.u; height: width; sourceSize: F.sz(width, height)
                     source: F.icon("object"); opacity: 0.18
                 }
                 Item {                               // pictures: two in turn, so it never blanks while the next loads
                     id: pics
                     anchors.fill: parent
-                    visible: !win.connected
+                    visible: !win.connected && !win.wx
                     property bool showA: true
                     function reset() { a.source = ""; b.source = ""; showA = true; next(); }
                     function next() {
@@ -201,9 +225,23 @@ Window {
                     visible: win.connected && !win.stills
                     sourceComponent: Component { MpvVideo {} }
                 }
+                Wx.RadarLoop {                       // weather: the radar's last hour
+                    id: radarLoop
+                    anchors.fill: parent
+                    visible: win.wx
+                    running: win.shown && win.wx
+                    u: win.u
+                    textSize: 19 * win.u
+                }
+                Image {                              // weather with no radar: its sign
+                    anchors.centerIn: parent
+                    visible: win.wx && !radarLoop.info
+                    width: 96 * win.u; height: width; sourceSize: F.sz(width, height)
+                    source: Qt.resolvedUrl("../weather/icons/g-radar.svg"); opacity: 0.2
+                }
                 Text {
                     anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 14 * win.u }
-                    visible: win.shown && !win.connected && !win.stills
+                    visible: win.shown && !win.wx && !win.connected && !win.stills
                     text: "Connecting…"
                     color: F.dim; font.family: F.font; font.pixelSize: 19 * win.u
                     style: Text.Outline; styleColor: "#80000000"
@@ -232,7 +270,7 @@ Window {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 10 * win.u
                 KeyCap { text: "OK" }
-                Hint { text: "Open camera" }
+                Hint { text: win.wx ? "Open radar" : "Open camera" }
                 Hint { text: "·"; color: F.faint }
                 KeyCap { text: "Back" }
                 Hint { text: "Dismiss" }

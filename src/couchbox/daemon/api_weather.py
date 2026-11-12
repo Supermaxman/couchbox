@@ -70,3 +70,20 @@ def weather_glance(facts: str) -> dict[str, Any]:
                 del _cache[old]
             _cache[key] = (time.time(), text)
     return {"text": text, "enabled": True}
+
+
+@method("weather.popup_test")
+def weather_popup_test(kind: str = "rain") -> dict[str, Any]:
+    """Settings → Weather pop-ups → Test: a made-up rain or warning pop-up now (the TV user's
+    couchbox-frigate-popup shows it)."""
+    from couchbox import appctl, frigate_popup
+
+    from .api import UserError
+
+    try:
+        r = appctl.call(frigate_popup.SITE, {"op": "test", "weather": "warning" if kind == "warning" else "rain"}, timeout=20)
+    except appctl.NotRunning:
+        raise UserError("The pop-up isn't running on this TV (couchbox-frigate-popup).") from None
+    if isinstance(r, dict) and r.get("error"):
+        raise UserError(r["error"])
+    return r or {}

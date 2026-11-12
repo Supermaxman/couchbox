@@ -31,6 +31,7 @@ NWS_URL = "https://api.weather.gov/alerts/active"
 UA = "couchbox-weather (https://github.com/Supermaxman/couchbox)"
 TIMEOUT = (6, 20)
 TTL = 10 * 60  # a forecast is good for this long
+MINUTELY_STEPS = 28  # 15-minute steps ahead: 7 hours
 DAYS = 14
 
 CURRENT = (
@@ -337,6 +338,9 @@ def parse(raw, place, clock24=False, air=None, alerts=None, now=None, pollen=Non
     return data
 
 
+VTEC = re.compile(r"/[OTEX]\.([A-Z]{3})\.([A-Z]{4})\.([A-Z]{2})\.([A-Z])\.(\d{4})\.")
+
+
 def parse_alerts(raw, clock24=False):
     out = []
     order = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3}
@@ -345,15 +349,23 @@ def parse_alerts(raw, clock24=False):
         if p.get("status") not in (None, "Actual") or p.get("messageType") == "Cancel":
             continue
         ends = p.get("ends") or p.get("expires") or ""
-        until = ""
+        until, ends_at = "", 0
         if ends:
             try:
                 e = datetime.fromisoformat(ends)
                 until = e.strftime("%a ") + clock(e, clock24)
+                ends_at = int(e.timestamp())
             except ValueError:
                 pass
+        vtec = next((m for v in (p.get("parameters") or {}).get("VTEC") or [] if (m := VTEC.search(v or ""))), None)
         out.append(
             {
+                "id": p.get("id") or f.get("id") or "",
+                # one warning across its updates: the office, what, and its number this year
+                "key": ".".join(vtec.groups()[1:]) if vtec else "",
+                "cancelled": bool(vtec) and vtec[1] in ("CAN", "EXP"),
+                "references": [r.get("identifier") for r in p.get("references") or [] if r.get("identifier")],
+                "ends": ends_at,
                 "event": p.get("event", "Weather alert"),
                 "severity": p.get("severity", ""),
                 "headline": p.get("headline", ""),
@@ -415,7 +427,15 @@ class Weather:
         return parse(raw, place, clock24, air=aq, pollen=pollen, alerts=self.alerts(place, clock24))
 
     def alerts(self, place, clock24=False):
-        if not in_nws_area(place["lat"], place["lon"]):
+        try:
+            return self.active_alerts(place, clock24)
+        except WeatherError:
+            return []
+
+    def active_alerts(self, place, clock24=False):
+        """The Weather Service's alerts in effect for place ([] where it doesn't cover);
+        WeatherError when it doesn't answer."""
+        if self.demo or not in_nws_area(place["lat"], place["lon"]):
             return []
         try:
             r = self.http.get(
@@ -426,8 +446,30 @@ class Weather:
             )
             r.raise_for_status()
             return parse_alerts(r.json(), clock24)
-        except (requests.RequestException, ValueError):
-            return []
+        except (requests.RequestException, ValueError) as err:
+            raise WeatherError("The Weather Service isn't answering.") from err
+
+    def minutely(self, place, steps=MINUTELY_STEPS):
+        """Open-Meteo's 15-minute precipitation for the next hours (metric: mm), from the step
+        before now: {"time", "precipitation", "rain"} (unix times, each step the 15 minutes up
+        to it). WeatherError when it doesn't answer."""
+        if self.demo:
+            return demo_minutely(steps)
+        params = {
+            "latitude": place["lat"],
+            "longitude": place["lon"],
+            "minutely_15": "precipitation,rain",
+            "past_minutely_15": 1,
+            "forecast_minutely_15": steps,
+            "timeformat": "unixtime",
+            "timezone": "auto",
+        }
+        try:
+            r = self.http.get(FORECAST_URL, params=params, timeout=TIMEOUT)
+            r.raise_for_status()
+            return r.json()["minutely_15"]
+        except (requests.RequestException, ValueError, KeyError) as err:
+            raise WeatherError("The forecast service isn't answering.") from err
 
 
 def place_from_settings(s=None):
@@ -534,6 +576,16 @@ def glance_facts(data):
 
 
 # ---------------------------------------------------------------------- demo
+def demo_minutely(steps=MINUTELY_STEPS, now=None):
+    """Made-up 15-minute steps: dry for now, then an hour of rain from about 15 minutes on."""
+    now = now or time.time()
+    t0 = int(now // 900 * 900)
+    times = [t0 + 900 * i for i in range(steps + 1)]
+    wet = [0.0, 0.0, 0.4, 0.8, 1.1, 0.6, 0.0] + [0.0] * steps
+    pr = wet[: len(times)]
+    return {"time": times, "precipitation": pr, "rain": pr}
+
+
 def demo_forecast(place, clock24=False):
     """A made-up fortnight in the raw API's shape (so parse() is exercised too)."""
     imperial = place.get("units") == "imperial"
