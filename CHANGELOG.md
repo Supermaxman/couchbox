@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/Supermaxman/couchbox/compare/v0.25.0...v0.26.0) (2026-11-12)
+
+
+### New
+
+* **reels:** Today at home: a weekday reel of the pets and people at home, and a Reels app that keeps every reel ([#136](https://github.com/Supermaxman/couchbox/issues/136)) ([60b5465](https://github.com/Supermaxman/couchbox/commit/60b54657879c32db93d725bedd672635b5e1bae9))
+
 ## [0.25.0](https://github.com/Supermaxman/couchbox/compare/v0.24.0...v0.25.0) (2026-11-12)
 
 
