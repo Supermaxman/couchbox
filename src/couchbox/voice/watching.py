@@ -30,13 +30,14 @@ RECENT_MINUTES = 5
 LINE_SECONDS = 8  # subtitles are joined into lines of about this long, each with its time
 RESULT_CHARS = STORY_CHARS + EARLIER_CHARS + 2000  # (the agent's cap for this tool's text)
 NO_SPOILERS = (
-    "Answer only from these subtitles{earlier} and the picture of the screen, never from what you know of it, "
+    "Answer only from these subtitles{earlier} and what is on screen now (below), never from what you know of it, "
     "and say nothing about what comes after {at}."
 )
 
 
 class Text(str):
-    """A tool result with a picture of the screen for the model (a data: URL, or None)."""
+    """A tool result with a picture of the screen (a data: URL, or None): the agent has the model
+    look at it and adds what it shows."""
 
     image = None
 
@@ -532,9 +533,10 @@ def run(action, minutes=None, query=None, picture=screen_picture):
         body += [
             p.where() + " The subtitles above go up to now.",
             NO_SPOILERS.format(earlier=", the episodes already watched" if earlier else "", at=at)
-            + " Name people as the subtitles do (labels like 'Scott:' show who speaks; people call each other by name), not"
-            " from how they look or what you know of it. Who someone is: who they are and how they fit in so far; when the"
-            " subtitles don't make clear who is on screen, give your best guess from who is speaking, with 'probably'."
+            + " 'This guy', 'she', 'them' mean who is on screen now: start from that, and if nobody like that is on screen,"
+            " say who is. Name people as the subtitles do (labels like 'Scott:' show who speaks; people"
+            " call each other by name), not from how they look or what you know of it, and say how they fit in so far; when"
+            " it isn't clear who is on screen, give your best guess from who is speaking, with 'probably'."
             " At most three short lines.",
         ]
     out = Text("\n".join(body))

@@ -38,19 +38,16 @@ class PicturesRefused(Exception):
     """The model server turned down a request with a picture in it (a model that reads text only)."""
 
 
-SCREEN_NOTE = "The TV screen now (the assistant's own bubble may show at the bottom; ignore it):"
-NO_PICTURE = "[a picture of the screen]"
+# The screen, looked at on its own: behind pages of subtitles, a model barely looks at a picture
+SEE = (
+    "This is a TV screen right now, showing a show, film or video (a round bubble at the bottom may be the TV's assistant: "
+    "leave it out). In at most three short lines: who is on screen (how many people, man or woman, roughly how old, "
+    "clothes, what they're doing, who seems to be talking) and any words shown. Don't guess names."
+)
 
 
 def has_picture(messages):
     return any(isinstance(m.get("content"), list) for m in messages)
-
-
-def drop_pictures(messages):
-    """The pictures in messages replaced by a note (after the request, or for a text-only model)."""
-    for m in messages:
-        if isinstance(m.get("content"), list):
-            m["content"] = " ".join(p.get("text", "") for p in m["content"] if p.get("type") == "text") + " " + NO_PICTURE
 
 
 class Agent:
@@ -200,13 +197,11 @@ class Agent:
                 entry["tool_calls"] = calls
             turn.append(entry)
             if not calls:
-                drop_pictures(turn)  # (kept out of a follow-up's history: only this request needed it)
                 reply = re.sub(r"\n\s*\n+", "\n", (msg.get("content") or "Done.").strip())  # lines, not paragraphs
                 self.asked = reply.endswith("?")
                 self.last = time.time()
                 self.log(f"reply: {reply}")
                 return reply
-            pictures = []
             for c in calls:
                 name = c["function"]["name"]
                 try:
@@ -225,27 +220,38 @@ class Agent:
                     result = tools.run_tool(name, args)
                 self.log(f"  -> {result[:300]!r}")
                 limit = tools.RESULT_CHARS.get(name, TOOL_RESULT_CHARS)
-                turn.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": str(result)[:limit]})
-                if getattr(result, "image", None) and self.pictures:
-                    pictures.append(result.image)
-            if pictures:  # tool results are text: a picture goes to the model as the user's
-                content = [{"type": "text", "text": SCREEN_NOTE}]
-                content += [{"type": "image_url", "image_url": {"url": url}} for url in pictures[-1:]]
-                turn.append({"role": "user", "content": content})
-        drop_pictures(turn)
+                content = str(result)[:limit]
+                if getattr(result, "image", None):
+                    status("working", "Looking at the screen")
+                    seen = self.see(result.image, cancel)
+                    self.log(f"  screen: {seen!r}")
+                    content += f"\nOn screen now: {seen}" if seen else "\n(No picture of the screen.)"
+                turn.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": content})
         return "I couldn't finish that in time."
 
+    def see(self, image, cancel=None):
+        """What a picture of the screen shows, in a few lines ("" for a model that doesn't take
+        pictures: then the answer comes from the text alone)."""
+        if not self.pictures:
+            return ""
+        content = [{"type": "text", "text": SEE}, {"type": "image_url", "image_url": {"url": image}}]
+        try:
+            msg = self.chat([{"role": "user", "content": content}], with_tools=False, cancel=cancel, quick=True)
+        except PicturesRefused:
+            self.log("the model doesn't take pictures: answering from the text")
+            self.pictures = False
+            return ""
+        except RuntimeError as err:
+            self.log(f"looking at the screen: {err}")
+            return ""
+        return re.sub(r"\s*\n\s*", " ", (msg.get("content") or "").strip())[:600]
+
     def step(self, turn, cancel):
-        """One model call on the whole conversation: compacted when it's too long for the model,
-        without its pictures when the model doesn't take them."""
+        """One model call on the whole conversation (compacted when it's too long for the model)."""
         quick = any(c["function"]["name"] in tools.QUICK for m in turn for c in m.get("tool_calls") or [])
         for _ in range(3):
             try:
                 return self.chat([self.system()] + self.history(), cancel=cancel, quick=quick)
             except OverflowError:
                 self.compact(cancel)
-            except PicturesRefused:
-                self.log("the model doesn't take pictures: answering from the text")
-                self.pictures = False
-                drop_pictures(turn)
         return self.chat([self.system()] + self.history(), cancel=cancel, quick=quick)

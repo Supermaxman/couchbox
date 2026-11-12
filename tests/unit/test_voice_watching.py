@@ -314,22 +314,34 @@ def ask(monkeypatch):
     return ask
 
 
-def test_the_picture_goes_to_the_model_then_leaves_the_history(ask):
-    s = Server([call("watching", action="story"), {"role": "assistant", "content": "That's Theo, the baker.\n\nHe's late again."}])
+def test_the_model_looks_at_the_screen_on_its_own(ask):
+    s = Server(
+        [
+            call("watching", action="story"),
+            {"role": "assistant", "content": "Two women talk in a hallway;\none wears yellow."},
+            {"role": "assistant", "content": "That's Mara, the baker.\n\nShe's telling Theo he's late."},
+        ]
+    )
     a, reply = ask(s)
-    assert reply == "That's Theo, the baker.\nHe's late again."  # lines, not paragraphs
-    last = s.bodies[1]["messages"][-1]
-    assert last["role"] == "user" and last["content"][1] == {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}
-    assert s.bodies[1]["chat_template_kwargs"] == {"enable_thinking": False}  # answered without minutes of thinking
+    assert reply == "That's Mara, the baker.\nShe's telling Theo he's late."  # lines, not paragraphs
+    look = s.bodies[1]
+    assert "tools" not in look and look["messages"][0]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAAA"},
+    }
+    answer = s.bodies[2]
+    assert not agent.has_picture(answer["messages"])  # the conversation stays text
+    assert answer["messages"][-1]["content"].endswith("On screen now: Two women talk in a hallway; one wears yellow.")
+    assert answer["chat_template_kwargs"] == {"enable_thinking": False}  # answered without minutes of thinking
     assert "chat_template_kwargs" not in s.bodies[0]
-    assert not agent.has_picture(a.history()) and agent.NO_PICTURE in json.dumps(a.history())
 
 
 def test_a_model_without_pictures_answers_from_the_text(ask):
     s = Server([call("watching", action="story"), {"role": "assistant", "content": "That's Theo."}], refuse=("pictures",))
     a, reply = ask(s)
     assert reply == "That's Theo." and a.pictures is False
-    assert not agent.has_picture(s.bodies[-1]["messages"])
+    assert s.bodies[-1]["messages"][-1]["content"].endswith("(No picture of the screen.)")
+    assert a.see("data:image/jpeg;base64,AAAA") == ""  # not asked again
 
 
 def test_a_server_without_template_switches_keeps_thinking(ask):
