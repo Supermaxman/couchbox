@@ -50,6 +50,8 @@ SEERR_GET = ("/discover/", "/search?", "/movie/", "/tv/", "/person/", "/collecti
 # ... and its writes: request, approve/decline a request, watchlist add/remove, report an issue
 SEERR_WRITE = [("POST", r"/request"), ("POST", r"/request/\d+/(approve|decline)"), ("POST", r"/watchlist"),
                ("DELETE", r"/watchlist/\d+"), ("POST", r"/issue")]
+LAST_KEY = "/run/couchbox/last-key"    # touched by couchbox-input on every press of the remote
+WARM_AFTER = 20 * 60                    # s of a quiet remote after which a press warms the model
 STT_PROMPT = "YouTube, Jellyfin, Frigate, Spotify, Dropout, 2nd Try, Nebula, Twitch."
 
 
@@ -99,7 +101,7 @@ class Service:
         if st["phase"] in ("listening", "transcribing", "thinking", "working"):
             return True
         if st["phase"] in ("done", "error"):
-            linger = 120 if st.get("question") else min(20, 6 + len(st.get("reply") or "") / 18)
+            linger = 120 if st.get("question") else min(20, 3 + len(st.get("reply") or "") / 16)
             return time.time() - st["t"] < linger
         if st["phase"] == "notice":
             return time.time() - st["t"] < st.get("linger", 0)
@@ -389,6 +391,8 @@ class Service:
         threading.Thread(target=self.serve, daemon=True).start()
         if self.captions:
             threading.Thread(target=self.caption_keeper, daemon=True).start()
+        if self.mode == "assistant":
+            threading.Thread(target=self.warmer, daemon=True).start()
         self.log(f"couchbox-voice ready: mode {self.mode}" + (f", speech {self.stt_url}" if self.mode != "off" else "")
                  + (f", model {self.agent.model} at {self.agent.url}" if self.mode == "assistant" else ""))
         capture.run(self.on_press, self.on_release, self.log, self.on_connect)
@@ -400,6 +404,38 @@ class Service:
             vid = tools.keep_captions(self.captions)
             if vid:
                 self.log(f"YouTube: {self.captions} captions on for {vid}")
+
+    def warmer(self):
+        """Ahead of questions: the model, when someone picks up the remote after a quiet spell
+        (WARM_AFTER; the box can't tell when the TV itself turns on), and the subtitles of what
+        starts playing in Jellyfin."""
+        from couchbox.voice import watching
+        last, n = self.last_key(), 0
+        while True:
+            time.sleep(3)
+            n += 1
+            pressed = self.last_key()
+            if pressed > last and pressed - last >= WARM_AFTER:
+                self.log(f"the remote is back after {int((pressed - last) / 60)} min: warming the model")
+                threading.Thread(target=self.agent.warm, daemon=True).start()
+            last = max(last, pressed)
+            if n % 5:
+                continue
+            try:
+                item = watching.warm()
+            except Exception as err:            # noqa: BLE001 - tried again in 15 s
+                item = None
+                self.log(f"subtitles ahead: {err}")
+            if item:
+                self.log(f"Jellyfin: fetching the subtitles of {item} ahead of questions")
+
+    @staticmethod
+    def last_key():
+        """When the remote was last pressed (couchbox-input touches the file), 0 if never."""
+        try:
+            return os.stat(LAST_KEY).st_mtime
+        except OSError:
+            return 0.0
 
     def on_connect(self):
         # Re-activate the remote's IR key table (Power -> TV), as Fire OS does on each connect
