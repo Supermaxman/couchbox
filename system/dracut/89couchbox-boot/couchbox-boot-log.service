@@ -1,0 +1,11 @@
+# initrd: the journal into the boot screen's log panel.
+[Unit]
+Description=Couchbox boot screen: log panel
+DefaultDependencies=no
+After=couchbox-boot-begin.service
+
+[Service]
+ExecStart=/usr/bin/couchbox-boot-status log
+
+[Install]
+WantedBy=initrd.target

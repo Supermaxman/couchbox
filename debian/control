@@ -22,7 +22,7 @@ Depends: ${misc:Depends}, ${python3:Depends}, ${shlibs:Depends},
  flatpak, uxplay, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav,
  gstreamer1.0-tools, gstreamer1.0-plugins-base, gstreamer1.0-plugins-ugly, gstreamer1.0-pipewire,
  mpv, ffmpeg, cec-utils, v4l-utils, libopus0, qrencode, iw, wpasupplicant, jq, curl, openssh-client,
- cryptsetup, clevis, clevis-luks, clevis-dracut, dracut, unattended-upgrades
+ cryptsetup, clevis, clevis-luks, clevis-dracut, dracut, unattended-upgrades, plymouth, plymouth-label, fonts-dejavu-core
 Recommends: couchbox-media, quickjs, nodejs, fonts-ubuntu, tailscale, openssh-server, rpi-eeprom, raspi-utils-core, evtest
 Description: open-source TV box for the Raspberry Pi 5
  Couchbox turns a Raspberry Pi 5 into a TV box: KDE Plasma Bigscreen with a

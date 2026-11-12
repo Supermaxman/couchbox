@@ -6,6 +6,7 @@ SHARE := $(DESTDIR)/usr/share/couchbox
 LIBBIN := $(DESTDIR)/usr/lib/couchbox/bin
 SYSD := $(DESTDIR)/usr/lib/systemd
 LIBEXEC := $(DESTDIR)/usr/lib/couchbox/libexec
+LOOKFEEL := $(DESTDIR)/usr/share/plasma/look-and-feel/org.couchbox.boot
 # couchbox-screencast: KWin's screen stream for couchbox-record (wayland-client, KDE's protocol XML)
 PROTO := /usr/share/plasma-wayland-protocols/zkde-screencast-unstable-v1.xml
 CC ?= cc
@@ -42,7 +43,9 @@ install: $(HELPER)
 	install -d $(SYSD)/system $(SYSD)/user $(SYSD)/logind.conf.d $(SYSD)/journald.conf.d \
 	  $(SYSD)/user/plasma-plasmashell.service.d $(DESTDIR)/usr/lib/udev/rules.d $(DESTDIR)/usr/lib/sysctl.d \
 	  $(DESTDIR)/usr/lib/tmpfiles.d $(DESTDIR)/usr/lib/environment.d $(DESTDIR)/usr/lib/sddm/sddm.conf.d \
-	  $(DESTDIR)/usr/lib/dracut/modules.d/90couchbox $(DESTDIR)/usr/share/applications
+	  $(DESTDIR)/usr/lib/dracut/modules.d/90couchbox $(DESTDIR)/usr/share/applications \
+	  $(DESTDIR)/usr/lib/dracut/modules.d/89couchbox-boot $(SYSD)/system/plymouth-quit.service.d \
+	  $(DESTDIR)/usr/share/plymouth/themes/couchbox $(LOOKFEEL)/contents/splash/images
 	install -m 644 system/systemd/* $(SYSD)/system/
 	install -m 644 system/user/* $(SYSD)/user/
 	install -m 644 system/plasmashell/couchbox.conf $(SYSD)/user/plasma-plasmashell.service.d/
@@ -55,6 +58,13 @@ install: $(HELPER)
 	install -m 644 system/sddm/* $(DESTDIR)/usr/lib/sddm/sddm.conf.d/
 	install -m 644 system/dracut/90couchbox/* $(DESTDIR)/usr/lib/dracut/modules.d/90couchbox/
 	chmod 755 $(DESTDIR)/usr/lib/dracut/modules.d/90couchbox/module-setup.sh
+	install -m 644 system/dracut/89couchbox-boot/* $(DESTDIR)/usr/lib/dracut/modules.d/89couchbox-boot/
+	chmod 755 $(DESTDIR)/usr/lib/dracut/modules.d/89couchbox-boot/module-setup.sh
+	install -m 644 system/plymouth/couchbox/* $(DESTDIR)/usr/share/plymouth/themes/couchbox/
+	install -m 644 system/plymouth/plymouth-quit.conf $(SYSD)/system/plymouth-quit.service.d/couchbox.conf
+	install -m 644 shell/ksplash/org.couchbox.boot/metadata.json $(LOOKFEEL)/
+	install -m 644 shell/ksplash/org.couchbox.boot/contents/splash/Splash.qml $(LOOKFEEL)/contents/splash/
+	install -m 644 system/plymouth/couchbox/logo.png $(LOOKFEEL)/contents/splash/images/
 	install -m 644 system/applications/*.desktop $(DESTDIR)/usr/share/applications/
 
 # share/: data, apps (QML), home screen, theme, tiles, web extension, keys
@@ -82,7 +92,7 @@ test:
 
 lint:
 	ruff check src tests bin/couchbox-firstboot bin/couchbox-updater
-	shellcheck -x $$(grep -l '^#!/.*sh' bin/* system/dracut/90couchbox/*.sh installer/*.sh image/*.sh 2>/dev/null)
+	shellcheck -x $$(grep -l '^#!/.*sh' bin/* system/dracut/*/*.sh installer/*.sh image/*.sh 2>/dev/null)
 
 deb:
 	dpkg-buildpackage -us -uc -b

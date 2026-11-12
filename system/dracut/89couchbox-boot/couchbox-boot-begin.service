@@ -1,0 +1,13 @@
+# initrd: the boot screen gets the last boots' pace and its first step.
+[Unit]
+Description=Couchbox boot screen: first step
+DefaultDependencies=no
+After=plymouth-start.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/couchbox-boot-status begin
+
+[Install]
+WantedBy=initrd.target

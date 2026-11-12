@@ -12,6 +12,7 @@
   couchbox phone-url
   couchbox import-mtv [PATH]       settings from the mtv prototype (/etc/mtv)
   couchbox install-to-disk [DEVICE] copy a USB stick / SD card system to the SSD
+  couchbox boot-screen apply        the boot screen on; a test boot if its theme changed
 
 Changes go through couchboxd when it's running (so they take effect), else straight to
 the files (root, e.g. in an image build).
@@ -258,6 +259,8 @@ def main(argv: list[str] | None = None) -> None:
     im.add_argument("--dry-run", action="store_true")
     ins = sub.add_parser("install-to-disk")
     ins.add_argument("device", nargs="?")
+    bs = sub.add_parser("boot-screen")
+    bs.add_argument("action", choices=["apply"])
     a = p.parse_args(argv)
 
     if a.cmd == "version":
@@ -302,6 +305,10 @@ def main(argv: list[str] | None = None) -> None:
         cmd_import_mtv(a)
     elif a.cmd == "install-to-disk":
         cmd_install(a)
+    elif a.cmd == "boot-screen":
+        from couchbox import bootscreen
+
+        print(bootscreen.apply())
 
 
 if __name__ == "__main__":

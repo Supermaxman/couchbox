@@ -1,0 +1,13 @@
+# initrd: the disk is unlocked, so the boot screen moves on to "Starting Couchbox".
+[Unit]
+Description=Couchbox boot screen: disk unlocked
+DefaultDependencies=no
+After=cryptsetup.target couchbox-boot-begin.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/couchbox-boot-status unlocked
+
+[Install]
+WantedBy=initrd.target

@@ -71,7 +71,7 @@ Every read and write goes through dm-crypt even in "not protected" mode. The Pi 
 
 ## Passphrase at boot
 
-- **When it's asked:** when no Tang answers within 45 s, the console asks for the passphrase. That needs a **USB keyboard** in 1.0.
+- **When it's asked:** when no Tang answers, the boot screen says why and asks for the passphrase ([boot-screen.md](boot-screen.md)). That needs a **USB keyboard** in 1.0.
 - **After 1.0:** a remote-friendly unlock prompt, with the paired Bluetooth remote or CEC keys and an on-screen keyboard, in the initrd.
 
 ## Plan B

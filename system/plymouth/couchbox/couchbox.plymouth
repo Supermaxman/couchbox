@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Couchbox
+Description=The Couchbox logo, a progress bar paced by recent boots, and the boot log on demand.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/couchbox
+ScriptFile=/usr/share/plymouth/themes/couchbox/couchbox.script

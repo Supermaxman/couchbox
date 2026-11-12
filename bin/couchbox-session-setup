@@ -1,6 +1,6 @@
 #!/bin/sh
 # couchbox-session-setup: the TV user's own settings that Plasma only reads from its home
-# (no lock screen, no screen blanking, no KDE Wallet, the display-mode autostart, the
+# (no lock screen, no screen blanking, no KDE Wallet, the boot splash, the display-mode autostart, the
 # session services). Run by the package's postinst; safe to re-run.
 set -eu
 U=tv
@@ -28,6 +28,12 @@ put .config/kwalletrc <<'X'
 [Wallet]
 Enabled=false
 First Use=false
+X
+# Plasma's splash carries on from the boot screen (org.couchbox.boot), until Home is up
+put .config/ksplashrc <<'X'
+[KSplash]
+Engine=KSplashQML
+Theme=org.couchbox.boot
 X
 as mkdir -p "$H/.config/autostart" "$H/.config/systemd/user/graphical-session.target.wants" "$H/.local/share/couchbox"
 printf '[Desktop Entry]\nType=Application\nName=Couchbox display mode\nExec=/usr/lib/couchbox/bin/couchbox-display\nX-KDE-autostart-phase=1\n' \

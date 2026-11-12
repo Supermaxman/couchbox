@@ -30,6 +30,7 @@ override_dh_installsystemd:
 	  couchbox-memory.service couchbox-voice.service couchbox-firstboot.service couchbox-apps.service \
 	  couchbox-reencrypt-resume.service couchbox-cloudinit-off.service couchbox-netplan.service couchbox-wifi-watch.service couchbox-fan.service couchbox-updater.timer couchbox-clean-caches.timer couchbox-flatpak-update.timer \
 	  couchbox-yt-dlp.timer
+	dh_installsystemd --no-start couchbox-boot-log.service
 	dh_installsystemd --no-enable --no-start couchbox-clean-caches.service couchbox-flatpak-update.service couchbox-btlog.service \
 	  couchbox-yt-dlp.service
 # The updater installs this package from inside these units (and re-encryption must not be cut

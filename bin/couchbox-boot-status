@@ -1,0 +1,86 @@
+#!/bin/sh
+# couchbox-boot-status: tells the boot screen (the Couchbox Plymouth theme) where the boot is,
+# feeds it the journal for its log panel, and remembers how long each step took so the next
+# boot's progress bar keeps the same pace. Runs in the initrd and in the system.
+#   begin      initrd, once Plymouth runs: recent boots' pace, then the first step
+#   net        initrd: waits for the network to come up or give up (only with network unlock)
+#   unlocked   initrd, once the disk is unlocked: "Starting Couchbox"
+#   done       system, as the boot screen hands over to the TV session: save this boot's pace
+#   log        follow the journal into the log panel until Plymouth quits
+# The pace is three numbers in tenths of a second (Wi-Fi, unlock, start), e.g. "101 42 170".
+set -u
+RUN=/run/couchbox-boot                  # step times (seconds since boot), kept across switch-root
+PACE=/var/lib/couchbox/boot-pace        # written here at the end of each boot...
+PACE_INITRD=/etc/couchbox-boot-pace     # ...and copied into the initrd when it's rebuilt
+
+say() { plymouth update --status="cb:$1" 2>/dev/null || true; }
+mark() {
+    mkdir -p "$RUN" && [ ! -e "$RUN/$1" ] || return 0
+    read -r up _ < /proc/uptime && echo "$up" > "$RUN/$1"
+}
+# Everything the boot screen needs to know, from the marks: sent again now and then, because
+# Plymouth drops what it's told before its theme is drawing.
+state() {
+    [ -r "$RUN/pace" ] && say "pace:$(cat "$RUN/pace")"
+    if [ -e "$RUN/net-up" ]; then say net:up; elif [ -e "$RUN/net-down" ]; then say net:down; fi
+    for s in start unlock wifi; do
+        if [ -e "$RUN/$s" ]; then say "step:$s"; break; fi
+    done
+}
+# tenths of a second between two marks, or nothing if either is missing
+span() {
+    [ -r "$RUN/$1" ] && [ -r "$RUN/$2" ] || return 0
+    awk -v a="$(cat "$RUN/$1")" -v b="$(cat "$RUN/$2")" 'BEGIN { d = (b - a) * 10; if (d < 0) d = 0; printf "%d", d + 0.5 }'
+}
+# a default route on any interface: the network is up
+online() {
+    while read -r _ dest _; do [ "$dest" = 00000000 ] && return 0; done < /proc/net/route
+    return 1
+}
+
+case "${1:-}" in
+begin)
+    pace=$(cat "$PACE_INITRD" 2>/dev/null)
+    # shellcheck disable=SC2086  # three numbers
+    set -- ${pace:-100 40 180}
+    mkdir -p "$RUN"
+    case " $(cat /proc/cmdline) " in
+    *" rd.neednet=1 "*) echo "$1:$2:$3:1" > "$RUN/pace"; mark wifi ;;
+    *) echo "0:$2:$3:0" > "$RUN/pace"; mark unlock ;;
+    esac
+    state
+    ;;
+net)
+    # up once Ethernet or Wi-Fi has a default route; down after as long as wait-online waits (45 s)
+    n=0
+    while ! online && [ $n -lt 92 ]; do sleep 0.5; n=$((n + 1)); done
+    if [ $n -lt 92 ]; then mark net-up; else mark net-down; fi
+    mark unlock; state
+    ;;
+unlocked)
+    mark start; state
+    ;;
+done)
+    mark end
+    old=$(cat "$PACE" 2>/dev/null)
+    # shellcheck disable=SC2086  # three numbers
+    set -- ${old:-100 40 180}
+    # a step that took far longer than usual (the unlock server was down, say) keeps its old pace
+    keep() { [ -n "$1" ] && [ "$1" -le $(($2 * 3 + 50)) ] && echo "$1" || echo "$2"; }
+    w=$(keep "$(span wifi unlock)" "$1"); u=$(keep "$(span unlock start)" "$2"); s=$(keep "$(span start end)" "$3")
+    mkdir -p "${PACE%/*}"
+    printf '%s %s %s\n' "$w" "$u" "$s" > "$PACE.new" && mv "$PACE.new" "$PACE"
+    ;;
+log)
+    # the last lines so far, then each new one, until Plymouth is gone; the state about once a second
+    last=
+    journalctl -b -f -n 9 -o short-monotonic --no-hostname 2>/dev/null | while IFS= read -r line; do
+        read -r up _ < /proc/uptime
+        if [ "${up%.*}" != "$last" ]; then state; last=${up%.*}; fi
+        plymouth display-message --text="$line" 2>/dev/null || [ -e /run/plymouth/pid ] || break
+    done
+    ;;
+*)
+    echo "usage: couchbox-boot-status begin|net|unlocked|done|log" >&2; exit 2
+    ;;
+esac

@@ -1,0 +1,390 @@
+# Couchbox boot screen (a Plymouth script theme).
+#
+# The logo, a progress bar paced by recent boots, one status line, a log panel that slides up
+# over the bottom when a step runs long or fails (or on any key), and the disk passphrase
+# when the network unlock can't finish. Laid out at 3840x2160 and scaled to the screen.
+#
+# couchbox-boot-status tells it where the boot is, as status updates:
+#   cb:pace:<wifi>:<unlock>:<start>:<net>  how long each step took on recent boots, in tenths
+#                                          of a second; net=1 when the disk unlocks over the network
+#   cb:step:<wifi|unlock|start>            that step has begun (the ones before it are done)
+#   cb:net:<up|down>                       the network came up, or gave up waiting
+# and feeds it the journal as display-message, one line each.
+
+BG.r = 0.043; BG.g = 0.051; BG.b = 0.071;    # #0b0d12, the app icon's background
+Window.SetBackgroundTopColor(BG.r, BG.g, BG.b);
+Window.SetBackgroundBottomColor(BG.r, BG.g, BG.b);
+
+FONT = "Inter";
+MONO = "DejaVu Sans Mono";
+BAR_END = 0.85;          # the Plasma splash fills the rest of the bar
+LOG_LINES = 9;
+
+# ---------------------------------------------------------------- state
+
+steps[0] = "wifi"; steps[1] = "unlock"; steps[2] = "start";
+expect[0] = 10; expect[1] = 4; expect[2] = 18;   # seconds, until the first boot is measured
+began[0] = -1; began[1] = -1; began[2] = -1;
+net_unlock = 0;
+pace_known = 0;         # until couchbox-boot-status has said how this box unlocks
+cur = -1;               # the step under way
+now = 0;                # seconds since Plymouth started (see on_progress)
+prog_last = 0; now_at_prog = 0;
+shown = 0;              # the bar as drawn, 0..1
+net = "";               # "up" / "down" once known
+pw_asked = 0; pw_bullets = 0; pw_typed = 0; pw_wrong = 0; pw_answered = 0;
+log_open = 0; log_manual = 0;
+log_count = 0;
+mode = Plymouth.GetMode();
+booting = (mode == "boot");
+
+# ---------------------------------------------------------------- strings
+
+fun digit(c) {
+    d = "0123456789";
+    for (i = 0; i < 10; i++) if (d.CharAt(i) == c) return i;
+    return -1;
+}
+
+# The n-th ':'-separated field of s ("" if there isn't one).
+fun field(s, n) {
+    out = ""; k = 0;
+    for (i = 0; i < 200; i++) {
+        c = s.CharAt(i);
+        if (!c || c == "") break;
+        if (c == ":") { k++; if (k > n) break; }
+        else if (k == n) out = out + c;
+    }
+    return out;
+}
+
+fun number(s) {
+    v = 0;
+    for (i = 0; i < 12; i++) {
+        c = s.CharAt(i);
+        if (!c || c == "") break;
+        dd = digit(c);
+        if (dd < 0) break;
+        v = v * 10 + dd;
+    }
+    return v;
+}
+
+# ---------------------------------------------------------------- layout
+
+src.logo = Image("logo.png");
+src.track = Image("bar-track.png");
+src.fill = Image("bar-fill.png");
+src.warn = Image("bar-warn.png");
+src.glow = Image("bar-glow.png");
+src.field = Image("field.png");
+src.dot = Image("dot.png");
+src.panel = Image("panel.png");
+src.edge = Image("panel-edge.png");
+
+logo = Sprite(); track = Sprite(); fill = Sprite(); glow = Sprite();
+status = Sprite(); title = Sprite(); sub = Sprite(); fieldbox = Sprite();
+panel = Sprite(); edge = Sprite();
+for (gi = 0; gi < LOG_LINES; gi++) line[gi] = Sprite();   # (top-level names are shared with every function)
+for (gi = 0; gi < 40; gi++) dots[gi] = Sprite();
+status_key = ""; title_key = ""; sub_key = ""; dots_drawn = -1;
+
+L.w = -1; L.h = -1;
+
+fun px(v) { return Math.Int(v * L.s + 0.5); }
+fun scaled(img) { return img.Scale(px(img.GetWidth()), px(img.GetHeight())); }
+fun text(t, size, a, font) { return Image.Text(t, 0.96, 0.965, 0.973, a, font + " " + Math.Int(size * L.s * 0.75 + 0.5)); }
+
+fun layout() {
+    global.L.w = Window.GetWidth(); global.L.h = Window.GetHeight();
+    global.L.s = Math.Min(L.w / 3840, L.h / 2160);
+    global.L.cx = Math.Int(L.w / 2);
+    global.L.top = Math.Int((L.h - 2160 * L.s) / 2);      # letterbox offset on non-16:9 screens
+
+    global.img.logo = scaled(src.logo);
+    logo.SetImage(img.logo);
+    logo.SetPosition(L.cx - img.logo.GetWidth() / 2, L.top + px(760) - img.logo.GetHeight() / 2, 10);
+
+    global.img.track = scaled(src.track);
+    global.img.fill = scaled(src.fill);
+    global.img.warn = scaled(src.warn);
+    global.L.barx = L.cx - img.track.GetWidth() / 2;
+    global.L.bary = L.top + px(1080);
+    track.SetImage(img.track);
+    track.SetPosition(L.barx, L.bary, 10);
+    fill.SetPosition(L.barx, L.bary, 11);
+    global.img.glow = scaled(src.glow);
+    glow.SetImage(img.glow);
+    glow.SetZ(12);
+
+    global.img.field = scaled(src.field);
+    fieldbox.SetImage(img.field);
+    fieldbox.SetPosition(L.cx - img.field.GetWidth() / 2, L.top + px(1340), 10);
+    global.img.dot = scaled(src.dot);
+    global.dots_drawn = -1;
+
+    global.L.panel_h = px(640);
+    panel.SetImage(src.panel.Scale(L.w, L.panel_h + px(40)));
+    edge.SetImage(src.edge.Scale(L.w, Math.Max(1, px(2))));
+    panel.SetZ(20); edge.SetZ(21);
+    global.L.panel_y = L.h + px(40);
+    if (log_open) global.L.panel_y = L.h - L.panel_h;
+
+    global.status_key = ""; global.title_key = ""; global.sub_key = "";
+    for (i = 0; i < LOG_LINES; i++) global.line_img[i] = NULL;
+    redraw_lines();
+    fill_bar(shown);
+}
+
+# ---------------------------------------------------------------- the bar
+
+# Segment of the bar (from, to) that each step owns, sized by how long it took last time.
+fun segments() {
+    total = 0;
+    for (i = 0; i < 3; i++) total += expect[i];
+    if (total <= 0) total = 1;
+    a = 0;
+    for (i = 0; i < 3; i++) {
+        global.seg_from[i] = a;
+        a += expect[i] / total * BAR_END;
+        global.seg_to[i] = a;
+    }
+}
+segments();
+
+# How far into its segment a step should be after e seconds of an expected d: steady at the
+# last boot's pace, then easing to a stop short of the end while it waits.
+fun within(e, d) {
+    if (d <= 0) return 0.92;
+    r = e / d;
+    if (r < 0.8) return r;
+    return 0.8 + 0.12 * (1 - 1 / (1 + (r - 0.8) * 8.33 + (r - 0.8) * (r - 0.8) * 34.7));
+}
+
+fun target() {
+    if (cur < 0) return 0;
+    return seg_from[cur] + (seg_to[cur] - seg_from[cur]) * within(now - began[cur], expect[cur]);
+}
+
+fun fill_bar(v) {
+    w = Math.Int(img.track.GetWidth() * v);
+    if (w < 1) { fill.SetOpacity(0); glow.SetOpacity(0); return; }
+    src_img = img.fill;
+    if (needs_you()) src_img = img.warn;
+    fill.SetImage(src_img.Crop(0, 0, w, src_img.GetHeight()));
+    fill.SetOpacity(1);
+    glow.SetPosition(L.barx + w - img.glow.GetWidth() / 2, L.bary + img.track.GetHeight() / 2 - img.glow.GetHeight() / 2, 12);
+}
+
+# ---------------------------------------------------------------- what the screen says
+
+fun unlocking() { return booting && (cur == 0 || cur == 1); }
+
+# The network unlock is taking far longer than it does: the screen says why and offers the passphrase.
+fun stuck() {
+    if (!unlocking() || !net_unlock) return 0;
+    if (net == "down") return 1;
+    first = began[0];
+    if (first < 0) first = began[1];
+    return now - first > Math.Max(50, 2 * (expect[0] + expect[1]));
+}
+
+# The passphrase is wanted from the person in front of the TV.
+fun needs_you() {
+    if (!pw_asked || !booting || cur >= 2) return 0;    # (from step 2 on the disk is unlocked)
+    return stuck() || (pace_known && !net_unlock) || pw_typed || pw_wrong;
+}
+
+# A step running well past its usual time opens the log by itself.
+fun overdue() {
+    if (cur < 0 || !booting) return 0;
+    return now - began[cur] > Math.Max(2 * expect[cur], expect[cur] + 12);
+}
+
+fun set_text(sprite, key_name, key, t, size, a, font, y) {
+    if (key == "") { sprite.SetOpacity(0); return ""; }
+    if (key != key_name) {
+        im = text(t, size, 1, font);
+        sprite.SetImage(im);
+        sprite.SetPosition(L.cx - im.GetWidth() / 2, L.top + px(y), 10);
+    }
+    sprite.SetOpacity(a);
+    return key;
+}
+
+fun words() {
+    st = ""; tt = ""; ss = "";
+    if (booting && needs_you()) {
+        if (pw_wrong) { tt = "That passphrase didn't work"; ss = "Type it again on the USB keyboard."; }
+        else if (!net_unlock) { tt = "Type the disk passphrase on a USB keyboard"; }
+        else if (stuck() && net == "down") { tt = "Can't join Wi-Fi"; ss = "Still trying. To unlock now, type the disk passphrase on a USB keyboard."; }
+        else if (stuck()) { tt = "Can't reach the unlock server"; ss = "Still trying. To unlock now, type the disk passphrase on a USB keyboard."; }
+        else { tt = "Type the disk passphrase"; }
+    } else if (booting && cur == 0) st = "Joining Wi-Fi…";
+    else if (booting && cur == 1) st = "Unlocking…";
+    else if (booting && cur >= 2) st = "Starting Couchbox…";
+
+    global.status_key = set_text(status, status_key, st, st, 60, 0.72, FONT, 1130);
+    global.title_key = set_text(title, title_key, tt, tt, 68, 1, FONT + " Medium", 1130);
+    global.sub_key = set_text(sub, sub_key, ss, ss, 50, 0.66, FONT, 1228);
+
+    show_field = booting && needs_you();
+    fieldbox.SetY(L.top + px(1340));
+    if (ss == "") fieldbox.SetY(L.top + px(1250));
+    fieldbox.SetOpacity(show_field);
+    draw_dots(show_field);
+}
+
+fun draw_dots(on) {
+    n = pw_bullets;
+    if (!on) n = 0;
+    if (n > 40) n = 40;
+    if (n == dots_drawn) return;
+    global.dots_drawn = n;
+    gap = px(46);
+    x0 = L.cx - (n * gap) / 2 + (gap - img.dot.GetWidth()) / 2;
+    y = fieldbox.GetY() + (img.field.GetHeight() - img.dot.GetHeight()) / 2;
+    for (i = 0; i < 40; i++) {
+        if (i < n) {
+            dots[i].SetImage(img.dot);
+            dots[i].SetPosition(x0 + i * gap, y, 11);
+            dots[i].SetOpacity(0.9);
+        } else dots[i].SetOpacity(0);
+    }
+}
+
+# ---------------------------------------------------------------- the log panel
+
+fun redraw_lines() {
+    pad = px(48); lh = px(56);
+    maxw = L.w - 2 * px(160);
+    for (i = 0; i < LOG_LINES; i++) {
+        k = log_count - LOG_LINES + i;      # oldest at the top
+        if (k < 0) { line[i].SetOpacity(0); continue; }
+        if (!line_img[i]) {
+            im = Image.Text(log_text[k % LOG_LINES], 0.79, 0.81, 0.86, 1, MONO + " " + Math.Int(36 * L.s * 0.75 + 0.5));
+            if (im.GetWidth() > maxw) im = im.Crop(0, 0, maxw, im.GetHeight());
+            global.line_img[i] = im;
+        }
+        line[i].SetImage(line_img[i]);
+        line[i].SetX(px(160));
+        line[i].SetZ(22);
+        line[i].SetOpacity(0.5 + 0.5 * (i + 1) / LOG_LINES);
+    }
+    place_lines();
+}
+
+fun place_lines() {
+    pad = px(52); lh = px(58);
+    panel.SetPosition(0, L.panel_y, 20);
+    edge.SetPosition(0, L.panel_y, 21);
+    for (i = 0; i < LOG_LINES; i++) line[i].SetY(L.panel_y + pad + i * lh);
+}
+
+fun add_line(t) {
+    global.log_text[log_count % LOG_LINES] = t;
+    global.log_count++;
+    for (i = 0; i < LOG_LINES - 1; i++) global.line_img[i] = line_img[i + 1];
+    global.line_img[LOG_LINES - 1] = NULL;
+    if (L.w > 0) redraw_lines();
+}
+
+# ---------------------------------------------------------------- callbacks
+
+fun on_status(s) {
+    if (s.SubString(0, 3) != "cb:") return;
+    kind = field(s, 1);
+    if (kind == "pace") {
+        for (i = 0; i < 3; i++) global.expect[i] = number(field(s, 2 + i)) / 10;
+        global.net_unlock = (field(s, 5) == "1");
+        global.pace_known = 1;
+        segments();
+    } else if (kind == "step") {
+        w = field(s, 2);
+        for (i = 0; i < 3; i++) if (steps[i] == w && i > cur) {
+            global.cur = i;
+            global.began[i] = now;
+        }
+    } else if (kind == "net") global.net = field(s, 2);
+}
+Plymouth.SetUpdateStatusFunction(on_status);
+
+fun on_root_mounted() {
+    if (cur < 2) { global.cur = 2; global.began[2] = now; }
+    global.pw_asked = 0; global.pw_bullets = 0; global.pw_typed = 0;
+}
+Plymouth.SetRootMountedFunction(on_root_mounted);
+
+# The clock: 1/50 s per frame, caught up from Plymouth's own clock whenever that runs ahead.
+# (Plymouth stops its clock while a passphrase is asked for, which the disk unlock does from
+# its first second, so it can't be the clock on its own.)
+fun on_progress(duration, progress) {
+    d = duration - prog_last;
+    f = now - now_at_prog;
+    if (d > f) global.now = now + (d - f);
+    global.prog_last = duration;
+    global.now_at_prog = now;
+}
+Plymouth.SetBootProgressFunction(on_progress);
+
+fun on_password(prompt, bullets) {
+    if (pw_answered && bullets == 0) global.pw_wrong = 1;
+    global.pw_answered = 0;
+    global.pw_asked = 1;
+    global.pw_bullets = bullets;
+    if (bullets > 0) global.pw_typed = 1;
+}
+Plymouth.SetDisplayPasswordFunction(on_password);
+
+fun on_normal() {
+    if (pw_asked && pw_bullets > 0) global.pw_answered = 1;
+    global.pw_asked = 0; global.pw_bullets = 0; global.pw_typed = 0;
+}
+Plymouth.SetDisplayNormalFunction(on_normal);
+
+fun on_message(t) { add_line(t); }
+Plymouth.SetDisplayMessageFunction(on_message);
+
+# Any key shows or hides the log, except while the passphrase is asked for: keys type it then
+# (Esc still switches to Plymouth's full text log).
+fun on_key(k) {
+    if (pw_asked) return;
+    global.log_open = !log_open;
+    global.log_manual = 1;
+}
+Plymouth.SetKeyboardInputFunction(on_key);
+
+fun on_quit() {
+    if (booting) { global.shown = BAR_END; fill_bar(shown); }
+}
+Plymouth.SetQuitFunction(on_quit);
+
+# ---------------------------------------------------------------- every frame
+
+frame = 0;
+fun refresh() {
+    global.frame++;
+    global.now = now + 0.02;
+    if (Window.GetWidth() != L.w || Window.GetHeight() != L.h) layout();
+
+    if (booting) {
+        t = target();
+        if (t > shown) global.shown = shown + (t - shown) * 0.12;
+        fill_bar(shown);
+        if (shown > 0.002 && shown < BAR_END - 0.001 && !needs_you()) glow.SetOpacity(0.35 + 0.2 * Math.Sin(frame / 50 * 2.4));
+        else glow.SetOpacity(0);
+        if (!log_manual && (overdue() || stuck())) global.log_open = 1;
+    } else {
+        track.SetOpacity(0); fill.SetOpacity(0); glow.SetOpacity(0);
+    }
+    words();
+
+    to = L.h + px(40);
+    if (log_open) to = L.h - L.panel_h;
+    if (Math.Abs(to - L.panel_y) >= 1) {
+        global.L.panel_y = L.panel_y + (to - L.panel_y) * 0.2;
+        if (Math.Abs(to - L.panel_y) < 1) global.L.panel_y = to;
+        place_lines();
+    }
+}
+Plymouth.SetRefreshFunction(refresh);

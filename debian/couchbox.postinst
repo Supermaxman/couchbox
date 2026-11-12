@@ -94,6 +94,9 @@ X
     /usr/lib/couchbox/bin/couchbox-theme >/dev/null 2>&1 || true
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true
     if ! in_chroot; then
+        # the boot screen: the Couchbox theme, and a test boot with it when it changed (the box
+        # tries it once at the next restart and falls back to the current boot if it fails)
+        /usr/bin/couchbox boot-screen apply 2>&1 | sed 's/^/boot screen: /' || true
         # the running home screen still has the old QML: couchbox-memory reloads it when no one's using the TV
         touch /var/lib/couchbox/state/home-stale
         systemd-tmpfiles --create couchbox.conf >/dev/null 2>&1 || true
