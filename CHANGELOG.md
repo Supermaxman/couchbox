@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/Supermaxman/couchbox/compare/v0.21.0...v0.22.0) (2026-11-12)
+
+
+### New
+
+* **moments:** teach the TV something by showing it, then start it by voice, its home tile or the phone page ([#127](https://github.com/Supermaxman/couchbox/issues/127)) ([d3096ef](https://github.com/Supermaxman/couchbox/commit/d3096ef490ae18247099773ca913de17624684f6))
+
 ## [0.21.0](https://github.com/Supermaxman/couchbox/compare/v0.20.5...v0.21.0) (2026-11-12)
 
 
