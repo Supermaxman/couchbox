@@ -141,7 +141,16 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
     dy = {"file": str(dayreel.card_file(tv_home()))} if s["home.day"] and s["media.frigate.url"] else None
     # The morning show: the TV user's couchbox-morning service writes it here; its tile goes first
     mo = {"file": str(show.show_file(tv_home()))} if s["home.morning"] else None
-    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw, "away": aw, "day": dy, "morning": mo}
+    return {
+        "apps": out,
+        "weather": w,
+        "clock24": d["clock24"],
+        "units": d["units"],
+        "continueWatching": cw,
+        "away": aw,
+        "day": dy,
+        "morning": mo,
+    }
 
 
 def _write(path: Path, text: str, owner: str | None = None) -> None:
