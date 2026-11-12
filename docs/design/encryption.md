@@ -2,7 +2,7 @@
 
 - **Off by default.** Settings → Security → **Encrypt this box** turns it on, from the remote, while you keep watching.
 - **Unlock at boot** uses any mix of:
-  - **a passphrase**, typed at boot on a USB keyboard; always present as the recovery method;
+  - **a passphrase**, typed at boot with the remote or a USB keyboard; always present as the recovery method;
   - **network unlock** through one or more **Tang servers** (Clevis). The box unlocks itself when it can reach one, over **Ethernet or Wi-Fi**.
 - **No TPM:** the Pi 5 has none, so there's no "sealed to this device" option.
 
@@ -68,11 +68,12 @@ Every read and write goes through dm-crypt even in "not protected" mode. The Pi 
 | Box stolen and booted on your LAN | No. It auto-unlocks, which is the point of network unlock |
 | Boot partition tampered with to capture keys later | No. That needs Raspberry Pi secure boot, which is irreversible and out of scope |
 | Wi-Fi key read from the boot partition | No, when Wi-Fi at boot is on (see above) |
+| Remote's pairing read from the boot partition | No, when a remote is paired: someone could pose as the remote to this box |
 
 ## Passphrase at boot
 
-- **When it's asked:** when no Tang answers, the boot screen says why and asks for the passphrase ([boot-screen.md](boot-screen.md)). That needs a **USB keyboard** in 1.0.
-- **After 1.0:** a remote-friendly unlock prompt, with the paired Bluetooth remote or CEC keys and an on-screen keyboard, in the initrd.
+- **When it's asked:** when no Tang answers, the boot screen says why and asks for the passphrase ([boot-screen.md](boot-screen.md)).
+- **How it's typed:** with the paired Bluetooth remote on the boot screen's on-screen keyboard, or on a USB keyboard. The remote's pairing goes into the initrd for that.
 
 ## Plan B
 

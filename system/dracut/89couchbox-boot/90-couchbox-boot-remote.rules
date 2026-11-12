@@ -1,0 +1,2 @@
+# initrd: keys from Bluetooth remotes go to the boot screen (couchbox-boot-remote@).
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/bustype}=="0005", TAG+="systemd", ENV{SYSTEMD_WANTS}+="couchbox-boot-remote@%k.service"

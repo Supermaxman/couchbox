@@ -21,6 +21,11 @@ log = logging.getLogger(__name__)
 THEME = "usr/share/plymouth/themes/couchbox"
 MODULE = "usr/lib/dracut/modules.d/89couchbox-boot"
 HELPER = "usr/lib/couchbox/bin/couchbox-boot-status"
+REMOTE = "usr/lib/couchbox/bin/couchbox-boot-remote"
+BLUETOOTH = "var/lib/bluetooth"
+# the sections of a Bluetooth device's info file that make it paired (bluetoothd rewrites the
+# rest of the file now and then)
+PAIRING = ("[LongTermKey]", "[PeripheralLongTermKey]", "[SlaveLongTermKey]", "[LinkKey]", "[IdentityResolvingKey]")
 CONF = "etc/plymouth/plymouthd.conf"
 # The initrd has no DRM device on a Pi (the firmware's framebuffer is plain fbdev), and Plymouth
 # waits DeviceTimeout (Ubuntu: 8 s) for one before drawing on it: the TV stayed black that long.
@@ -70,16 +75,40 @@ def with_device_timeout(conf: str) -> str:
     return "\n".join(out) + "\n"
 
 
+def pairings() -> list[str]:
+    """The Bluetooth devices this box is paired with, each as its address and pairing keys: the
+    boot image carries them, so the remote works on the boot screen."""
+    out = []
+    for info in sorted((paths.root() / BLUETOOTH).glob("*/*/info")):
+        keys, section = [], ""
+        for line in info.read_text(errors="replace").splitlines():
+            if line.startswith("["):
+                section = line.strip()
+            elif section in PAIRING and line.strip():
+                keys.append(f"{section}{line.strip()}")
+        if keys:
+            out.append(f"{info.parent.parent.name}/{info.parent.name}:" + ",".join(keys))
+    return out
+
+
+def encrypted() -> bool:
+    """The disk is unlocked at boot (crypttab names it)."""
+    tab = paths.root() / "etc/crypttab"
+    return tab.exists() and any(line.split() and not line.startswith("#") for line in tab.read_text().splitlines())
+
+
 def fingerprint() -> str:
-    """What the boot image's splash is made of: the theme, the dracut module, the helper and
-    Plymouth's settings."""
+    """What the boot image's splash is made of: the theme, the dracut module, the helpers,
+    Plymouth's settings, and the remotes it's paired with."""
     h = hashlib.sha256()
     root = paths.root()
-    for base in (THEME, MODULE, HELPER, CONF):
+    for base in (THEME, MODULE, HELPER, REMOTE, CONF):
         p = root / base
         for f in sorted([p] if p.is_file() else p.rglob("*") if p.is_dir() else []):
             if f.is_file():
                 h.update(str(f.relative_to(root)).encode() + b"\0" + f.read_bytes())
+    for pairing in pairings():
+        h.update(b"pairing\0" + pairing.encode())
     return h.hexdigest()
 
 

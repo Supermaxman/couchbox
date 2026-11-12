@@ -22,7 +22,7 @@ SettingsPage {
     }
     function askTang(pass, tang) {
         T.pick("Unlock by itself at home?", [
-            {label: "No: always ask for the passphrase at boot (needs a USB keyboard)", value: "no"},
+            {label: "No: always ask for the passphrase at boot (type it with the remote)", value: "no"},
             {label: tang.length ? "Add another Tang server" : "Yes: use a Tang server on my network", value: "add"},
             ...(tang.length ? [{label: "Done adding servers", value: "done"}] : [])], "", v => {
             if (v === "no") return confirm(pass, [], false);

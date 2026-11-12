@@ -9,7 +9,13 @@
 #                                          of a second; net=1 when the disk unlocks over the network
 #   cb:step:<wifi|unlock|start>            that step has begun (the ones before it are done)
 #   cb:net:<up|down>                       the network came up, or gave up waiting
-# and feeds it the journal as display-message, one line each.
+# and feeds it the journal as display-message, one line each. couchbox-boot-remote, on a box
+# with a paired Bluetooth remote, adds:
+#   cb:remote                              the remote can type the passphrase here
+#   cb:osk:<on>:<row>:<col>:<caps>:<n>:<wrong>  the on-screen keyboard: shown or not, the key
+#                                          in focus, Shift, how many characters are typed, and
+#                                          whether the last passphrase was wrong
+#   cb:log                                 show or hide the log panel
 
 BG.r = 0.043; BG.g = 0.051; BG.b = 0.071;    # #0b0d12, the app icon's background
 Window.SetBackgroundTopColor(BG.r, BG.g, BG.b);
@@ -19,6 +25,15 @@ FONT = "Inter";
 MONO = "DejaVu Sans Mono";
 BAR_END = 0.85;          # the Plasma splash fills the rest of the bar
 LOG_LINES = 9;
+
+# The on-screen keyboard: CouchKit's (ui/CouchKit/TextEntry.qml), the same keys in the same
+# places. Rows 0-2 are 13 one-unit keys; row 3 is Shift, Space, Delete, Clear and Unlock.
+# couchbox-boot-remote moves the focus and types; this only draws it.
+ROWS[0] = "abcdefghijklm"; ROWS[1] = "nopqrstuvwxyz"; ROWS[2] = "1234567890@.-";
+BOTTOM[0] = "shift"; BOTTOM[1] = "Space"; BOTTOM[2] = "del"; BOTTOM[3] = "Clear"; BOTTOM[4] = "Unlock";
+BOTTOM_W[0] = 2; BOTTOM_W[1] = 4; BOTTOM_W[2] = 2; BOTTOM_W[3] = 2; BOTTOM_W[4] = 3;
+KEYS = 44;               # 3 x 13 + 5
+KEY = 116; KEY_GAP = 14;
 
 # ---------------------------------------------------------------- state
 
@@ -35,6 +50,8 @@ net = "";               # "up" / "down" once known
 pw_asked = 0; pw_bullets = 0; pw_typed = 0; pw_wrong = 0; pw_answered = 0;
 log_open = 0; log_manual = 0;
 log_count = 0;
+remote = 0;             # a Bluetooth remote can type the passphrase (couchbox-boot-remote runs)
+osk_on = 0; osk_row = 0; osk_col = 0; osk_caps = 0; osk_n = 0; osk_wrong = 0; osk_drawn = "";
 mode = Plymouth.GetMode();
 booting = (mode == "boot");
 
@@ -81,12 +98,17 @@ src.field = Image("field.png");
 src.dot = Image("dot.png");
 src.panel = Image("panel.png");
 src.edge = Image("panel-edge.png");
+for (gi = 1; gi <= 4; gi++) { src.key[gi] = Image("key-" + gi + ".png"); src.key_on[gi] = Image("key-" + gi + "-on.png"); }
+src.key_lit = Image("key-2-lit.png");
+src.icon["shift0"] = Image("icon-shift-light.png"); src.icon["shift1"] = Image("icon-shift-dark.png");
+src.icon["del0"] = Image("icon-del-light.png"); src.icon["del1"] = Image("icon-del-dark.png");
 
 logo = Sprite(); track = Sprite(); fill = Sprite(); glow = Sprite();
 status = Sprite(); title = Sprite(); sub = Sprite(); fieldbox = Sprite();
 panel = Sprite(); edge = Sprite();
 for (gi = 0; gi < LOG_LINES; gi++) line[gi] = Sprite();   # (top-level names are shared with every function)
 for (gi = 0; gi < 40; gi++) dots[gi] = Sprite();
+for (gi = 0; gi < KEYS; gi++) { kb_key[gi] = Sprite(); kb_label[gi] = Sprite(); }
 status_key = ""; title_key = ""; sub_key = ""; dots_drawn = -1;
 
 L.w = -1; L.h = -1;
@@ -129,6 +151,12 @@ fun layout() {
     panel.SetZ(20); edge.SetZ(21);
     global.L.panel_y = L.h + px(40);
     if (log_open) global.L.panel_y = L.h - L.panel_h;
+
+    for (i = 1; i <= 4; i++) { global.img.key[i] = scaled(src.key[i]); global.img.key_on[i] = scaled(src.key_on[i]); }
+    global.img.key_lit = scaled(src.key_lit);
+    for (d = 0; d < 2; d++) { global.img.icon["shift" + d] = scaled(src.icon["shift" + d]); global.img.icon["del" + d] = scaled(src.icon["del" + d]); }
+    for (i = 0; i < KEYS; i++) { global.kb_text[i] = NULL; global.kb_caps[i] = NULL; }
+    global.osk_drawn = "";
 
     global.status_key = ""; global.title_key = ""; global.sub_key = "";
     for (i = 0; i < LOG_LINES; i++) global.line_img[i] = NULL;
@@ -192,7 +220,7 @@ fun stuck() {
 # The passphrase is wanted from the person in front of the TV.
 fun needs_you() {
     if (!pw_asked || !booting || cur >= 2) return 0;    # (from step 2 on the disk is unlocked)
-    return stuck() || (pace_known && !net_unlock) || pw_typed || pw_wrong;
+    return stuck() || (pace_known && !net_unlock) || pw_typed || pw_wrong || osk_on;
 }
 
 # A step running well past its usual time opens the log by itself.
@@ -214,11 +242,14 @@ fun set_text(sprite, key_name, key, t, size, a, font, y) {
 
 fun words() {
     st = ""; tt = ""; ss = "";
+    how = "on a USB keyboard";
+    if (remote) how = "with the remote or a USB keyboard";
     if (booting && needs_you()) {
-        if (pw_wrong) { tt = "That passphrase didn't work"; ss = "Type it again on the USB keyboard."; }
-        else if (!net_unlock) { tt = "Type the disk passphrase on a USB keyboard"; }
-        else if (stuck() && net == "down") { tt = "Can't join Wi-Fi"; ss = "Still trying. To unlock now, type the disk passphrase on a USB keyboard."; }
-        else if (stuck()) { tt = "Can't reach the unlock server"; ss = "Still trying. To unlock now, type the disk passphrase on a USB keyboard."; }
+        if (osk_wrong) { tt = "That passphrase didn't work"; ss = "Type it again."; }
+        else if (pw_wrong) { tt = "That passphrase didn't work"; ss = "Type it again " + how + "."; }
+        else if (!net_unlock) { tt = "Type the disk passphrase " + how; }
+        else if (stuck() && net == "down") { tt = "Can't join Wi-Fi"; ss = "Still trying. To unlock now, type the disk passphrase " + how + "."; }
+        else if (stuck()) { tt = "Can't reach the unlock server"; ss = "Still trying. To unlock now, type the disk passphrase " + how + "."; }
         else { tt = "Type the disk passphrase"; }
     } else if (booting && cur == 0) st = "Joining Wi-Fi…";
     else if (booting && cur == 1) st = "Unlocking…";
@@ -233,10 +264,12 @@ fun words() {
     if (ss == "") fieldbox.SetY(L.top + px(1250));
     fieldbox.SetOpacity(show_field);
     draw_dots(show_field);
+    draw_keyboard(show_field && osk_on);
 }
 
 fun draw_dots(on) {
     n = pw_bullets;
+    if (osk_on && osk_n > 0) n = osk_n;
     if (!on) n = 0;
     if (n > 40) n = 40;
     if (n == dots_drawn) return;
@@ -250,6 +283,78 @@ fun draw_dots(on) {
             dots[i].SetPosition(x0 + i * gap, y, 11);
             dots[i].SetOpacity(0.9);
         } else dots[i].SetOpacity(0);
+    }
+}
+
+# ---------------------------------------------------------------- the on-screen keyboard
+
+# Key i: its row, its place in the row, width in units, and the label (letters follow Shift).
+fun key_row(i) { if (i >= 39) return 3; return Math.Int(i / 13); }
+fun key_col(i) { if (i >= 39) return i - 39; return i % 13; }
+fun key_w(i) { if (i >= 39) return BOTTOM_W[i - 39]; return 1; }
+fun key_name(i) {
+    if (i >= 39) return BOTTOM[i - 39];
+    c = ROWS[key_row(i)].CharAt(key_col(i));
+    if (osk_caps && key_row(i) < 2) c = upper(c);
+    return c;
+}
+fun upper(c) {
+    lo = "abcdefghijklmnopqrstuvwxyz"; up = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (j = 0; j < 26; j++) if (lo.CharAt(j) == c) return up.CharAt(j);
+    return c;
+}
+fun key_px(w) { return px(w * KEY + (w - 1) * KEY_GAP); }
+
+fun key_text(name, w, dark) {
+    size = 48;
+    if (w > 1) size = 40;
+    if (dark) return Image.Text(name, 0.043, 0.051, 0.071, 1, FONT + " Medium " + Math.Int(size * L.s * 0.75 + 0.5));
+    return Image.Text(name, 0.96, 0.965, 0.973, 1, FONT + " " + Math.Int(size * L.s * 0.75 + 0.5));
+}
+
+# The label image for key i: light (made once for each case), or dark on the focused key.
+fun key_label(i, dark) {
+    name = key_name(i);
+    if (name == "shift" || name == "del") return img.icon[name + dark];
+    if (dark) return key_text(name, key_w(i), 1);
+    if (osk_caps && i < 26) {
+        if (!kb_caps[i]) global.kb_caps[i] = key_text(name, 1, 0);
+        return kb_caps[i];
+    }
+    if (!kb_text[i]) global.kb_text[i] = key_text(name, key_w(i), 0);
+    return kb_text[i];
+}
+
+fun draw_keyboard(on) {
+    state = on + ":" + osk_row + ":" + osk_col + ":" + osk_caps + ":" + fieldbox.GetY();
+    if (state == osk_drawn) return;
+    global.osk_drawn = state;
+    if (!on) {
+        for (i = 0; i < KEYS; i++) { kb_key[i].SetOpacity(0); kb_label[i].SetOpacity(0); }
+        return;
+    }
+    x0 = L.cx - key_px(13) / 2;
+    y0 = fieldbox.GetY() + img.field.GetHeight() + px(72);
+    for (i = 0; i < KEYS; i++) {
+        r = key_row(i); c = key_col(i); w = key_w(i);
+        x = x0; for (j = 0; j < c; j++) { if (r == 3) x += key_px(BOTTOM_W[j]) + px(KEY_GAP); else x += px(KEY + KEY_GAP); }
+        y = y0 + r * px(KEY + KEY_GAP);
+        focus = (r == osk_row && c == osk_col);
+        im = img.key[w];
+        if (focus) im = img.key_on[w];
+        else if (i == 39 && osk_caps) im = img.key_lit;
+        if (focus) {
+            # the focused key grows a little, as in CouchKit
+            g = Math.Int(im.GetHeight() * 0.03);
+            im = im.Scale(im.GetWidth() + 2 * g, im.GetHeight() + 2 * g);
+            kb_key[i].SetPosition(x - g, y - g, 15);
+        } else kb_key[i].SetPosition(x, y, 15);
+        kb_key[i].SetImage(im);
+        kb_key[i].SetOpacity(1);
+        lb = key_label(i, focus);
+        kb_label[i].SetImage(lb);
+        kb_label[i].SetPosition(x + (key_px(w) - lb.GetWidth()) / 2, y + (px(KEY) - lb.GetHeight()) / 2, 16);
+        kb_label[i].SetOpacity(1);
     }
 }
 
@@ -306,6 +411,18 @@ fun on_status(s) {
             global.began[i] = now;
         }
     } else if (kind == "net") global.net = field(s, 2);
+    else if (kind == "remote") global.remote = 1;
+    else if (kind == "log") { global.log_open = !log_open; global.log_manual = 1; }
+    else if (kind == "osk") {
+        global.remote = 1;
+        on = (field(s, 2) == "1");
+        if (on && !osk_on && !log_manual) global.log_open = 0;   # the keyboard takes the log's place
+        global.osk_on = on;
+        global.osk_row = number(field(s, 3)); global.osk_col = number(field(s, 4));
+        global.osk_caps = (field(s, 5) == "1");
+        global.osk_n = number(field(s, 6));
+        global.osk_wrong = (field(s, 7) == "1");
+    }
 }
 Plymouth.SetUpdateStatusFunction(on_status);
 
@@ -373,7 +490,8 @@ fun refresh() {
         fill_bar(shown);
         if (shown > 0.002 && shown < BAR_END - 0.001 && !needs_you()) glow.SetOpacity(0.35 + 0.2 * Math.Sin(frame / 50 * 2.4));
         else glow.SetOpacity(0);
-        if (!log_manual && (overdue() || stuck())) global.log_open = 1;
+        # (with a remote, the keyboard comes up where the log would)
+        if (!log_manual && !(remote && needs_you()) && (overdue() || stuck())) global.log_open = 1;
     } else {
         track.SetOpacity(0); fill.SetOpacity(0); glow.SetOpacity(0);
     }

@@ -1,0 +1,10 @@
+# initrd: one of the paired remote's input devices (started by 90-couchbox-boot-remote.rules):
+# takes its keys for couchbox-boot-remote, so they don't also reach the console.
+[Unit]
+Description=Couchbox boot screen: keys from %I
+DefaultDependencies=no
+BindsTo=dev-input-%i.device
+After=dev-input-%i.device couchbox-boot-remote.service
+
+[Service]
+ExecStart=/usr/bin/couchbox-boot-remote read /dev/input/%I

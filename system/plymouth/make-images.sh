@@ -44,3 +44,26 @@ X
 svg panel-edge <<'X'
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="2"><rect width="16" height="2" fill="#fff" fill-opacity=".10"/></svg>
 X
+# The on-screen keyboard (the remote types the passphrase with it): a key 1-4 units wide (a unit
+# is 116 px with 14 px between keys), plain, focused (the logo's gradient) and lit (Shift on),
+# and the Shift and Delete icons, light and dark (on the focused key).
+for w in 1 2 3 4; do
+    px=$((w * 116 + (w - 1) * 14))
+    svg "key-$w" <<X
+<svg xmlns="http://www.w3.org/2000/svg" width="$px" height="116"><rect width="$px" height="116" rx="22" fill="#fff" fill-opacity=".07"/></svg>
+X
+    svg "key-$w-on" <<X
+<svg xmlns="http://www.w3.org/2000/svg" width="$px" height="116"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7aa2ff"/><stop offset="1" stop-color="#a98bff"/></linearGradient></defs><rect width="$px" height="116" rx="22" fill="url(#g)"/></svg>
+X
+done
+svg key-2-lit <<'X'
+<svg xmlns="http://www.w3.org/2000/svg" width="246" height="116"><rect width="246" height="116" rx="22" fill="#fff" fill-opacity=".2"/></svg>
+X
+for c in light:f5f6f8 dark:0b0d12; do
+    svg "icon-shift-${c%%:*}" <<X
+<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24"><path d="M12 3.5 3.5 12.5H8v8h8v-8h4.5z" fill="none" stroke="#${c#*:}" stroke-width="2" stroke-linejoin="round"/></svg>
+X
+    svg "icon-del-${c%%:*}" <<X
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="52" viewBox="0 0 28 24"><g fill="none" stroke="#${c#*:}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 4.5h15.5v15H9L2.5 12z"/><path d="m13 9 6 6m0-6-6 6"/></g></svg>
+X
+done
