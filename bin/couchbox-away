@@ -17,6 +17,7 @@ card are ready within seconds. Nothing worth showing: no card.
                                  each step took
   couchbox-away --forget         take the card off the home screen
 """
+import datetime
 import json
 import os
 import signal
@@ -24,7 +25,7 @@ import sys
 import threading
 import time
 
-from couchbox import away, moments, paths, session, settings, show
+from couchbox import away, dayreel, moments, paths, reels, session, settings, show
 
 TICK = 5               # seconds between looks at the remote
 PLAYING_EVERY = 30     # ... and at what's playing (D-Bus calls)
@@ -154,12 +155,17 @@ class Service:
         for p in away.cache_dir().iterdir():
             if p.name not in keep and p.suffix in (".mp4", ".jpg", ".part"):
                 p.unlink(missing_ok=True)
+        try:
+            reels.save("away", clips, since, until)
+        except OSError as err:
+            log(f"the Reels app won't have this one: {err}")
         log(f"reel ready: {len(clips)} clips, {reel['card']['subtitle']} ({time.monotonic() - t0:.1f}s to download)")
         return reel
 
     def back(self, since, until):
         """The household is home: the reel of their absence, and the card. On a morning with a
-        morning show (couchbox.show), the reel leaves out the night the show covers."""
+        morning show (couchbox.show), the reel leaves out the night the show covers; on a weekday
+        with Today at home (couchbox.dayreel), the pets in its hours."""
         night = show.covers()
         if night and night[1] > since and night[0] < until:
             log(f"the morning show covers {time.strftime('%H:%M', time.localtime(night[0]))} to "
@@ -182,6 +188,9 @@ class Service:
             self.sweep(since, until, budget=FINAL_BUDGET)
             if night:
                 self.cands = {k: c for k, c in self.cands.items() if not night[0] <= c["start"] < night[1]}
+            day = dayreel.window(datetime.date.fromtimestamp(until), settings.load())
+            if day:                           # (Today at home has the pets in its hours)
+                self.cands = {k: c for k, c in self.cands.items() if c["section"] != "pets" or not day[0] <= c["start"] < day[1]}
             if not self.make_reel(since, until):
                 log("nothing worth showing: no card")
                 away.clear()

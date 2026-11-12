@@ -95,6 +95,13 @@ shot home-continue-card couchbox-ontv --keys down,right
 shot home-continue-empty couchbox-ontv --empty
 shot home-away couchbox-ontv --away --keys down
 shot home-away-only couchbox-ontv --away --empty --keys down
+# Today at home: its card first in that row (in focus; with While you were out's before it)
+shot home-day couchbox-ontv --day --empty --keys down
+shot home-day-away couchbox-ontv --day --away --keys down
+# the Reels app with made-up reels: the list, further down it, a reel playing
+shot reels couchbox-show --reels
+shot reels-down couchbox-show --reels --keys down,down,right
+shot reels-play couchbox-show --reels --keys ok
 # the morning show: its tile first on the home row (in focus), then each part of a made-up show
 shot home-morning couchbox-ontv --morning
 shot home-morning-tile couchbox-ontv --morning --keys left

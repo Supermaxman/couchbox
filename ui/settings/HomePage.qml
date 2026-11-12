@@ -36,6 +36,17 @@ SettingsPage {
                 : () => T.askText("Morning show camera (a Frigate camera name)", v, false, x => T.set("home.morning_camera", x.trim()))
         });
     }
+    // Today at home's hours: a pick of the hours of the day
+    function hourName(h) {
+        if (T.settings["home.clock"] === "24h") return String(h % 24).padStart(2, "0") + ":00";
+        return h === 0 || h === 24 ? "Midnight" : h === 12 ? "Noon" : (h % 12) + (h < 12 ? " am" : " pm");
+    }
+    function hourRow(key, first, last) {
+        const v = T.settings[key];
+        const hours = [];
+        for (let h = first; h <= last; h++) hours.push({label: hourName(h), value: h});
+        return T.row(key, {value: hourName(v), act: () => T.pick(T.label(key), hours, v, x => T.set(key, x))});
+    }
     Connections { target: T; function onEvent(topic) { if (topic === "settings.changed") p.refresh(); } }
 
     readonly property var onHome: apps.filter(a => a.on_home && a.hideable)
@@ -106,6 +117,8 @@ SettingsPage {
         r.push(T.row("home.weather", {help: T.settings["location.name"] ? "Weather for " + T.settings["location.name"] : "Set a location in Date, time, location first"}));
         r.push(T.row("home.continue"));
         if (T.settings["media.frigate.url"]) r.push(T.row("home.away"));
+        if (T.settings["media.frigate.url"]) r.push(T.row("home.day"));
+        if (T.settings["media.frigate.url"] && T.settings["home.day"]) r.push(hourRow("home.day_from", 0, 23), hourRow("home.day_to", 1, 24));
         r.push(T.row("home.morning"));
         if (T.settings["home.morning"] && T.settings["media.frigate.url"]) r.push(cameraRow());
         return r;

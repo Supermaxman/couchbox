@@ -1,0 +1,11 @@
+{
+  "id": "reels",
+  "name": "Reels",
+  "desktop": "couchbox-reels.desktop",
+  "kind": "native",
+  "tile": "reels",
+  "requires": [
+    "media.frigate.url"
+  ],
+  "default_order": 36
+}

@@ -5,7 +5,8 @@
 // Continue watching comes from the TV user's couchbox-ontv service, in the file home.json names
 // (continueWatching.file; null while it's turned off in Settings), read on the same beat.
 // While you were out (couchbox-away, the file in away.file) puts its card first in that row,
-// until its reel has been watched to the end or is 12 hours old.
+// until its reel has been watched to the end or is 12 hours old. Today at home (couchbox-morning,
+// the file in day.file) puts its card next, until it's been watched or the next morning.
 // The morning show (couchbox-morning, the file in morning.file) puts its tile first on the app
 // row (rowApps), from when it's made until noon or until it's been watched to the end.
 pragma Singleton
@@ -21,6 +22,7 @@ QtObject {
     readonly property bool clock24: !!(data && data.clock24)
     readonly property string continueFile: data && data.continueWatching ? data.continueWatching.file || "" : ""
     readonly property string awayFile: data && data.away ? data.away.file || "" : ""
+    readonly property string dayFile: data && data.day ? data.day.file || "" : ""
     readonly property string morningFile: data && data.morning ? data.morning.file || "" : ""
     property var morningShow: null
     property var showTile: null
@@ -28,7 +30,10 @@ QtObject {
     readonly property var rowApps: showTile ? [showTile].concat(apps) : apps   // the row: the show's tile first
     property var watchingItems: []
     property var awayCard: null
-    readonly property var continueItems: awayCard ? [awayCard].concat(watchingItems) : watchingItems
+    property var dayCard: null
+    property var dayInfo: null
+    property string lastDay: ""
+    readonly property var continueItems: [awayCard, dayCard].filter(x => !!x).concat(watchingItems)
     property string activeMoment: ""        // the Moment playing (couchbox.moments' state, by the voice service)
     property string last: ""
     property string lastContinue: ""
@@ -53,6 +58,7 @@ QtObject {
             if (id !== d.activeMoment) d.activeMoment = id;
         });
         readAway();
+        readDay();
         readMorning();
         if (!d.continueFile) {
             if (d.watchingItems.length) d.watchingItems = [];
@@ -79,6 +85,21 @@ QtObject {
         const fresh = !!(r && r.card && !r.seen && r.clips && r.clips.length && Date.now() / 1000 - (r.until || 0) < d.awayHold);
         const card = fresh ? r.card : null;
         if (JSON.stringify(card) !== JSON.stringify(d.awayCard)) d.awayCard = card;
+    }
+    function readDay() {
+        if (!d.dayFile) { d.dayInfo = null; d.lastDay = ""; showDay(); return; }
+        read(d.dayFile, text => {
+            if (text !== d.lastDay) {
+                d.lastDay = text;
+                try { d.dayInfo = text ? JSON.parse(text) : null; } catch (e) { d.dayInfo = null; }
+            }
+            showDay();
+        });
+    }
+    function showDay() {                          // (also the next morning coming)
+        const c = d.dayInfo;
+        const card = c && c.card && !c.seen && Date.now() / 1000 < (c.until || 0) ? c.card : null;
+        if (JSON.stringify(card) !== JSON.stringify(d.dayCard)) d.dayCard = card;
     }
     function readMorning() {
         if (!d.morningFile) { d.morningShow = null; d.lastMorning = ""; showMorning(); return; }

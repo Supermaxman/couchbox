@@ -19,10 +19,11 @@ Continue watching is off.
   couchbox-ontv --list              the row as the home screen has it
   couchbox-ontv --once              look now, without the service, and print the row
   couchbox-ontv --search TEXT       what Search's "On this TV" finds, app by app
-  couchbox-ontv --demo --shot FILE [--keys down,right,...] [--empty] [--away] [--morning]
+  couchbox-ontv --demo --shot FILE [--keys down,right,...] [--empty] [--away] [--day] [--morning]
                                     draw the home screen's rows off screen, with made-up items
-                                    (--away: While you were out's card first; --morning: the
-                                    morning show's tile first on the app row)
+                                    (--away: While you were out's card first; --day [--card
+                                    TODAY.JSON]: Today at home's; --morning: the morning show's
+                                    tile first on the app row)
 """
 import json
 import os
@@ -331,7 +332,7 @@ def shot():
     tmp = tempfile.mkdtemp(prefix="couchbox-ontv-shot.")
     tiles = paths.share() / "tiles"
     apps = []
-    for a in ("youtube", "jellyfin", "dropout", "2ndtry", "nebula", "twitch", "spotify") + (("frigate",) if "--away" in sys.argv else ()):
+    for a in ("youtube", "jellyfin", "dropout", "2ndtry", "nebula", "twitch", "spotify") + (("frigate",) if "--away" in sys.argv else ()) + (("reels",) if "--day" in sys.argv else ()):
         svg = tiles / f"{a}.svg"
         glow = re.search(r'data-couchbox-glow="([^"]+)"', svg.read_text()) if svg.is_file() else None
         tile = os.path.join(tmp, f"{a}.png")            # as couchbox.home renders them (logos and all)
@@ -350,6 +351,11 @@ def shot():
     ctx.setContextProperty("shooter", shooter)
     ctx.setContextProperty("demoApps", apps)
     items = [] if "--empty" in sys.argv else ontv.demo_continue()
+    if "--day" in sys.argv:                          # Today at home's card first (couchbox.dayreel)
+        from couchbox import away, dayreel
+
+        card = away.read_json(Path(arg("--card")))["card"] if arg("--card") else dayreel.card(dayreel.demo_reel(), False)   # (--card: a real one)
+        items = [card] + items
     if "--away" in sys.argv:                         # While you were out's card first (couchbox.away)
         from couchbox import away
 

@@ -7,6 +7,9 @@
 // app. Back leaves. When the window goes to the back (an app opened, Home), the show pauses;
 // back in front it carries on. At the end (the last video part's time, or the last part when
 // there are no videos) the show is watched: its tile goes.
+// --reels: the Reels app instead (couchbox.reels): the list of kept reels (Library), OK plays one
+// here as a show of one part; Back or its end goes back to the list. --open ID: that reel at once
+// (Today at home's card on the home screen), and Back or its end leaves.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Window
@@ -18,12 +21,16 @@ ApplicationWindow {
     height: 1080
     visible: true
     visibility: shot ? Window.Windowed : Window.FullScreen
-    title: "Morning show"
+    title: reelsMode ? "Reels" : "Morning show"
     color: "black"
 
     readonly property var args: Qt.application.arguments
     function arg(name) { const i = args.indexOf(name); return i >= 0 ? args[i + 1] || "" : ""; }
     readonly property string shot: arg("--shot")
+    readonly property bool reelsMode: args.indexOf("--reels") >= 0
+    property bool library: false                 // the Reels app's list in front
+    property string reelId: ""                   // the reel playing (the Reels app)
+    property bool fromCard: false                // ... opened from the home screen: Back leaves the app
     readonly property real u: height / 1080
     onUChanged: S.u = u
 
@@ -33,7 +40,7 @@ ApplicationWindow {
     property int ci: 0                           // its clip
     readonly property var part: parts[pi] || ({})
     readonly property string kind: part.kind || ""
-    readonly property bool clips: kind === "night" || kind === "pets"
+    readonly property bool clips: kind === "night" || kind === "pets" || kind === "clips"
     readonly property var clip: clips ? (part.clips || [])[ci] || ({}) : ({})
     property real elapsed: 0                     // seconds into a timed part (weather, videos)
     property bool finished: false
@@ -42,12 +49,45 @@ ApplicationWindow {
 
     Component.onCompleted: {
         S.u = u;
+        if (reelsMode) {
+            if (arg("--open")) openReel(arg("--open"), true);
+            else showLibrary();
+            return;
+        }
         S.call("show", {}, s => {
             if (!s.parts.length) { Qt.quit(); return; }      // (watched, or past noon, since the tile was pressed)
             win.show = s;
             if (s.parts.some(p => p.kind === "weather")) S.call("weather", {}, w => win.weather = w);
             begin(s.start || 0);
         }, () => Qt.quit());
+    }
+
+    // ------------------------------------------------------------------ the Reels app
+    function showLibrary() {
+        video.stop();
+        library = true;
+        finished = false;
+        lib.load(!!show);
+        lib.forceActiveFocus();
+        updateState();
+    }
+    function openReel(id, card) {
+        S.call("reel", {id: id}, s => {
+            if (!s.parts.length) { if (card) Qt.quit(); else showLibrary(); return; }    // (gone since)
+            video.stop();
+            win.show = s;
+            reelId = id;
+            fromCard = card;
+            finished = false;
+            library = false;
+            pi = -1;
+            begin(0);
+        }, () => { if (card) Qt.quit(); });
+    }
+    function leave() {                           // Back, or the end of what's playing
+        video.stop();
+        if (reelsMode && !library && !fromCard) showLibrary();
+        else Qt.quit();
     }
 
     // ------------------------------------------------------------------ playing
@@ -85,15 +125,15 @@ ApplicationWindow {
     }
     function end() {                             // watched: the tile goes; on the videos, stay for a pick
         video.stop();
-        if (!finished) { finished = true; S.call("seen", {}); }
-        if (kind !== "videos") Qt.quit();
+        if (!finished) { finished = true; S.call(reelsMode ? "reelSeen" : "seen", {id: reelId}); }
+        if (kind !== "videos") leave();
     }
     function open(target) {
         if (!target) return;
         video.stop();
         S.call("open", {target: target});
     }
-    onAwakeChanged: if (awake) play(); else video.stop()
+    onAwakeChanged: if (awake && !library) play(); else video.stop()
 
     Timer {                                      // the timed parts' clock
         interval: 100; repeat: true
@@ -109,7 +149,7 @@ ApplicationWindow {
     }
     Timer {                                      // off screen there's no end to a video: 5 s each
         interval: 5000; repeat: true
-        running: noVideo && win.clips && !win.shot
+        running: noVideo && win.clips && !win.shot && !win.library
         onTriggered: win.step(1)
     }
     // Left the TV on it: gone after a while (when it's been watched, or set aside for an hour)
@@ -121,11 +161,16 @@ ApplicationWindow {
     }
 
     function updateState() {
-        control.setState(JSON.stringify({page: "morning show", part: part.title || "", clip: clip.what || ""}));
+        if (library) control.setState(JSON.stringify({page: "reels"}));
+        else control.setState(JSON.stringify({page: reelsMode ? "reel" : "morning show", part: part.title || "", clip: clip.what || ""}));
     }
     Connections {
         target: control
-        function onCommand(js) { win.raise(); win.requestActivate(); }
+        function onCommand(js) {
+            win.raise(); win.requestActivate();
+            const t = JSON.parse(js).target || "";
+            if (win.reelsMode && t && t !== "reels") win.openReel(t, false);
+        }
     }
 
     // ------------------------------------------------------------------ the remote
@@ -138,8 +183,8 @@ ApplicationWindow {
         Keys.onEnterPressed: if (win.clips) win.open(win.clip.target)
         Keys.onUpPressed: (event) => event.accepted = true
         Keys.onDownPressed: (event) => event.accepted = true
-        Keys.onEscapePressed: Qt.quit()
-        Keys.onBackPressed: Qt.quit()
+        Keys.onEscapePressed: win.leave()
+        Keys.onBackPressed: win.leave()
     }
     onActiveFocusItemChanged: idle.restart()
 
@@ -205,7 +250,7 @@ ApplicationWindow {
         part: win.kind === "videos" ? win.part : ({})
         onOpened: v => win.open(v.target)
         onBefore: win.begin(win.pi - 1, true)
-        onLeave: Qt.quit()
+        onLeave: win.leave()
     }
 
     // ------------------------------------------------------------------ the bar and the part's name
@@ -306,6 +351,15 @@ ApplicationWindow {
         }
     }
     NumberAnimation { id: fadeIn; target: words; property: "opacity"; from: 0; to: 1; duration: 350; easing.type: Easing.OutCubic }
+
+    // ------------------------------------------------------------------ the Reels app's list, over all of it
+    Library {
+        id: lib
+        anchors.fill: parent
+        visible: win.library
+        onPlayed: r => win.openReel(r.id, false)
+        onLeave: Qt.quit()
+    }
 
     // ------------------------------------------------------------------ off-screen tests
     // --shot FILE [--part KIND] [--keys k1,k2,...]
