@@ -321,6 +321,33 @@ class Frigate:
         """The recorded picture at time t (the timeline's preview)."""
         return self.relay_url(f"f/api/{camera}/recordings/{t:.1f}/snapshot.jpg?height={height}")
 
+    def raw_config(self):
+        """Frigate's whole config (camera groups, what each camera tracks)."""
+        return DEMO_CONFIG if self.demo else self.get_json("/api/config")
+
+    def review_rows(self, after, before, limit=1000):
+        """/api/review's own rows (alerts and detections) between two times."""
+        if self.demo:
+            return [r for r in demo_reviews() if after <= r["start_time"] <= before]
+        return self.get_json("/api/review", limit=limit, after=int(after), before=int(before) + 1)
+
+    def frame_jpeg(self, camera, t, height=360):
+        """The recorded picture at time t, as JPEG bytes."""
+        r = self.request("GET", f"/api/{camera}/recordings/{t:.1f}/snapshot.jpg", params={"height": height})
+        r.raise_for_status()
+        return r.content
+
+    def save_clip(self, camera, start, end, path):
+        """The recording from start to end as an MP4 file (Frigate cuts it from its recordings)."""
+        tmp = f"{path}.part"
+        with self.request("GET", f"/api/{camera}/start/{start:.1f}/end/{end:.1f}/clip.mp4", stream=True, timeout=(8, 90)) as r:
+            r.raise_for_status()
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(256 * 1024):
+                    f.write(chunk)
+        os.replace(tmp, path)
+        return path
+
     def live(self, stream):
         return {"url": "demo:live" if self.demo else self.relay_url(f"live/{urllib.parse.quote(stream)}.mp4")}
 

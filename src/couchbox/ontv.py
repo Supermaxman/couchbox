@@ -26,6 +26,7 @@ Targets name the app and what its --open takes:
   dropout:play:123  dropout:series:45  nebula:play:<id>  twitch:play:live:<login>
   twitch:series:<login>  twitch:category:<name>  movies:movie:603  movies:tv:1399
   jellyfin:<item id>  youtube:search:<text>  youtube:video:<id>[@<seconds>]
+  frigate:reel (the While you were out card's reel, couchbox.away)
 open_target() opens one as the TV user: the streaming apps, Movies & TV and YouTube through their
 control socket when they run (and KWin raises the window), else started with --open; Jellyfin,
 and YouTube when VacuumTube is the YouTube app, through couchbox-voice (127.0.0.1:8790
@@ -58,6 +59,7 @@ NAMES = {
     "twitch": "Twitch",
     "movies": "Movies & TV",
     "youtube": "YouTube",
+    "frigate": "Frigate",  # (opened only: the home screen's While you were out card, couchbox.away)
 }
 DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {"youtube": "couchbox-yt.desktop"}
 
@@ -656,6 +658,8 @@ def split_target(target: str) -> tuple[str, str]:
         raise ValueError(f"not something {NAMES[app]} opens: {rest!r}")
     if app == "movies" and not re.fullmatch(r"(movie|tv):\d+", rest):
         raise ValueError(f"not a title: {rest!r}")
+    if app == "frigate" and rest != "reel":
+        raise ValueError(f"not something Frigate opens from here: {rest!r}")
     if app == "youtube" and not (re.fullmatch(r"video:[\w-]{11}(@\d{1,6})?", rest) or re.match(r"search:.", rest)):
         raise ValueError(f"not a video or a search: {rest!r}")
     return app, rest

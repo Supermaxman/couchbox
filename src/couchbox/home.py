@@ -21,7 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from couchbox import apps, moments, ontv, paths, settings
+from couchbox import apps, away, moments, ontv, paths, settings
 from couchbox.system import sh
 
 log = logging.getLogger("couchbox.home")
@@ -134,7 +134,9 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
         w = {"lat": s["location.lat"], "lon": s["location.lon"], "name": s["location.name"], "units": d["units"]}
     # Continue watching: the TV user's couchbox-ontv service keeps it in this file
     cw = {"file": str(ontv.continue_file(tv_home()))} if s["home.continue"] else None
-    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw}
+    # While you were out: the TV user's couchbox-away service puts its card in this file
+    aw = {"file": str(away.reel_file(tv_home()))} if s["home.away"] and s["media.frigate.url"] else None
+    return {"apps": out, "weather": w, "clock24": d["clock24"], "units": d["units"], "continueWatching": cw, "away": aw}
 
 
 def _write(path: Path, text: str, owner: str | None = None) -> None:

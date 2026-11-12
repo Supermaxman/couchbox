@@ -1,0 +1,13 @@
+[Unit]
+Description=Couchbox While you were out: a reel of what the cameras saw, offered on the home screen when the household is back
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/couchbox/bin/couchbox-away
+Restart=on-failure
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target

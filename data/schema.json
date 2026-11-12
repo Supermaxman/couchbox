@@ -25,6 +25,7 @@
     "home.clock": {"type": "enum", "values": ["auto", "12h", "24h"], "default": "auto", "page": "home", "label": "Clock"},
     "home.weather": {"type": "bool", "default": true, "page": "home", "label": "Weather", "help": "Shown when a location is set. Uses Open-Meteo."},
     "home.continue": {"type": "bool", "default": true, "page": "home", "label": "Continue watching", "help": "A row under the apps: what's part-watched in Jellyfin, Dropout, 2nd Try and Nebula, and followed Twitch channels that are live. Apps hidden from the home row are left out."},
+    "home.away": {"type": "bool", "default": true, "page": "home", "label": "While you were out", "help": "When you come home and pick up the remote, a card on the home screen: a short, silent reel of what the cameras saw while you were out (Frigate). Out: from when a Moment marked for leaving starts, or after 3 hours with the TV unused."},
     "moments.list": {"type": "list", "items": "object", "default": [], "page": "moments", "label": "Moments", "help": "Things taught by showing: while something plays, hold the mic and say “remember this as …”. Each: {id, name, app, target, title, art, volume, repeat, dark, leaving}."},
     "appearance.theme": {"type": "enum", "values": ["graphite", "neon", "amber", "sakura", "matrix"], "default": "graphite", "page": "home", "label": "Theme", "restart": "session"},
     "appearance.scale": {"type": "number", "min": 1.0, "max": 2.0, "default": 1.5, "page": "display", "label": "Interface size", "restart": "session"},

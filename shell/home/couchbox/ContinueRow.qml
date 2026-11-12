@@ -26,9 +26,14 @@ FocusScope {
         return null;
     }
 
-    // A fresh list keeps the same card in focus (it may have moved), else the same place
+    // A fresh list keeps the same card in focus (it may have moved), else the same place;
+    // While you were out's card, when it arrives, has the focus (it comes first)
     property string focusedKey: ""
+    property bool hadAway: false
     onItemsChanged: {
+        const away = items.length > 0 && items[0].key === "away";
+        if (away && !hadAway) focusedKey = "away";
+        hadAway = away;
         let i = items.findIndex(x => x.key === focusedKey);
         if (i < 0) i = Math.min(Math.max(0, list.currentIndex), items.length - 1);
         list.currentIndex = i;
@@ -37,7 +42,8 @@ FocusScope {
 
     Text {
         id: label
-        text: "Continue watching"
+        // only the While you were out card: the household just came home
+        text: root.items.length === 1 && root.items[0].key === "away" ? "Welcome back" : "Continue watching"
         color: list.activeFocus ? Style.text : Style.textDim
         font.family: Style.font
         font.pixelSize: 19

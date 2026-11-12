@@ -11,8 +11,9 @@ The server is Settings → Apps → Frigate server (media.frigate.url). The Pyth
 (couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
 the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
 
-  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups]
-  couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...]
+  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups | reel]
+                                     (reel: the home screen's While you were out, couchbox-away)
+  couchbox-frigate --demo --shot FILE [--open ...] [--signin] [--keys down,ok,...] [--reel REEL.JSON]
                                      render once off screen (made-up cameras, no server)
 Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1.
 """
@@ -22,12 +23,17 @@ import os
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from couchbox import paths, settings  # noqa: E402
 
 QML = os.environ.get("COUCHBOX_FRIGATE_QML", str(paths.share() / "ui/frigate/Main.qml"))
 TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))   # CouchKit: the keyboard pop-up
 SITE = "frigate"
+
+
+def arg(name):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else ""
 
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
@@ -84,6 +90,33 @@ class Backend(QObject):
         except appctl.NotRunning:
             raise RuntimeError("The pop-up isn't running on this TV (couchbox-frigate-popup).") from None
 
+    # ------------------------------------------------------------------ While you were out
+    def reel(self):
+        """The home screen card's reel (couchbox-away), each clip with its review item as the
+        player takes it; {"clips": []} when there's none to show."""
+        from couchbox import away
+
+        if self.demo:   # made up, or --reel FILE: a reel couchbox-away wrote (screenshots of a real one)
+            r = away.read_json(Path(arg("--reel"))) if arg("--reel") else away.demo_reel()
+        else:
+            r = away.current()
+        clips = []
+        for c in (r or {}).get("clips") or []:
+            rv = c["review"]
+            kinds = [{"kind": frigate.kind(o), "label": frigate.label(o)} for o in rv.get("objects") or []]
+            clips.append(dict(c, kind=kinds[0]["kind"] if kinds else "object", r={
+                "id": rv["id"], "camera": rv["camera"], "cameraLabel": c.get("cameraLabel") or frigate.label(rv["camera"]),
+                "severity": rv.get("severity", "detection"), "start": rv["start"], "end": rv["end"], "live": False,
+                "kinds": kinds or [{"kind": "motion", "label": "Motion"}], "names": [], "reviewed": False}))
+        return {"clips": clips}
+
+    def reel_seen(self):
+        from couchbox import away
+
+        if not self.demo:
+            away.mark_seen()
+        return {"ok": True}
+
     def run(self, op, a):
         f = self.f
         ops = {
@@ -101,6 +134,8 @@ class Backend(QObject):
             "live": lambda: f.live(a["stream"]),
             "recording": lambda: f.recording(a["camera"], a["start"], a.get("end", 0)),
             "timeline": lambda: f.timeline(a["cameras"], a.get("hours", 24)),
+            "reel": lambda: self.reel(),
+            "reelSeen": lambda: self.reel_seen(),
         }
         return ops[op]()
 
@@ -242,6 +277,7 @@ def main():
     ctx.setContextProperty("shooter", shooter)
     ctx.setContextProperty("mpris", mpris)
     ctx.setContextProperty("demo", demo)
+    ctx.setContextProperty("noVideo", bool(os.environ.get("COUCHBOX_NO_VIDEO")))   # (the reel shows its stills)
     engine.load(QUrl.fromLocalFile(QML))
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")

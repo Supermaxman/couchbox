@@ -30,6 +30,9 @@ shot frigate-recording couchbox-frigate --open review --keys right,ok
 shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin
+# While you were out: the reel (made-up clips: their stills), a few clips in
+shot frigate-reel couchbox-frigate --open reel
+shot frigate-reel-pets couchbox-frigate --open reel --keys right,right,right,right
 # its Pop-ups page (the top, a camera switched off, scrolled to the last rows), and the pop-up itself over a
 # stand-in for the TV (a matching alert; a test, small, bottom left; snapshots, large)
 d30=down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down,down
@@ -90,6 +93,8 @@ unset COUCHBOX_MAPS_DEMO_GOOGLE
 shot home-continue couchbox-ontv
 shot home-continue-card couchbox-ontv --keys down,right
 shot home-continue-empty couchbox-ontv --empty
+shot home-away couchbox-ontv --away --keys down
+shot home-away-only couchbox-ontv --away --empty --keys down
 # Movies & TV with made-up titles: home, a movie, a show (and its seasons row), a season,
 # a person (known for, a filmography), search, the top-rated grid
 shot movies-home couchbox-movies

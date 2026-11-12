@@ -80,6 +80,7 @@ SettingsPage {
         r.push(T.row("home.clock"));
         r.push(T.row("home.weather", {help: T.settings["location.name"] ? "Weather for " + T.settings["location.name"] : "Set a location in Date, time, location first"}));
         r.push(T.row("home.continue"));
+        if (T.settings["media.frigate.url"]) r.push(T.row("home.away"));
         return r;
     }
 }

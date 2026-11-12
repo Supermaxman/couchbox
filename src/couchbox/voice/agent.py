@@ -62,10 +62,12 @@ class Agent:
         self.no_think = True  # the server takes chat_template_kwargs (llama.cpp, vLLM: not OpenAI's)
 
     # -------------------------------------------------------------- model calls
-    def chat(self, messages, with_tools=True, cancel=None, quick=False):
+    def chat(self, messages, with_tools=True, cancel=None, quick=False, max_tokens=None):
         """quick: without the model's thinking first (a reasoning model can spend minutes thinking
         over a long text), where the server lets that be asked for."""
         body = {"model": self.model, "messages": messages}
+        if max_tokens:
+            body["max_tokens"] = max_tokens
         if with_tools:
             body["tools"] = self.tool_list or tools.schemas()
         if quick and self.no_think:
@@ -82,7 +84,7 @@ class Agent:
                 if r.status_code == 400 and "chat_template_kwargs" in body and "chat_template_kwargs" in r.text:
                     self.log("the model server doesn't take chat_template_kwargs: thinking stays on")
                     self.no_think = False
-                    return self.chat(messages, with_tools, cancel)
+                    return self.chat(messages, with_tools, cancel, max_tokens=max_tokens)
                 if r.status_code == 400 and "context" in r.text.lower() and with_tools:
                     raise OverflowError(r.text[:200])
                 refused = r.status_code < 500 or re.search(r"image|vision|multimodal|mmproj", r.text, re.I)
@@ -267,6 +269,15 @@ class Agent:
             self.log(f"looking at the screen: {err}")
             return ""
         return re.sub(r"\s*\n\s*", " ", (msg.get("content") or "").strip())[:600]
+
+    def look(self, prompt, images):
+        """Pictures and a question, outside any conversation (the home screen's "While you were
+        out" captions). PicturesRefused when the model reads text only."""
+        content = [{"type": "text", "text": prompt}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
+        t = time.monotonic()
+        msg = self.chat([{"role": "user", "content": content}], with_tools=False, quick=True, max_tokens=200)
+        self.log(f"looked at {len(images)} camera pictures in {time.monotonic() - t:.1f}s")
+        return (msg.get("content") or "").strip()
 
     def step(self, turn, cancel):
         """One model call on the whole conversation (compacted when it's too long for the model)."""
