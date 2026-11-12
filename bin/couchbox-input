@@ -13,7 +13,8 @@ OK clicks, Rewind and Fast-forward scroll; it switches itself off after 2 minute
 was busy or showing something, it's dismissed and the press ends there; else, if the Frigate
 pop-up is showing, it's dismissed instead; otherwise KEY_ESC.
 "popup-or:KEY_ENTER" (OK): while the Frigate pop-up shows (couchbox-frigate-popup), OK opens
-its camera in the Frigate app and the press (its repeats and release too) ends there; otherwise
+its camera in the Frigate app (a weather pop-up: the Weather app's radar) and the press (its
+repeats and release too) ends there; otherwise
 KEY_ENTER. Both only stat the pop-up's flag file unless it's showing, so the keys aren't slowed.
 While a Moment has the picture dark (couchbox-voice's flag file), any key brings the picture back
 and does nothing else (the Moment plays on).

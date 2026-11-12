@@ -21,6 +21,7 @@ The service's control socket (couchbox.appctl, site "frigate-popup"):
     {"op": "ping"}
     {"op": "status"}                      -> what's showing, cooldowns, sign-in, the settings
     {"op": "test", "camera": NAME}        -> show a camera now (NAME optional), labelled a test
+    {"op": "test", "weather": "rain" | "warning"}  -> a made-up weather pop-up (weather_popup.py)
     {"op": "key", "key": "ok" | "back"}   -> {"handled": bool}: couchbox-input's OK and Back
     {"op": "hide"}
 
@@ -53,11 +54,16 @@ def flag_path():
     return appctl.sock_path(SITE).parent / FLAG
 
 
-def is_frigate(window):
+def is_app(window, app):
     """Whether the window in front (couchbox-mediakeys's or couchbox-active-window's report) is
-    the Frigate app."""
+    the app with this Wayland app id."""
     w = window or {}
-    return any(str(w.get(k) or "").lower().removesuffix(".desktop") == APP for k in ("class", "app"))
+    return any(str(w.get(k) or "").lower().removesuffix(".desktop") == app for k in ("class", "app"))
+
+
+def is_frigate(window):
+    """Whether the window in front is the Frigate app."""
+    return is_app(window, APP)
 
 
 def fresh(item, now):

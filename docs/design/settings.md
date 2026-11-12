@@ -73,6 +73,10 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 | `media.frigate.popup.position` | `top-right` | top-right, top-left, bottom-right, bottom-left | — |
 | `media.frigate.popup.size` | `medium` | small, medium, large | — |
 | `media.frigate.popup.picture` | `live` | `live` (mpv, muted) or `snapshots` (a picture a second: lighter on a busy box) | — |
+| `weather.popup.rain` | `true` | Weather pop-ups: rain or snow due in the next 20 minutes pops up in the camera pop-up's corner, once a shower, with the radar's last hour as a loop (couchbox-frigate-popup; Open-Meteo's 15-minute forecast for the town in §7). OK opens the Weather app's radar, Back dismisses it. A camera always comes first | — |
+| `weather.popup.rain_quiet` | `22:00-07:00` | Quiet hours `HH:MM-HH:MM` (across midnight when the end is earlier); empty = none | — |
+| `weather.popup.warnings` | `true` | The US National Weather Service's warnings for the town (warnings and emergencies; not watches or advisories), once each across their updates | — |
+| `weather.popup.warnings_quiet` | empty | Their quiet hours; a warning still in effect when they end pops up then | — |
 | `apps.youtube.captions` | `en` | Captions language turned on for each video; empty = off | `MTV_YT_CAPTIONS` |
 | `apps.player.captions` | `on` | Native apps: subtitles on by default | per-app setting |
 | `apps.twitch.chat` | `overlay` | overlay, side, off | per-app setting |

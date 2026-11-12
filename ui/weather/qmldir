@@ -7,3 +7,4 @@ DayPage 1.0 DayPage.qml
 AlertView 1.0 AlertView.qml
 Chart 1.0 Chart.qml
 Stat 1.0 Stat.qml
+RadarLoop 1.0 RadarLoop.qml
