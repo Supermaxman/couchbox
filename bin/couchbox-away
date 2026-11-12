@@ -17,26 +17,20 @@ card are ready within seconds. Nothing worth showing: no card.
                                  each step took
   couchbox-away --forget         take the card off the home screen
 """
-import base64
 import json
 import os
 import signal
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
-import requests
-
-from couchbox import away, moments, paths, session, settings
+from couchbox import away, moments, paths, session, settings, show
 
 TICK = 5               # seconds between looks at the remote
 PLAYING_EVERY = 30     # ... and at what's playing (D-Bus calls)
 QUIET = 60             # while turned off or not set up: how often to check again
-VOICE = "http://127.0.0.1:8790"
 FINAL_BUDGET = 12      # seconds of model looks once the household is back (the card waits for them)
 NO_MODEL_RETRY = 3600  # no model, or one that can't see: ask again this much later
-FRAME = 540            # the frames' height for the model (a cat and a small dog apart at night)
 
 
 def log(msg):
@@ -106,37 +100,12 @@ class Service:
         """The model's look at one candidate: True when it answered, False to stop asking for now."""
         if time.time() < self.no_model_until:
             return False
-        times, images = [], []
-        for t in away.frame_times(c):          # (a moment Frigate kept no recording of: left out)
-            try:
-                images.append("data:image/jpeg;base64," + base64.b64encode(self.f.frame_jpeg(c["camera"], t, height=FRAME)).decode())
-                times.append(t)
-            except requests.HTTPError:
-                pass
-        if not images:
-            c["tries"] = c.get("tries", 0) + 1
-            return True
-        prompt = away.look_prompt(c, self.names.get(c["camera"], c["camera"]))
-        try:
-            r = requests.post(f"{VOICE}/look", json={"prompt": prompt, "images": images},
-                              headers={"X-Couchbox": "1"}, timeout=90)
-        except requests.RequestException as err:
-            log(f"the model isn't reachable through couchbox-voice: {err}")
+        said = away.look(self.f, c, self.names.get(c["camera"], c["camera"]), log)
+        if said == "down":
             self.no_model_until = time.time() + 300
-            return False
-        if r.status_code == 409:              # someone is using the assistant: later
-            return False
-        if r.status_code in (404, 501, 503):  # no model, one that reads text only, an older couchbox-voice
-            log(f"no model to look at the clips ({r.status_code}): choosing by Frigate's labels")
+        elif said == "none":
             self.no_model_until = time.time() + NO_MODEL_RETRY
-            return False
-        c["tries"] = c.get("tries", 0) + 1
-        res = away.parse_look(r.json().get("text", "")) if r.ok else None
-        if res:
-            c.update(res, best_t=times[min(res["best"], len(times)) - 1])
-        else:
-            log(f"model on {c['id']}: {r.status_code} {r.text[:200]}")
-        return True
+        return said == "ok"
 
     def sweep(self, since, until, budget=None, stop=lambda: False, rate=away.RATE_PER_SWEEP):
         """Frigate's review items of the absence so far -> candidates; the model looks at the most
@@ -167,30 +136,7 @@ class Service:
     # ------------------------------------------------------------------ the reel
     def fetch(self, picks):
         """Download each pick's clip and a still of it (kept from earlier sweeps when already there)."""
-        d = away.cache_dir()
-        d.mkdir(parents=True, exist_ok=True)
-
-        def one(c):
-            s, e = away.clip_window(c)
-            key = f"{c['id']}-{s:.0f}".replace("/", "_")
-            clip, still = d / f"{key}.mp4", d / f"{key}.jpg"
-            try:
-                if not clip.exists():
-                    self.f.save_clip(c["camera"], s, e, str(clip))
-                for t in (s + away.CLIP * 0.4, c["start"] + 1, c["thumb"]):   # (a second Frigate didn't keep: the next)
-                    if still.exists() or not t:
-                        break
-                    try:
-                        still.write_bytes(self.f.frame_jpeg(c["camera"], t, height=720))
-                    except requests.HTTPError:
-                        pass
-            except Exception as err:          # noqa: BLE001 - left out of the reel
-                log(f"clip of {c['id']}: {err}")
-                return None
-            return dict(c, file=str(clip), poster=str(still) if still.exists() else "", clipStart=s)
-
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            return [x for x in pool.map(one, picks) if x]
+        return away.fetch(self.f, picks, away.cache_dir(), log)
 
     def make_reel(self, since, until):
         """Choose, download and write the reel and its card; None when there's nothing worth showing."""
@@ -200,22 +146,7 @@ class Service:
         if not got:
             return None
         clock24 = settings.derived()["clock24"]
-        clips = []
-        for c in got:
-            label = self.names.get(c["camera"], away.camera_name(c["camera"]))
-            clips.append({
-                "file": c["file"],
-                "poster": c["poster"],
-                "camera": c["camera"],
-                "cameraLabel": label,
-                "section": c["section"],
-                "at": c["start"],
-                "when": away.clock(c["start"], clock24),
-                "caption": away.caption(c, label, clock24),
-                "what": c.get("caption") or away.fallback_caption(c["objects"]),
-                "lively": c.get("lively"),
-                "review": {k: c[k] for k in ("id", "camera", "start", "end", "severity", "objects")},
-            })
+        clips = [away.reel_clip(c, self.names.get(c["camera"], away.camera_name(c["camera"])), clock24) for c in got]
         reel = {"since": since, "until": until, "made": time.time(), "clips": clips,
                 "card": away.card(since, until, clips), "seen": None}
         away.write_json(away.reel_file(), reel)
@@ -227,7 +158,18 @@ class Service:
         return reel
 
     def back(self, since, until):
-        """The household is home: the reel of their absence, and the card."""
+        """The household is home: the reel of their absence, and the card. On a morning with a
+        morning show (couchbox.show), the reel leaves out the night the show covers."""
+        night = show.covers()
+        if night and night[1] > since and night[0] < until:
+            log(f"the morning show covers {time.strftime('%H:%M', time.localtime(night[0]))} to "
+                f"{time.strftime('%H:%M', time.localtime(night[1]))}: the reel leaves that out")
+            if show.uncovered(since, until, night) < away.MIN_AWAY:
+                log("nothing left of the absence for a reel")
+                self.cands, self.swept_to = {}, 0.0
+                return
+        else:
+            night = None
         if until - since < away.MIN_AWAY:
             log(f"back after {away.length(until - since)}: too short for a reel")
             self.cands = {}
@@ -238,6 +180,8 @@ class Service:
                 self.cands = {}
                 return
             self.sweep(since, until, budget=FINAL_BUDGET)
+            if night:
+                self.cands = {k: c for k, c in self.cands.items() if not night[0] <= c["start"] < night[1]}
             if not self.make_reel(since, until):
                 log("nothing worth showing: no card")
                 away.clear()

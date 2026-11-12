@@ -10,7 +10,32 @@ SettingsPage {
     property string carrying: ""                     // app id being moved
     property int carryFrom: -1
     function refresh() { T.call("apps.list", {}, r => p.apps = r); }
-    Component.onCompleted: refresh()
+    Component.onCompleted: { refresh(); readCameras(); }
+    // The morning show's camera: the outside cameras couchbox-morning last saw (in its show file)
+    property var showCams: []
+    function readFile(path, done) {
+        const x = new XMLHttpRequest();
+        x.onreadystatechange = () => { if (x.readyState === XMLHttpRequest.DONE) { try { done(JSON.parse(x.responseText || "null")); } catch (e) { done(null); } } };
+        x.open("GET", "file://" + path);
+        x.send();
+    }
+    function readCameras() {
+        readFile("/var/lib/couchbox/home/home.json", h => {
+            if (h && h.morning && h.morning.file) readFile(h.morning.file, s => p.showCams = s && s.cameras ? s.cameras : []);
+        });
+    }
+    function cameraRow() {
+        const v = T.settings["home.morning_camera"] || "";
+        const known = p.showCams.find(c => c.name === v);
+        const auto = (p.showCams.find(c => !!c.auto) || {}).label;
+        return T.row("home.morning_camera", {
+            value: v ? (known ? known.label : v) : "Automatic" + (auto ? " (" + auto + ")" : ""),
+            act: p.showCams.length
+                ? () => T.pick("Morning show camera", [{label: "Automatic", value: ""}].concat(p.showCams.map(c => ({label: c.label, value: c.name}))),
+                               v, x => T.set("home.morning_camera", x))
+                : () => T.askText("Morning show camera (a Frigate camera name)", v, false, x => T.set("home.morning_camera", x.trim()))
+        });
+    }
     Connections { target: T; function onEvent(topic) { if (topic === "settings.changed") p.refresh(); } }
 
     readonly property var onHome: apps.filter(a => a.on_home && a.hideable)
@@ -81,6 +106,8 @@ SettingsPage {
         r.push(T.row("home.weather", {help: T.settings["location.name"] ? "Weather for " + T.settings["location.name"] : "Set a location in Date, time, location first"}));
         r.push(T.row("home.continue"));
         if (T.settings["media.frigate.url"]) r.push(T.row("home.away"));
+        r.push(T.row("home.morning"));
+        if (T.settings["home.morning"] && T.settings["media.frigate.url"]) r.push(cameraRow());
         return r;
     }
 }

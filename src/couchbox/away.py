@@ -25,12 +25,14 @@ Files (the TV user's):
   ~/.cache/couchbox-away/*.mp4, *.jpg       the clips and a still of each
 """
 
+import base64
 import datetime
 import json
 import os
 import re
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -277,6 +279,95 @@ def parse_look(text: str) -> dict[str, Any] | None:
     if len(words) > 12:
         caption = " ".join(words[:12])
     return {"lively": lively, "best": best, "caption": caption[:1].upper() + caption[1:]}
+
+
+VOICE = "http://127.0.0.1:8790"
+FRAME = 540  # the frames' height for the model (a cat and a small dog apart at night)
+
+
+def look(f: Any, c: dict[str, Any], camera_label: str, log: Any = print) -> str:
+    """The model's look at one candidate (three frames through couchbox-voice's /look), written
+    into c (lively, best, caption, best_t). Answers "ok" (looked, or nothing to look at: try
+    counted), "busy" (someone is using the assistant), "none" (no model that sees: 404, 501,
+    503), or "down" (couchbox-voice out of reach)."""
+    import requests
+
+    times, images = [], []
+    for t in frame_times(c):  # (a moment Frigate kept no recording of: left out)
+        try:
+            images.append("data:image/jpeg;base64," + base64.b64encode(f.frame_jpeg(c["camera"], t, height=FRAME)).decode())
+            times.append(t)
+        except requests.HTTPError:
+            pass
+    if not images:
+        c["tries"] = c.get("tries", 0) + 1
+        return "ok"
+    try:
+        r = requests.post(
+            f"{VOICE}/look", json={"prompt": look_prompt(c, camera_label), "images": images}, headers={"X-Couchbox": "1"}, timeout=90
+        )
+    except requests.RequestException as err:
+        log(f"the model isn't reachable through couchbox-voice: {err}")
+        return "down"
+    if r.status_code == 409:  # someone is using the assistant: later
+        return "busy"
+    if r.status_code in (404, 501, 503):  # no model, one that reads text only, an older couchbox-voice
+        log(f"no model to look at the clips ({r.status_code}): choosing by Frigate's labels")
+        return "none"
+    c["tries"] = c.get("tries", 0) + 1
+    res = parse_look(r.json().get("text", "")) if r.ok else None
+    if res:
+        c.update(res, best_t=times[min(res["best"], len(times)) - 1])
+    else:
+        log(f"model on {c['id']}: {r.status_code} {r.text[:200]}")
+    return "ok"
+
+
+def fetch(f: Any, picks: list[dict[str, Any]], d: Path, log: Any = print) -> list[dict[str, Any]]:
+    """Download each pick's clip (CLIP seconds, Frigate cuts it) and a still of it into d (kept
+    when already there); the picks with file, poster and clipStart, those that failed left out."""
+    import requests
+
+    d.mkdir(parents=True, exist_ok=True)
+
+    def one(c: dict[str, Any]) -> dict[str, Any] | None:
+        s, e = clip_window(c)
+        key = f"{c['id']}-{s:.0f}".replace("/", "_")
+        clip, still = d / f"{key}.mp4", d / f"{key}.jpg"
+        try:
+            if not clip.exists():
+                f.save_clip(c["camera"], s, e, str(clip))
+            for t in (s + CLIP * 0.4, c["start"] + 1, c["thumb"]):  # (a second Frigate didn't keep: the next)
+                if still.exists() or not t:
+                    break
+                try:
+                    still.write_bytes(f.frame_jpeg(c["camera"], t, height=720))
+                except requests.HTTPError:
+                    pass
+        except Exception as err:  # noqa: BLE001 - left out of the reel
+            log(f"clip of {c['id']}: {err}")
+            return None
+        return dict(c, file=str(clip), poster=str(still) if still.exists() else "", clipStart=s)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return [x for x in pool.map(one, picks) if x]
+
+
+def reel_clip(c: dict[str, Any], label: str, clock24: bool) -> dict[str, Any]:
+    """A fetched pick as the player takes it (the reel's clips, the morning show's)."""
+    return {
+        "file": c["file"],
+        "poster": c["poster"],
+        "camera": c["camera"],
+        "cameraLabel": label,
+        "section": c["section"],
+        "at": c["start"],
+        "when": clock(c["start"], clock24),
+        "caption": caption(c, label, clock24),
+        "what": c.get("caption") or fallback_caption(c["objects"]),
+        "lively": c.get("lively"),
+        "review": {k: c[k] for k in ("id", "camera", "start", "end", "severity", "objects")},
+    }
 
 
 def score(c: dict[str, Any]) -> float:

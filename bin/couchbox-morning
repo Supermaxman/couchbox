@@ -1,0 +1,288 @@
+#!/usr/bin/python3
+"""couchbox-morning: makes the morning show (couchbox.show) overnight. Runs in the TV session as
+the TV user (couchbox-morning.service), with the Frigate and YouTube apps' saved sign-ins.
+
+From 04:00, once the TV has been idle for 20 minutes (no remote press, nothing playing) and the
+updater isn't installing, it makes this morning's show, once: the backyard's stills of yesterday
+(Frigate decodes them), the night's camera moments and the pets' best of yesterday (the clips
+Frigate cuts, captioned by the assistant's model through couchbox-voice's /look), and the
+YouTube subscriptions' new videos. Nothing is encoded on the box. The home screen shows its
+tile until noon; the Morning show app (couchbox-show) plays it.
+
+  couchbox-morning                 run the service
+  couchbox-morning --now [HOURS]   make this morning's show now (the night: the last HOURS, else
+                                   since the TV was last used), saying how long each part took
+  couchbox-morning --status        what this morning's show holds
+  couchbox-morning --forget        take the tile off the home screen
+"""
+import datetime
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+from couchbox import away, paths, session, settings, show
+
+EVERY = 60            # seconds between looks at the clock
+TRIES = 3             # makes a morning (one that fails: again half an hour later)
+RETRY = 30 * 60
+NIGHT_LOOKS = 24      # the model's looks at the night's moments, the most promising first
+PET_LOOKS = 16
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def arg(name, default=""):
+    i = sys.argv.index(name) if name in sys.argv else -1
+    return sys.argv[i + 1] if 0 <= i < len(sys.argv) - 1 and not sys.argv[i + 1].startswith("--") else default
+
+
+def last_use():
+    """When the TV was last used: the last remote press, or something playing (couchbox-away's)."""
+    t = 0.0
+    try:
+        t = (paths.run() / session.LAST_KEY).stat().st_mtime
+    except OSError:
+        pass
+    st = away.read_json(away.data_dir() / "state.json", {}) or {}
+    return max(t, float((st.get("tracker") or {}).get("busy") or 0))
+
+
+def updating():
+    """The updater is installing (or checking) now."""
+    r = subprocess.run(["systemctl", "is-active", "--quiet", "couchbox-updater.service", "couchbox-updater-now.service"],
+                       capture_output=True, check=False)
+    return r.returncode == 0
+
+
+class Maker:
+    def __init__(self):
+        self.f = None
+        self.side, self.names = {}, {}
+        self.model = True          # the model answers /look (else: Frigate's labels)
+
+    # ------------------------------------------------------------------ Frigate
+    def frigate(self, s):
+        from couchbox.services import frigate
+
+        if not s["media.frigate.url"]:
+            return None
+        f = frigate.Frigate(s["media.frigate.url"])
+        if not f.signed_in:
+            log("Frigate: not signed in on this TV (no camera parts)")
+            return None
+        cfg = f.raw_config()
+        self.side = away.sides(cfg)
+        self.names = {n: away.camera_name(n, c.get("friendly_name") or "") for n, c in (cfg.get("cameras") or {}).items()}
+        self.f = f
+        return f
+
+    def yard(self, cam, day, place, clock24):
+        """Yesterday at cam, sped up: stills from sunrise to sunset."""
+        start, end = show.daylight(day, place)
+        d = show.cache_dir() / "yard"
+        d.mkdir(parents=True, exist_ok=True)
+        for p in d.glob("*.jpg"):
+            p.unlink()
+
+        def one(it):
+            i, t = it
+            try:
+                (d / f"{i:04d}.jpg").write_bytes(self.f.frame_jpeg(cam, t, height=show.YARD_HEIGHT))
+                return {"file": str(d / f"{i:04d}.jpg"), "at": t, "when": away.clock(t, clock24)}
+            except Exception:          # noqa: BLE001 - a minute Frigate kept no recording of
+                return None
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            frames = [x for x in pool.map(one, enumerate(show.yard_times(start, end))) if x]
+        if len(frames) < show.YARD_MIN:
+            log(f"yard: only {len(frames)} stills of {cam} yesterday (no recordings?): left out")
+            return None
+        return {"kind": "yard", "camera": cam, "cameraLabel": self.names.get(cam, away.camera_name(cam)),
+                "from": start, "to": end, "frames": frames}
+
+    def moments(self, since, until, n, looks, pets_only=False, skip=()):
+        """The best n camera moments between since and until, captioned (couchbox.away's way)."""
+        rows = self.f.review_rows(since, until)
+        cands = [c for c in away.candidates(rows, self.side, since - away.EDGE, until + away.EDGE)
+                 if c["id"] not in skip and (c["section"] == "pets" or not pets_only)]
+        for c in sorted(cands, key=lambda c: -c["score"])[:looks]:
+            if not self.model:
+                break
+            said = away.look(self.f, c, self.names.get(c["camera"], c["camera"]), log)
+            if said != "ok":
+                self.model = said == "busy"     # (someone at the assistant overnight: the next one may get through)
+                if said == "busy":
+                    break
+        got = away.fetch(self.f, away.choose(cands, n), show.cache_dir(), log)
+        clock24 = settings.derived()["clock24"]
+        clips = [away.reel_clip(c, self.names.get(c["camera"], away.camera_name(c["camera"])), clock24) for c in got]
+        log(f"{'pets' if pets_only else 'night'}: {len(rows)} review items, {len(cands)} worth a look, "
+            f"{sum(1 for c in cands if c.get('lively') is not None)} looked at by the model, {len(clips)} chosen")
+        return clips
+
+    def videos(self, now):
+        from couchbox import apps, ontv
+        from couchbox.services import ytauth
+
+        if not apps.youtube_native():
+            log("YouTube: VacuumTube is the YouTube app (its subscriptions aren't readable here)")
+            return []
+        try:
+            yt = ontv.Clients().youtube()
+            return show.new_videos(yt.subscriptions()["page"], now)
+        except (ontv.NotSignedIn, ytauth.SignedOut) as err:
+            log(f"YouTube: {err}")
+        except Exception as err:       # noqa: BLE001 - no videos part this time
+            log(f"YouTube: {err}")
+        return []
+
+    # ------------------------------------------------------------------ the show
+    def make(self, now=None, since=None):
+        """Make this morning's show and write it; its parts ([] when there's nothing at all)."""
+        from couchbox.services import weather
+
+        now = now or time.time()
+        s = settings.load()
+        clock24 = settings.derived(s)["clock24"]
+        place = weather.place_from_settings(s)
+        night = (since, now) if since else show.night(now, last_use())
+        day = show.today(now) - datetime.timedelta(days=1)
+        log(f"making the morning show: the night from {time.strftime('%a %H:%M', time.localtime(night[0]))}")
+        parts, cameras, took = [], [], {}
+        d = show.cache_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            f = self.frigate(s)
+        except Exception as err:       # noqa: BLE001 - Frigate out of reach: the rest of the show
+            log(f"Frigate: {err}")
+            f = None
+        if f:
+            auto = show.backyard(self.side, self.names)
+            cameras = [{"name": c, "label": self.names.get(c, c), "auto": c == auto} for c, out in self.side.items() if out]
+            cam = show.backyard(self.side, self.names, s["home.morning_camera"])
+            t0 = time.monotonic()
+            yard = self.yard(cam, day, place, clock24) if cam else None
+            took["yard"] = time.monotonic() - t0
+            if yard:
+                parts.append(yard)
+            t0 = time.monotonic()
+            try:
+                night_clips = self.moments(night[0], night[1], show.NIGHT_CLIPS, NIGHT_LOOKS)
+            except Exception as err:   # noqa: BLE001
+                log(f"night: {err}")
+                night_clips = []
+            took["night"] = time.monotonic() - t0
+            if night_clips:
+                parts.append({"kind": "night", "clips": night_clips})
+            t0 = time.monotonic()
+            try:
+                pets = self.moments(show.at_hour(day, 6), night[0], show.PET_CLIPS, PET_LOOKS, pets_only=True,
+                                    skip={c["review"]["id"] for c in night_clips})
+            except Exception as err:   # noqa: BLE001
+                log(f"pets: {err}")
+                pets = []
+            took["pets"] = time.monotonic() - t0
+            if pets:
+                parts.append({"kind": "pets", "clips": pets})
+        if place:
+            parts.append({"kind": "weather"})
+        t0 = time.monotonic()
+        vids = self.videos(now)
+        took["videos"] = time.monotonic() - t0
+        if vids:
+            parts.append({"kind": "videos", "videos": vids})
+        if not any(p["kind"] != "weather" for p in parts):
+            parts = []                 # (the weather alone isn't a show: no tile)
+        date = show.today(now)
+        out = {"date": date.isoformat(), "made": time.time(), "until": show.at_hour(date, show.NOON), "night": list(night),
+               "parts": parts, "cameras": cameras, "seen": None}
+        out = show.finish(out) if parts else out
+        away.write_json(show.show_file(), out)
+        keep = {os.path.basename(c[k]) for p in parts for c in p.get("clips") or [] for k in ("file", "poster") if c.get(k)}
+        for p in d.iterdir():
+            if p.is_file() and p.suffix in (".mp4", ".jpg", ".part") and p.name not in keep:
+                p.unlink(missing_ok=True)
+        log("morning show ready: " + (", ".join(f"{p['kind']} ({part_size(p)})" for p in parts) or "nothing to show: no tile")
+            + " - took " + ", ".join(f"{k} {v:.0f}s" for k, v in took.items()))
+        return out, took
+
+
+def part_size(p):
+    if p["kind"] == "yard":
+        return f"{len(p['frames'])} stills"
+    if p["kind"] in ("night", "pets"):
+        return f"{len(p['clips'])} clips"
+    if p["kind"] == "videos":
+        return f"{len(p['videos'])} videos"
+    return "at play time"
+
+
+# ------------------------------------------------------------------ the service
+def run():
+    tries, tried_at, day = 0, 0.0, None
+    said = ""
+    while True:
+        try:
+            now = time.time()
+            s = settings.load()
+            if show.today(now) != day:
+                tries, day = 0, show.today(now)
+            wait = ""
+            if not s["home.morning"]:
+                wait = "off in Settings"
+            elif not show.making_time(now) or show.made_today(now=now):
+                wait = "waiting for the morning"
+            elif tries >= TRIES or now - tried_at < RETRY:
+                wait = "tried already"
+            elif now - last_use() < show.IDLE or session.anything_playing():
+                wait = "the TV is in use"
+            elif updating():
+                wait = "the updater is installing"
+            if wait:
+                if wait != said:
+                    log(wait)
+                    said = wait
+            else:
+                tries, tried_at, said = tries + 1, now, ""
+                try:
+                    Maker().make(now)
+                except Exception as err:   # noqa: BLE001 - again in half an hour
+                    log(f"no morning show this time: {err}")
+        except Exception as err:           # noqa: BLE001 - logged, tried again
+            log(f"error: {err}")
+        time.sleep(EVERY)
+
+
+def main():
+    if "--status" in sys.argv:
+        s = away.read_json(show.show_file(), {}) or {}
+        cur = show.current()
+        print(f"made:   {time.strftime('%a %H:%M', time.localtime(s['made'])) if s.get('made') else 'no'}")
+        print(f"tile:   {cur['tile']['subtitle'] if cur else 'none'}")
+        for p in s.get("parts") or []:
+            print(f"  {p['kind']:8} {part_size(p)}")
+        return
+    if "--forget" in sys.argv:
+        show.show_file().unlink(missing_ok=True)
+        print("The tile is off the home screen.")
+        return
+    if "--now" in sys.argv:
+        hours = arg("--now")
+        now = time.time()
+        out, took = Maker().make(now, since=now - float(hours) * 3600 if hours else None)
+        print(json.dumps({"tile": out.get("tile"), "parts": [(p["kind"], part_size(p)) for p in out["parts"]],
+                          "seconds": {k: round(v, 1) for k, v in took.items()}}, indent=2))
+        return
+    signal.signal(signal.SIGTERM, lambda *a: os._exit(0))
+    log(f"ready: the morning show {'on' if settings.load()['home.morning'] else 'off'}")
+    run()
+
+
+if __name__ == "__main__":
+    main()

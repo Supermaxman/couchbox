@@ -6,6 +6,8 @@
 // (continueWatching.file; null while it's turned off in Settings), read on the same beat.
 // While you were out (couchbox-away, the file in away.file) puts its card first in that row,
 // until its reel has been watched to the end or is 12 hours old.
+// The morning show (couchbox-morning, the file in morning.file) puts its tile first on the app
+// row (rowApps), from when it's made until noon or until it's been watched to the end.
 pragma Singleton
 import QtQuick
 
@@ -19,6 +21,11 @@ QtObject {
     readonly property bool clock24: !!(data && data.clock24)
     readonly property string continueFile: data && data.continueWatching ? data.continueWatching.file || "" : ""
     readonly property string awayFile: data && data.away ? data.away.file || "" : ""
+    readonly property string morningFile: data && data.morning ? data.morning.file || "" : ""
+    property var morningShow: null
+    property var showTile: null
+    property string lastMorning: ""
+    readonly property var rowApps: showTile ? [showTile].concat(apps) : apps   // the row: the show's tile first
     property var watchingItems: []
     property var awayCard: null
     readonly property var continueItems: awayCard ? [awayCard].concat(watchingItems) : watchingItems
@@ -46,6 +53,7 @@ QtObject {
             if (id !== d.activeMoment) d.activeMoment = id;
         });
         readAway();
+        readMorning();
         if (!d.continueFile) {
             if (d.watchingItems.length) d.watchingItems = [];
             d.lastContinue = "";
@@ -71,6 +79,24 @@ QtObject {
         const fresh = !!(r && r.card && !r.seen && r.clips && r.clips.length && Date.now() / 1000 - (r.until || 0) < d.awayHold);
         const card = fresh ? r.card : null;
         if (JSON.stringify(card) !== JSON.stringify(d.awayCard)) d.awayCard = card;
+    }
+    function readMorning() {
+        if (!d.morningFile) { d.morningShow = null; d.lastMorning = ""; showMorning(); return; }
+        read(d.morningFile, text => {
+            if (text !== d.lastMorning) {
+                d.lastMorning = text;
+                try { d.morningShow = text ? JSON.parse(text) : null; } catch (e) { d.morningShow = null; }
+            }
+            showMorning();
+        });
+    }
+    function showMorning() {                      // (also noon coming)
+        const s = d.morningShow;
+        const now = new Date();
+        const today = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+        const fresh = !!(s && s.tile && !s.seen && s.parts && s.parts.length && s.date === today && now.getTime() / 1000 < (s.until || 0));
+        const tile = fresh ? s.tile : null;
+        if (JSON.stringify(tile) !== JSON.stringify(d.showTile)) d.showTile = tile;
     }
     property Timer poll: Timer { interval: 2000; repeat: true; running: true; triggeredOnStart: true; onTriggered: d.reload() }
 

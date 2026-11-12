@@ -93,6 +93,7 @@ ApplicationWindow {
     function closePlayer() {
         player.stop();
         if (playerFrom === "reel") { overlay = "reel"; reel.forceActiveFocus(); reel.play(); }
+        else if (playerFrom === "target") { Qt.quit(); return; }             // opened from elsewhere: back there
         else if (playerFrom === "camera") { overlay = "camera"; camera.forceActiveFocus(); camera.start(); }
         else if (playerFrom === "timeline") { overlay = ""; timeline.forceActiveFocus(); }
         else { overlay = ""; focusPage(); refresh(); if (section === 1) review.load(); }
@@ -140,6 +141,14 @@ ApplicationWindow {
         } else if (o === "live") { stopVideo(); overlay = ""; section = 0; focusPage(); }
         else if (o === "popups") { stopVideo(); overlay = ""; section = 3; focusPage(); }
         else if (o === "reel") openReel();
+        else if (o.startsWith("recording:")) {               // a camera's recording then (the morning show's moments)
+            const m = o.slice(10).match(/^(.+)@([\d.]+)-([\d.]+)$/);
+            const c = m && F.cameras.find(x => x.name === m[1]);
+            if (!c) return toast.show("There's no camera called " + (m ? m[1] : o.slice(10)) + ".");
+            stopVideo(); overlay = ""; group = 0;
+            openReview({camera: c.name, cameraLabel: c.label, start: parseFloat(m[2]), end: parseFloat(m[3]),
+                        fromTimeline: true, kinds: [], live: false, reviewed: true}, [], "target");
+        }
         else if (o === "timeline" || o.startsWith("timeline:")) {
             const name = o.slice(9).toLowerCase();
             const c = F.cameras.find(x => x.name === name || x.label.toLowerCase() === name);

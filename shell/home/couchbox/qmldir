@@ -6,3 +6,4 @@ Weather 1.0 Weather.qml
 TileMenu 1.0 TileMenu.qml
 ContinueRow 1.0 ContinueRow.qml
 ContinueCard 1.0 ContinueCard.qml
+ShowFace 1.0 ShowFace.qml

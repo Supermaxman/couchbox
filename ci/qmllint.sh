@@ -5,7 +5,7 @@ set -eu
 Q=/usr/lib/qt6/bin/qmllint
 export LANG=C.UTF-8
 $Q --unqualified disable --missing-property disable --max-warnings 0 -I ui -I ui/stubs \
-  ui/streaming/qml/*.qml ui/seerr/*.qml ui/frigate/*.qml ui/weather/*.qml ui/search/*.qml ui/spotify/*.qml ui/maps/*.qml ui/movies/*.qml ui/youtube/*.qml ui/CouchKit/*.qml ui/voice-overlay/*.qml ui/settings/*.qml ui/setup/*.qml
+  ui/streaming/qml/*.qml ui/seerr/*.qml ui/frigate/*.qml ui/weather/*.qml ui/search/*.qml ui/spotify/*.qml ui/maps/*.qml ui/movies/*.qml ui/youtube/*.qml ui/CouchKit/*.qml ui/voice-overlay/*.qml ui/settings/*.qml ui/setup/*.qml ui/show/*.qml
 # the home screen, laid over the real Plasma Bigscreen home screen (as couchbox.home does)
 S=/usr/share/plasma/plasmoids/org.kde.bigscreen.homescreen
 if [ -d $S ]; then
@@ -14,7 +14,7 @@ if [ -d $S ]; then
   printf '.pragma library\nvar data = {"apps": [], "weather": null, "clock24": false, "continueWatching": null};\n' > "$O/contents/ui/couchbox/home-data.js"
   (cd "$O/contents/ui" && $Q --unqualified disable --missing-property disable --max-warnings 0 \
      couchbox/Home.qml couchbox/TileMenu.qml couchbox/AppTile.qml couchbox/HomeData.qml couchbox/Weather.qml \
-     couchbox/ContinueRow.qml couchbox/ContinueCard.qml HomeHeader.qml)
+     couchbox/ContinueRow.qml couchbox/ContinueCard.qml couchbox/ShowFace.qml HomeHeader.qml)
   rm -rf "$O"
 else
   find shell -name '*.qml' -exec $Q --import disable --unresolved-type disable --unqualified disable --missing-property disable --max-warnings 1000 {} + >/dev/null

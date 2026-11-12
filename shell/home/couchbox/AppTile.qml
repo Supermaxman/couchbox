@@ -1,6 +1,7 @@
 // couchbox: one tile of the home row: the app's artwork (rendered by couchbox-home from
 // image/theme/tiles), or its icon and name on a plain card when it has none. A Moment's tile
 // (app.moment: Settings → Moments) shows what it plays, its name and its app; OK starts it.
+// The morning show's (app.show: couchbox.show) shows its picture and day (ShowFace); OK opens it.
 import QtQuick
 import QtQuick.Effects
 
@@ -20,7 +21,9 @@ Item {
     signal options(bool held)           // held: OK is still down (it opened them)
     signal dropped()
     signal startMoment()
+    signal startShow()
     readonly property bool isMoment: !!(app && app.moment)
+    readonly property bool isShow: !!(app && app.show)
 
     readonly property real radius: Math.round(width * 0.045)
 
@@ -31,6 +34,7 @@ Item {
     Behavior on scale { NumberAnimation { duration: Style.duration * 1.4; easing.type: Easing.OutCubic } }
 
     function launch() {
+        if (isShow) { startShow(); return; }       // (Home.qml opens it, with the sound)
         Bigscreen.NavigationSoundEffects.playClickedSound();
         if (isMoment) { startMoment(); return; }
         const list = Plasmoid.applicationListModel;
@@ -98,7 +102,7 @@ Item {
         Column {
             anchors.centerIn: parent
             spacing: 8
-            visible: !art.visible && !tile.isMoment
+            visible: !art.visible && !tile.isMoment && !tile.isShow
             Kirigami.Icon {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: tile.height * 0.42
@@ -119,6 +123,12 @@ Item {
             anchors.fill: parent
             active: tile.isMoment
             sourceComponent: momentFace
+        }
+        ShowFace {
+            anchors.fill: parent
+            visible: tile.isShow
+            show: tile.isShow ? tile.app : null
+            radius: tile.radius
         }
 
         // Unfocused tiles sit back a little while the row has focus
@@ -152,7 +162,7 @@ Item {
         font.family: Style.font
         font.pixelSize: 14
         font.weight: Font.DemiBold
-        opacity: tile.current ? 1 : 0
+        opacity: tile.current && !tile.isShow ? 1 : 0        // (the show's face says it)
         Behavior on opacity { NumberAnimation { duration: Style.duration } }
     }
 

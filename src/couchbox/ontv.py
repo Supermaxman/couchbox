@@ -27,6 +27,8 @@ Targets name the app and what its --open takes:
   twitch:series:<login>  twitch:category:<name>  movies:movie:603  movies:tv:1399
   jellyfin:<item id>  youtube:search:<text>  youtube:video:<id>[@<seconds>]
   frigate:reel (the While you were out card's reel, couchbox.away)
+  frigate:recording:<camera>@<start>-<end> (a camera's recording then: the morning show's moments)
+  show:morning (the morning show, couchbox.show: its tile at the front of the home row)
 open_target() opens one as the TV user: the streaming apps, Movies & TV and YouTube through their
 control socket when they run (and KWin raises the window), else started with --open; Jellyfin,
 and YouTube when VacuumTube is the YouTube app, through couchbox-voice (127.0.0.1:8790
@@ -60,6 +62,7 @@ NAMES = {
     "movies": "Movies & TV",
     "youtube": "YouTube",
     "frigate": "Frigate",  # (opened only: the home screen's While you were out card, couchbox.away)
+    "show": "Morning show",  # (opened only: its tile, couchbox.show)
 }
 DESKTOP = {a: f"couchbox-{a}.desktop" for a in ("jellyfin", "movies", *STREAMING)} | {"youtube": "couchbox-yt.desktop"}
 
@@ -658,8 +661,10 @@ def split_target(target: str) -> tuple[str, str]:
         raise ValueError(f"not something {NAMES[app]} opens: {rest!r}")
     if app == "movies" and not re.fullmatch(r"(movie|tv):\d+", rest):
         raise ValueError(f"not a title: {rest!r}")
-    if app == "frigate" and rest != "reel":
+    if app == "frigate" and rest != "reel" and not re.fullmatch(r"recording:[\w-]{1,64}@\d{9,11}(\.\d+)?-\d{9,11}(\.\d+)?", rest):
         raise ValueError(f"not something Frigate opens from here: {rest!r}")
+    if app == "show" and rest != "morning":
+        raise ValueError(f"not a show: {rest!r}")
     if app == "youtube" and not (re.fullmatch(r"video:[\w-]{11}(@\d{1,6})?", rest) or re.match(r"search:.", rest)):
         raise ValueError(f"not a video or a search: {rest!r}")
     return app, rest
