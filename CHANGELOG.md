@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/Supermaxman/couchbox/compare/v0.24.0...v0.25.0) (2026-11-12)
+
+
+### New
+
+* **boot:** a Couchbox boot screen with a progress bar, a log panel, and unlock problems explained ([#134](https://github.com/Supermaxman/couchbox/issues/134)) ([1bfa98c](https://github.com/Supermaxman/couchbox/commit/1bfa98c81a5f2a468089e59cfb628540c7f0fc62))
+* **morning:** the morning show: a tile first on Home each morning plays a silent, captioned show made overnight ([#133](https://github.com/Supermaxman/couchbox/issues/133)) ([cbbc665](https://github.com/Supermaxman/couchbox/commit/cbbc66561021dcdf77375f982d1bdd2bfabfee7a))
+
 ## [0.24.0](https://github.com/Supermaxman/couchbox/compare/v0.23.0...v0.24.0) (2026-11-12)
 
 
