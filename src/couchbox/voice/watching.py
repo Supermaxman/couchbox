@@ -513,7 +513,7 @@ def run(action, minutes=None, query=None, picture=screen_picture):
         body += [
             p.where(),
             NO_SPOILERS.format(earlier="", at=at)
-            + " Tell what happened in the third person (never 'you'), in three short lines, each on a line of its own,"
+            + " Tell what happened in the third person (never 'you'), in three short lines of at most 15 words, each on a line of its own,"
             " most recent last.",
         ]
     else:  # story
@@ -537,7 +537,7 @@ def run(action, minutes=None, query=None, picture=screen_picture):
             " say who is. Name people as the subtitles do (labels like 'Scott:' show who speaks; people"
             " call each other by name), not from how they look or what you know of it, and say how they fit in so far; when"
             " it isn't clear who is on screen, give your best guess from who is speaking, with 'probably'."
-            " At most three short lines.",
+            " At most three short lines of at most 15 words.",
         ]
     out = Text("\n".join(body))
     out.image = picture() if picture else None
