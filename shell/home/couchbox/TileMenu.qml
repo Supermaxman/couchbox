@@ -112,6 +112,7 @@ FocusScope {
                 width: parent.width
                 height: contentHeight
                 interactive: false
+                keyNavigationEnabled: true      // (it follows interactive otherwise: Up and Down did nothing)
                 spacing: 6
                 model: menu.options
                 delegate: Rectangle {
