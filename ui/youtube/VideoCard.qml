@@ -13,6 +13,11 @@ Item {
     property var item: ({})
     property bool on: false
     property real w: Y.cardW                  // the thumbnail's width (a 16:9 card)
+    // the widest it gets (a growing shelf's cards: the current row's are larger). Its picture is
+    // decoded once, for that width: decoded again at each size, a row's pictures went grey and
+    // came back every time the focus moved to or from it, and the Pi decoded and uploaded a
+    // dozen pictures in the middle of the scroll
+    property real fullW: w
     property bool boxed: false
     readonly property bool box: boxed && !round   // (a channel stays a round picture with its name under it)
     property color behind: Y.bg               // the colour around the card (its rounded corners)
@@ -37,40 +42,44 @@ Item {
     readonly property real thumbH: Math.round(topic ? w * 8 / 15 : w * 9 / 16)   // (a topic: 405 x 216)
     readonly property real artW: round || shape === "square" ? thumbH : kind === "game" || shape === "poster" ? Math.round(thumbH * 0.69) : w
     width: artW
-    height: art.height + (box ? panel.height : captioned && !topic ? caption.implicitHeight + 26 * Y.u : 0)
+    height: art.height + (box ? panelH : captioned && !topic ? caption.implicitHeight + 26 * Y.u : 0)
 
     Item {
         id: art
         width: card.artW
         height: card.thumbH
-        Rectangle {                          // its picture on its way: a quiet grey; none at all (the demo): the title's colours
+        Rectangle {                          // its picture on its way: a quiet grey
             anchors.fill: parent
             radius: card.round ? width / 2 : card.corner
             color: card.topic ? "#212121" : Y.raised
-            readonly property bool bare: !card.thumb || img.status === Image.Error
-            gradient: bare ? noPicture : undefined
-            Gradient {
-                id: noPicture
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: Qt.hsla(Y.hue(card.item.title), 0.55, 0.32, 1) }
-                GradientStop { position: 1; color: Qt.hsla((Y.hue(card.item.title) + 0.15) % 1, 0.6, 0.14, 1) }
-            }
-            Text {
-                visible: parent.bare && !card.round && !card.topic
-                anchors { fill: parent; margins: 26 * Y.u }
-                text: card.title
-                color: "white"
-                font.family: Y.font; font.pixelSize: card.w * 0.075; font.weight: Font.Black
-                wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
-                verticalAlignment: Text.AlignTop
-                style: Text.Raised; styleColor: "#60000000"
-            }
-            Text {
-                visible: parent.bare && card.round
-                anchors.centerIn: parent
-                text: (card.item.title || "?").slice(0, 2)
-                color: "white"
-                font.family: Y.font; font.pixelSize: parent.height * 0.4; font.weight: Font.Medium
+        }
+        Loader {                             // no picture at all (the demo, one that didn't come): the title's colours
+            anchors.fill: parent
+            active: !card.thumb || img.status === Image.Error
+            sourceComponent: Rectangle {
+                radius: card.round ? width / 2 : card.corner
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: Qt.hsla(Y.hue(card.item.title), 0.55, 0.32, 1) }
+                    GradientStop { position: 1; color: Qt.hsla((Y.hue(card.item.title) + 0.15) % 1, 0.6, 0.14, 1) }
+                }
+                Text {
+                    visible: !card.round && !card.topic
+                    anchors { fill: parent; margins: 26 * Y.u }
+                    text: card.title
+                    color: "white"
+                    font.family: Y.font; font.pixelSize: card.w * 0.075; font.weight: Font.Black
+                    wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
+                    verticalAlignment: Text.AlignTop
+                    style: Text.Raised; styleColor: "#60000000"
+                }
+                Text {
+                    visible: card.round
+                    anchors.centerIn: parent
+                    text: (card.item.title || "?").slice(0, 2)
+                    color: "white"
+                    font.family: Y.font; font.pixelSize: parent.height * 0.4; font.weight: Font.Medium
+                }
             }
         }
         Rectangle {                          // a Short in a 16:9 card: pillarboxed on black, as YouTube's
@@ -85,9 +94,13 @@ Item {
             source: card.thumb
             fillMode: card.pillar ? Image.PreserveAspectFit : Image.PreserveAspectCrop
             asynchronous: true
-            sourceSize: Y.sz(width, height)
-            visible: status === Image.Ready && !card.overVideo
-            opacity: status === Image.Ready ? 1 : 0   // (fading in as it comes, not popping)
+            sourceSize: Y.sz(width * card.fullW / card.w, height * card.fullW / card.w)
+            // a picture that's been shown stays while another loads in its place (DeArrow's, a new size)
+            retainWhileLoading: true
+            property bool had: false
+            onStatusChanged: { if (status === Image.Ready) had = true; else if (status !== Image.Loading) had = false; }
+            visible: had && !card.overVideo
+            opacity: had ? 1 : 0                      // (fading in as it comes, not popping)
             Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
         Loader {
@@ -163,13 +176,11 @@ Item {
             lower: !card.box
             visible: card.behind.a > 0
         }
-        Corners {                            // a boxed card's picture: its lower corners rounded over the panel
+        Loader {                             // a boxed card's picture: its lower corners rounded over the panel
             anchors.fill: parent
             z: 1
-            r: Y.radius
-            color: panel.color
-            upper: false
-            visible: card.box
+            active: card.box
+            sourceComponent: Corners { r: Y.radius; color: card.panelColor; upper: false }
         }
         Rectangle {                          // the length, bottom right (LIVE in red)
             z: 2
@@ -183,10 +194,17 @@ Item {
                 id: badgeRow
                 anchors.centerIn: parent
                 spacing: 4 * Y.u
-                Icon { visible: !!card.item.music && !card.item.live; name: "note"; size: 26 * Y.u; color: "white"; anchors.verticalCenter: parent.verticalCenter }
-                Icon {                       // a Short: its mark instead of a length
-                    visible: card.kind === "short" && !card.item.duration
-                    name: "shorts"; filled: true; size: 30 * Y.u; color: "white"; anchors.verticalCenter: parent.verticalCenter
+                Loader {
+                    active: !!card.item.music && !card.item.live
+                    visible: active
+                    anchors.verticalCenter: parent.verticalCenter
+                    sourceComponent: Icon { name: "note"; size: 26 * Y.u; color: "white" }
+                }
+                Loader {                     // a Short: its mark instead of a length
+                    active: card.kind === "short" && !card.item.duration
+                    visible: active
+                    anchors.verticalCenter: parent.verticalCenter
+                    sourceComponent: Icon { name: "shorts"; filled: true; size: 30 * Y.u; color: "white" }
                 }
                 Text {
                     id: badge
@@ -270,34 +288,37 @@ Item {
             }
         }
     }
-    Rectangle {                              // boxed: the panel under the picture
-        id: panel
-        visible: card.box
+    readonly property real panelH: 194 * Y.u          // boxed: the panel under the picture
+    readonly property color panelColor: on ? Y.text : Y.raised
+    Loader {
+        active: card.box
         anchors { left: art.left; right: art.right; top: art.bottom }
-        height: 194 * Y.u
-        color: card.on ? Y.text : Y.raised
-        radius: Y.radius
-        Rectangle { width: parent.width; height: parent.radius; color: parent.color }   // square top
-        Column {
-            anchors { fill: parent; margins: 24 * Y.u; topMargin: 26 * Y.u }
-            spacing: 2 * Y.u
-            Text {
-                width: parent.width
-                text: card.title
-                color: card.on ? Y.ink : Y.dim
-                font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
-                elide: Text.ElideRight
-            }
-            Item { width: 1; height: 36 * Y.u }
-            Repeater {                       // the whole title (it's cut short above), then the channel and the rest
-                model: [card.title, (card.item.lines || []).join(" • ")].filter(x => !!x)
+        height: card.panelH
+        sourceComponent: Rectangle {
+            color: card.panelColor
+            radius: Y.radius
+            Rectangle { width: parent.width; height: parent.radius; color: parent.color }   // square top
+            Column {
+                anchors { fill: parent; margins: 24 * Y.u; topMargin: 26 * Y.u }
+                spacing: 2 * Y.u
                 Text {
-                    required property string modelData
                     width: parent.width
-                    text: modelData
-                    color: card.on ? "#909090" : "#717171"
-                    font.family: Y.font; font.pixelSize: Y.tSmall
+                    text: card.title
+                    color: card.on ? Y.ink : Y.dim
+                    font.family: Y.font; font.pixelSize: 34 * Y.u; font.weight: Font.Bold
                     elide: Text.ElideRight
+                }
+                Item { width: 1; height: 36 * Y.u }
+                Repeater {                       // the whole title (it's cut short above), then the channel and the rest
+                    model: [card.title, (card.item.lines || []).join(" • ")].filter(x => !!x)
+                    Text {
+                        required property string modelData
+                        width: parent.width
+                        text: modelData
+                        color: card.on ? "#909090" : "#717171"
+                        font.family: Y.font; font.pixelSize: Y.tSmall
+                        elide: Text.ElideRight
+                    }
                 }
             }
         }
@@ -307,7 +328,7 @@ Item {
         z: -1
         x: -Y.ring; y: -Y.ring
         width: card.artW + 2 * Y.ring
-        height: art.height + panel.height + 2 * Y.ring
+        height: art.height + card.panelH + 2 * Y.ring
         radius: Y.radius + Y.ring
         color: Y.text
     }
@@ -315,7 +336,7 @@ Item {
         visible: card.on
         x: -Y.ring; y: -Y.ring
         width: card.artW + 2 * Y.ring
-        height: (card.box ? art.height + panel.height : art.height) + 2 * Y.ring
+        height: (card.box ? art.height + card.panelH : art.height) + 2 * Y.ring
         radius: (card.round ? card.thumbH / 2 : card.corner) + Y.ring
         color: "transparent"
         border.color: Y.text
