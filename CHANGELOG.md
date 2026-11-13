@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.0](https://github.com/Supermaxman/couchbox/compare/v0.27.1...v0.28.0) (2026-11-13)
+
+
+### New
+
+* **home:** the focus moves quicker, and a tile dips as OK goes down on it ([#144](https://github.com/Supermaxman/couchbox/issues/144)) ([73ebe8d](https://github.com/Supermaxman/couchbox/commit/73ebe8da015baa5dc6f2d29a55fc494cd59ce554))
+* **player:** YouTube's player controls in the streaming apps and Frigate; animations in step with the screen; YouTube rows without the stall ([#142](https://github.com/Supermaxman/couchbox/issues/142)) ([9a29713](https://github.com/Supermaxman/couchbox/commit/9a2971371e55dca8bf65ea7bc03bf81e4118624e))
+
+
+### Fixed
+
+* **home:** Up and Down move through a tile's or card's options (Restart and Hide were out of reach); a removed card's place goes to the next card ([#143](https://github.com/Supermaxman/couchbox/issues/143)) ([19fe150](https://github.com/Supermaxman/couchbox/commit/19fe150fa01af0abb4f5dce945cceebd128998ac))
+
 ## [0.27.1](https://github.com/Supermaxman/couchbox/compare/v0.27.0...v0.27.1) (2026-11-13)
 
 
