@@ -134,7 +134,8 @@ def row_json(s: dict[str, Any] | None = None) -> dict[str, Any]:
     if d["weather"]:
         w = {"lat": s["location.lat"], "lon": s["location.lon"], "name": s["location.name"], "units": d["units"]}
     # Continue watching: the TV user's couchbox-ontv service keeps it in this file
-    cw = {"file": str(ontv.continue_file(tv_home()))} if s["home.continue"] else None
+    # (and the apps left out of it, off: hidden at once, before the service's next look)
+    cw = {"file": str(ontv.continue_file(tv_home())), "off": s["home.continue_off"]} if s["home.continue"] else None
     # While you were out: the TV user's couchbox-away service puts its card in this file
     aw = {"file": str(away.reel_file(tv_home()))} if s["home.away"] and s["media.frigate.url"] else None
     # Today at home: the TV user's couchbox-morning service puts its card in this file

@@ -35,7 +35,6 @@ crashed apps every few minutes at the usual limit ("MESA: error: Export failed",
 import json
 import os
 import pwd
-import re
 import resource
 import signal
 import subprocess
@@ -154,18 +153,9 @@ def unit_of(pid):
 
 
 def unit_app(unit):
-    """The app id of a unit the home screen started an app in (app-couchbox\\x2dtwitch@<id>.service,
-    app-flatpak-<id>-<n>.scope), else "" (KDE's own, autostarted, or not an app)."""
-    if not unit.startswith("app-") or "@autostart." in unit or unit.startswith("app-org.kde."):
-        return ""
-    if unit.endswith(".scope"):
-        name = unit[len("app-"):-len(".scope")]
-        name = name.removeprefix("flatpak-").rsplit("-", 1)[0]
-    elif unit.endswith(".service") and "@" in unit:
-        name = unit[len("app-"):].split("@", 1)[0]
-    else:
-        return ""
-    return re.sub(r"\\x([0-9a-f]{2})", lambda m: chr(int(m.group(1), 16)), name)
+    """The app id of a unit the home screen started an app in (couchbox.apps.unit_app)."""
+    from couchbox import apps
+    return apps.unit_app(unit)
 
 
 def launched_apps(uid, plist, covered):

@@ -116,6 +116,13 @@ SettingsPage {
         r.push(T.row("home.clock"));
         r.push(T.row("home.weather", {help: T.settings["location.name"] ? "Weather for " + T.settings["location.name"] : "Set a location in Date, time, location first"}));
         r.push(T.row("home.continue"));
+        // apps left out of it from a card's options on the home screen: a toggle each, to bring them back
+        if (T.settings["home.continue"]) (T.settings["home.continue_off"] || []).forEach(id => {
+            const a = p.apps.find(x => x.id === id);
+            r.push(T.row("home.continue_off", {kind: "toggle", on: false, value: "", help: "",
+                                               label: (a ? a.display_name : id) + " in Continue watching",
+                                               act: () => T.call("home.continue_app", {app: id, shown: true}, refresh)}));
+        });
         if (T.settings["media.frigate.url"]) r.push(T.row("home.away"));
         if (T.settings["media.frigate.url"]) r.push(T.row("home.day"));
         if (T.settings["media.frigate.url"] && T.settings["home.day"]) r.push(hourRow("home.day_from", 0, 23), hourRow("home.day_to", 1, 24));

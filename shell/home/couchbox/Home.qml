@@ -5,7 +5,8 @@
 // (Settings → Moments), each a tile that starts it; the first app has the focus when the row
 // appears, so Left reaches them. OK on the show's tile opens the Morning show app.
 // Under it, Continue watching (ContinueRow, when there's something to continue): Down reaches it,
-// OK plays the card in its app (couchbox-ontv --open), Up or Back return to the apps.
+// OK plays the card in its app (couchbox-ontv --open), holding OK (or Menu) opens its options
+// (TileMenu: Remove, Don't show the app here), Up or Back return to the apps.
 import QtQuick
 import QtQuick.Shapes
 import QtQuick.Window
@@ -140,7 +141,10 @@ FocusScope {
             dimmed: row.activeFocus && !ListView.isCurrentItem
             lifted: root.moving && ListView.isCurrentItem
             playing: !!modelData.moment && modelData.moment === HomeData.activeMoment
-            onOptions: (held) => { if (!root.moving && !modelData.show) tileMenu.open(modelData, row, held); }
+            onOptions: (held) => {
+                if (!root.moving && !modelData.show)
+                    tileMenu.open(modelData, row, held, !modelData.moment && Plasmoid.applicationListModel.isApplicationRunning(modelData.id));
+            }
             onStartMoment: root.startMoment(modelData.moment)
             onStartShow: root.openItem(modelData)
             onDropped: root.drop(true)
@@ -238,6 +242,7 @@ FocusScope {
         cardHeight: root.tileHeight
         gap: root.gap
         onOpened: (it) => root.openItem(it)
+        onOptions: (it, held) => tileMenu.openCard(it, continueRow, held)
         onMoved: Bigscreen.NavigationSoundEffects.playMovingSound()
     }
 
@@ -247,5 +252,8 @@ FocusScope {
         anchors.fill: parent
         onMoveRequested: root.startMove()
         onStartRequested: if (root.currentApp && root.currentApp.moment) root.startMoment(root.currentApp.moment)
+        onRestarting: (a) => Plasmoid.showAppLaunchScreen(a.name, a.tile || a.icon)
+        onRestarted: (a) => Plasmoid.applicationListModel.runApplication(a.id)
+        onRemoved: (c) => HomeData.dismiss(c.key)
     }
 }

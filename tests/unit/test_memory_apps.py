@@ -3,6 +3,7 @@ just YouTube, Jellyfin and the web apps, so an idle Twitch or Settings gets clos
 
 import importlib.machinery
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -88,3 +89,19 @@ def test_the_home_screen_reloads_after_an_update_only_when_no_one_would_notice(m
     state["st"] = home
     m.reload_home({}, quiet=3600)
     assert restarted == [1] and not flag.exists()
+
+
+def test_restart_finds_the_apps_units(tmp_path, monkeypatch):
+    """The home tile's Restart (couchbox.apps.app_units): the user's processes in the app's units."""
+    from couchbox import apps
+
+    me = os.geteuid()
+    for pid, unit in ((10, TWITCH), (11, TWITCH), (12, "app-couchbox\\x2dyt@ontv-1.service"), (13, "session.scope")):
+        d = tmp_path / str(pid)
+        d.mkdir()
+        (d / "cgroup").write_text(f"0::/user.slice/user-{me}.slice/user@{me}.service/app.slice/{unit}\n")
+    twitch = apps.App(id="twitch", name="Twitch", desktop="couchbox-twitch.desktop")
+    assert apps.app_units(twitch, {}, proc=str(tmp_path)) == [TWITCH]
+    yt = apps.App(id="youtube", name="YouTube", desktop="couchbox-yt.desktop")
+    monkeypatch.setattr(apps, "youtube_native", lambda s=None: True)
+    assert apps.app_units(yt, {}, proc=str(tmp_path)) == ["app-couchbox\\x2dyt@ontv-1.service"]

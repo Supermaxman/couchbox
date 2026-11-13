@@ -102,6 +102,33 @@ class Twitch:
         os.replace(tmp, self.session_file)
 
     @property
+    def watched_file(self):
+        return os.path.join(self.dir, "watched.json")
+
+    def watched(self):
+        """{channel login: when it was last played on this TV} (the home screen's Continue
+        watching offers only live channels watched here lately, couchbox.ontv)."""
+        try:
+            w = json.load(open(self.watched_file))
+        except (OSError, ValueError):
+            return {}
+        return {k: float(v) for k, v in w.items() if isinstance(v, (int, float))} if isinstance(w, dict) else {}
+
+    def played(self, login):
+        """A channel's live stream started playing here: remember when (the last 100 channels)."""
+        w = self.watched()
+        w[login.lower()] = time.time()
+        w = dict(sorted(w.items(), key=lambda kv: -kv[1])[:100])
+        tmp = self.watched_file + ".tmp"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(w, f)
+            os.replace(tmp, self.watched_file)
+        except OSError:
+            pass
+
+    @property
     def signed_in(self):
         return bool(self.auth.get("access_token"))
 
@@ -647,6 +674,7 @@ class Twitch:
                 raise RuntimeError(f"{u.get('displayName') or key} isn't live right now.")
             tok = d["streamPlaybackAccessToken"]
             c = self.stream_card(u["stream"], u)
+            self.played(key)
             url = f"https://usher.ttvnw.net/api/channel/hls/{key}.m3u8"
             q = {
                 "sig": tok["signature"],

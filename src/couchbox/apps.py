@@ -9,6 +9,8 @@ Manifest fields:
 """
 
 import json
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -87,6 +89,7 @@ def all_apps(s: dict[str, Any] | None = None) -> list[App]:
 
 
 VACUUMTUBE = "/var/lib/flatpak/app/rocks.shy.VacuumTube"
+VACUUMTUBE_ID = "rocks.shy.VacuumTube"
 
 
 def youtube_native(s: dict[str, Any] | None = None) -> bool:
@@ -135,3 +138,71 @@ def move(layout: list[str], app_id: str, to_index: int, s: dict[str, Any] | None
     current.insert(max(0, min(to_index, len(current))), app_id)
     # keep ids the user ordered that are hidden right now, after the visible ones
     return current + [i for i in layout if i not in current]
+
+
+# ------------------------------------------------------------------ running apps
+def unit_app(unit: str) -> str:
+    """The .desktop name of a unit the home screen started an app in (app-couchbox\\x2dtwitch@<id>.service
+    -> couchbox-twitch, app-flatpak-<id>-<n>.scope -> <id>), else "" (KDE's own, autostarted, or
+    not an app). couchbox-memory groups the TV user's processes by it."""
+    if not unit.startswith("app-") or "@autostart." in unit or unit.startswith("app-org.kde."):
+        return ""
+    if unit.endswith(".scope"):
+        name = unit[len("app-") : -len(".scope")]
+        name = name.removeprefix("flatpak-").rsplit("-", 1)[0]
+    elif unit.endswith(".service") and "@" in unit:
+        name = unit[len("app-") :].split("@", 1)[0]
+    else:
+        return ""
+    return re.sub(r"\\x([0-9a-f]{2})", lambda m: chr(int(m.group(1), 16)), name)
+
+
+def app_units(app: App, s: dict[str, Any] | None = None, proc: str = "/proc") -> list[str]:
+    """The systemd units this user's processes of app run in (the home screen's app-<desktop>@...,
+    a Flatpak's own scope; the YouTube tile's VacuumTube when it's the YouTube app)."""
+    names = {app.desktop.removesuffix(".desktop")}
+    if app.id == "youtube" and not youtube_native(s):
+        names.add(VACUUMTUBE_ID)
+    out, me = set(), os.geteuid()
+    for d in os.listdir(proc):
+        if not d.isdigit():
+            continue
+        try:
+            if os.stat(f"{proc}/{d}").st_uid != me:
+                continue
+            with open(f"{proc}/{d}/cgroup") as f:
+                unit = f.read().strip().rsplit("/", 1)[-1]
+        except OSError:
+            continue
+        if unit_app(unit) in names:
+            out.add(unit)
+    return sorted(out)
+
+
+def quit_app(app_id: str) -> list[str]:
+    """Close an app (the home tile's Restart; the tile then starts it fresh): its units stopped
+    (systemd ends every process in them), a website's Chromium page closed. What was closed."""
+    import subprocess
+    import urllib.request
+
+    s = settings.load()
+    app = get(app_id, s)
+    if not app:
+        raise ValueError(f"No app {app_id}")
+    if app.kind == "web":
+        from couchbox.voice import cdp
+
+        host = app.url.split("//", 1)[-1].split("/")[0]
+        closed = []
+        for p in cdp.pages(cdp.WEB_PORT):
+            if p.get("url", "").split("//", 1)[-1].split("/")[0] == host:
+                urllib.request.urlopen(f"http://127.0.0.1:{cdp.WEB_PORT}/json/close/{p['id']}", timeout=5).read()
+                closed.append(p.get("url", ""))
+        return closed
+    units = app_units(app, s)
+    if units:
+        try:  # (an app that won't quit in 8 s is killed)
+            subprocess.run(["systemctl", "--user", "stop", *units], capture_output=True, timeout=8)
+        except subprocess.TimeoutExpired:
+            subprocess.run(["systemctl", "--user", "kill", "--signal=SIGKILL", *units], capture_output=True, timeout=5)
+    return units
