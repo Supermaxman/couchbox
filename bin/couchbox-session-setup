@@ -1,7 +1,7 @@
 #!/bin/sh
 # couchbox-session-setup: the TV user's own settings that Plasma only reads from its home
-# (no lock screen, no screen blanking, no KDE Wallet, the boot splash, the display-mode autostart, the
-# session services). Run by the package's postinst; safe to re-run.
+# (no lock screen, no screen blanking, no KDE Wallet, Bluetooth on at login, the boot splash, the
+# display-mode autostart, the session services). Run by the package's postinst; safe to re-run.
 set -eu
 U=tv
 H=$(getent passwd "$U" | cut -d: -f6)
@@ -29,6 +29,11 @@ put .config/kwalletrc <<'X'
 Enabled=false
 First Use=false
 X
+# Bluetooth on at every login. Plasma otherwise restores the state it saved when the last session
+# ended, and at a reboot bluetoothd can stop first and switch the adapter off: that "off" came back
+# at the next login, and the Fire remote (the family's only remote) stopped working until Bluetooth
+# was turned on by hand. Written every time, as nothing on the box turns Bluetooth off on purpose.
+as kwriteconfig6 --file bluedevilglobalrc --group General --key launchState enable
 # Plasma's splash carries on from the boot screen (org.couchbox.boot), until Home is up
 put .config/ksplashrc <<'X'
 [KSplash]
