@@ -9,5 +9,6 @@ QtObject {
     readonly property color surface: Qt.rgba(1, 1, 1, 0.07)
     readonly property color surfaceFocus: Qt.rgba(1, 1, 1, 0.16)
     readonly property color ring: "#ffffff"
-    readonly property int duration: 180
+    readonly property int duration: 140         // the focus moving: a key's answer is quick
+    readonly property int pressDuration: 70     // a tile dipping as OK goes down on it
 }
