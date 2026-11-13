@@ -4,9 +4,10 @@ couchbox-nebula; Twitch, with live chat: --site twitch / couchbox-twitch) as a T
 2nd Try run on VHX (Vimeo OTT, vhx.py); Nebula has its own API (nebula.py), same screens.
 
 Browse the website's rows, open a show (seasons, episodes), search, My List, and play with
-the remote: OK pauses, Left/Right skip 10 seconds, Up/Down show the controls (subtitles, next
-episode), Back leaves the player. Progress goes back to Dropout, so Continue Watching and
-resume positions match the website and the other apps.
+the remote as in the YouTube app (CouchKit's PlayerControls): OK shows the controls (subtitles,
+next episode), Left/Right skip 10 seconds, Up from the controls scrubs, Back hides them, then
+leaves the player. Progress goes back to Dropout, so Continue Watching and resume positions
+match the website and the other apps.
 
 Sign-in: copied from the TV's browser if it's signed in to Dropout, else email and password
 (keyboard pop-up or phone). The QML is in /usr/share/couchbox/ui/streaming/qml, the Python (vhx.py,

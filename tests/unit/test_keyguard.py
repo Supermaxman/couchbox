@@ -51,3 +51,25 @@ def test_arrows_repeat():
     assert g.eventFilter(None, key(QEvent.KeyPress, Qt.Key_Right, True)) is False
     assert g.eventFilter(None, key(QEvent.KeyRelease, Qt.Key_Right)) is False
     assert seen == ["Key_Right"]
+
+
+class Key:
+    """An item of the keyboard pop-up: the pop-up it's in says whether OK repeats on it."""
+
+    def __init__(self, repeats=None, parent=None):
+        self.repeats, self.parent = repeats, parent
+
+    def property(self, name):
+        return self.repeats if name == "okRepeats" else None
+
+    def parentItem(self):
+        return self.parent
+
+
+def test_a_held_ok_repeats_where_the_item_asks():
+    g, _ = guard()
+    g.window.focus = Key(parent=Key(repeats=True))  # the delete key
+    assert g.eventFilter(None, key(QEvent.KeyPress, Qt.Key_Return)) is False
+    assert g.eventFilter(None, key(QEvent.KeyPress, Qt.Key_Return, True)) is False
+    g.window.focus = Key(parent=Key(repeats=False))  # a letter
+    assert g.eventFilter(None, key(QEvent.KeyPress, Qt.Key_Return, True)) is True

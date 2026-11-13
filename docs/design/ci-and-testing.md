@@ -134,6 +134,21 @@ KWin lets a program capture the screen only if its `.desktop` file names KWin's 
   - The MP4's index is rewritten every second (mp4mux's reserved moov), so even a killed recorder leaves a file that plays.
   - A recording stops by itself at its length (10 min by default), at 2 GB, or when less than 1 GB of disk is left.
 
+### On the box: how smooth it is
+
+`ci/box-probe/` measures an app's frames on the box itself (copy the folder over; nothing of it ships):
+
+- `run.sh LABEL "APP ARGS" "KEYS"` starts the app muted with a probe on its Python path, presses the remote's buttons (`downx6`, `ok`, `wait:2`, `shot:NAME` for a screenshot) and saves, per frame, when it went to the screen and how far the animations had moved for it, and when each key arrived. It refuses to run while the TV is in use, stops if the real remote is pressed, and puts the sound back.
+- `analyze.py DIR` turns that into numbers: remote to app, key to first frame, the gaps between frames, and per move whether a frame was dropped or a step was out of time with the screen. `-v` lists every move.
+- `QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true` (an `ENV=VAL` argument) adds Qt's own per-frame times (polish, sync, render, swap) to the run's `journal.log`; `PERF=1` records a `perf` profile of the app.
+- `COUCHBOX_FRAME_CLOCK=0` and `COUCHBOX_MPV_BLOCK=1` switch off the two things below, to compare.
+
+What it found on the Pi 5 (v0.27), and what the apps do about it:
+
+- The apps that draw video run Qt Quick's basic render loop (libmpv draws on Qt's thread), where Qt moves animations from a 16 ms timer rather than from the screen's frames. About one frame in 25 showed two steps' worth of movement. `couchbox.frameclock` moves them once per frame instead.
+- libmpv's render call waited for each picture's moment on Qt's thread, so over a 24-a-second video the whole app drew 24 times a second and a key waited up to 42 ms. `couchbox.player` has mpv hand each picture over when it's due, and the call returns at once.
+- A screen recording isn't a measure of smoothness: beside a busy app the recorder itself drops frames (it once stood still for 4 s). Use the probe for timing and screenshots for what's shown.
+
 ## Private-values guard (`no-private-values`)
 
 - **What it checks:** a list of patterns kept in an encrypted Actions secret (`PRIVATE_PATTERNS`). The prototype's tailnet name, host names, LAN ranges and personal accounts never appear in the public repo, not even as the list itself.

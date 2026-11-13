@@ -6,7 +6,8 @@ down. Their repeats (the key held, or the compositor's) are dropped: a held OK f
 over and over, a held Back left the player, then page after page, then the app. A release
 that arrives after the press moved the focus is dropped too (the press that opened Search
 typed nothing, the press that opened a panel picked nothing in it). The arrows and every
-other key pass as they are: held arrows keep moving.
+other key pass as they are: held arrows keep moving. An item can ask for a held OK's repeats
+(a property okRepeats: true on it or on one it's in): the keyboard pop-up's delete key.
 
     guard = keyguard.install(window)        # kept by the caller for as long as the window lives
     guard.pressed                           # a signal: any key went down (not its repeats)
@@ -59,13 +60,27 @@ class KeyGuard(QObject):
                 self.on_key(name)
         if key not in self.keys:
             return False
-        if ev.isAutoRepeat():
-            return True
         focus = self.window.activeFocusItem()
+        if ev.isAutoRepeat():
+            return not _repeats(focus)
         if kind == QEvent.KeyPress:
             self.down[key] = focus
             return False
         return self.down.pop(key, None) is not focus
+
+
+def _repeats(item):
+    """A held OK does repeat here: the item with the focus, or one it's in, says so (okRepeats:
+    the keyboard pop-up's delete key)."""
+    for _ in range(8):
+        prop = getattr(item, "property", None)
+        if prop is None:
+            return False
+        if prop("okRepeats"):
+            return True
+        parent = getattr(item, "parentItem", None)
+        item = parent() if parent else None
+    return False
 
 
 def install(window, on_key=None):
