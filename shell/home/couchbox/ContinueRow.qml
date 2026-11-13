@@ -84,6 +84,7 @@ FocusScope {
             item: modelData
             app: root.appOf(modelData.app)
             current: ListView.isCurrentItem && list.activeFocus
+            pressed: current && list.okDown
             dimmed: list.activeFocus && !ListView.isCurrentItem
             MouseArea {
                 anchors.fill: parent
@@ -98,12 +99,14 @@ FocusScope {
         Keys.onEscapePressed: root.leave()
         Keys.onBackPressed: root.leave()
         // OK plays the card when it's let go; held for half a second it opens the options instead
-        Timer { id: hold; interval: 550; onTriggered: if (root.currentItem) root.options(root.currentItem, true) }
+        property bool okDown: false          // OK is down on the current card (it dips)
+        onActiveFocusChanged: if (!activeFocus) okDown = false
+        Timer { id: hold; interval: 550; onTriggered: { list.okDown = false; if (root.currentItem) root.options(root.currentItem, true); } }
         function isOk(key) { return key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Select; }
         Keys.onPressed: (event) => {
             if (isOk(event.key)) {
                 event.accepted = true;
-                if (!event.isAutoRepeat) hold.restart();
+                if (!event.isAutoRepeat) { list.okDown = true; hold.restart(); }
             } else if (event.key === Qt.Key_Menu) {
                 event.accepted = true;
                 if (root.currentItem) root.options(root.currentItem, false);
@@ -112,6 +115,7 @@ FocusScope {
         Keys.onReleased: (event) => {
             if (!isOk(event.key) || event.isAutoRepeat) return;
             event.accepted = true;
+            list.okDown = false;
             if (hold.running) { hold.stop(); if (root.currentItem) root.opened(root.currentItem); }
         }
     }

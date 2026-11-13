@@ -14,9 +14,10 @@ Item {
     readonly property real radius: Math.round(width * 0.045)
     readonly property color tint: app && app.glow ? app.glow : "#7aa2ff"
 
+    property bool pressed: false          // OK is down on it: it dips a little at once
     z: current ? 1 : 0
-    scale: current ? 1.1 : 1
-    Behavior on scale { NumberAnimation { duration: Style.duration * 1.4; easing.type: Easing.OutCubic } }
+    scale: current ? (pressed ? 1.05 : 1.1) : 1
+    Behavior on scale { NumberAnimation { duration: card.pressed ? Style.pressDuration : Style.duration * 1.25; easing.type: Easing.OutCubic } }
 
     // A soft shadow under the focused card
     Rectangle {

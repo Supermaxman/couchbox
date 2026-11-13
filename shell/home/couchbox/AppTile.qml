@@ -27,11 +27,16 @@ Item {
 
     readonly property real radius: Math.round(width * 0.045)
 
+    // OK is down on it: it dips a little at once (the press is felt before the app shows), and
+    // comes back as OK is let go, or as its options open
+    property bool pressed: false
+    onCurrentChanged: if (!current) pressed = false
+
     z: current ? 1 : 0
-    scale: lifted ? 1.18 : current ? 1.1 : 1
+    scale: lifted ? 1.18 : current ? (pressed ? 1.05 : 1.1) : 1
     y: lifted ? -24 : 0
     Behavior on y { NumberAnimation { duration: Style.duration } }
-    Behavior on scale { NumberAnimation { duration: Style.duration * 1.4; easing.type: Easing.OutCubic } }
+    Behavior on scale { NumberAnimation { duration: tile.pressed ? Style.pressDuration : Style.duration * 1.25; easing.type: Easing.OutCubic } }
 
     function launch() {
         if (isShow) { startShow(); return; }       // (Home.qml opens it, with the sound)
@@ -49,15 +54,17 @@ Item {
     // OK launches; held for half a second it opens the tile's options (as does Menu).
     // While the tile is being moved, OK drops it instead.
     property bool held: false
-    Timer { id: hold; interval: 550; onTriggered: { tile.held = true; tile.options(true); } }
+    Timer { id: hold; interval: 550; onTriggered: { tile.pressed = false; tile.held = true; tile.options(true); } }
     function press(event) {
         if (event.isAutoRepeat) return;
         if (tile.lifted) { tile.dropped(); return; }
         tile.held = false;
+        tile.pressed = true;
         hold.restart();
     }
     function release(event) {
         if (event.isAutoRepeat || tile.lifted) return;
+        tile.pressed = false;
         if (hold.running) { hold.stop(); launch(); }
     }
     Keys.onPressed: (event) => {

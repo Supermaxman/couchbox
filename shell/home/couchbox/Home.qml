@@ -89,12 +89,12 @@ FocusScope {
         readonly property real radius: root.tileWidth * 2.6
         readonly property real centerX: row.currentItem ? row.currentItem.x - row.contentX + root.tileWidth / 2 : 0
         property color color: root.currentApp && root.currentApp.glow ? root.currentApp.glow : "#7aa2ff"
-        Behavior on color { ColorAnimation { duration: 450 } }
+        Behavior on color { ColorAnimation { duration: 320 } }
         x: centerX - radius
         y: row.y + root.tileHeight / 2 - radius
         width: radius * 2
         height: radius * 2
-        Behavior on x { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+        Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
         opacity: row.activeFocus ? 0.32 : 0.14
         Behavior on opacity { NumberAnimation { duration: 300 } }
         preferredRendererType: Shape.CurveRenderer
