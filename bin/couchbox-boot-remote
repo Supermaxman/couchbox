@@ -130,7 +130,7 @@ tick() {
     if [ -n "$sent" ]; then
         if [ -e "$sent" ]; then :                       # not taken yet
         elif find_ask; then                             # asked again: it was wrong
-            sent='' text='' wrong=1 row=0 col=0
+            sent='' text='' wrong=1 row=0 col=0 caps=0
         elif [ $(($(uptime_s) - sent_at)) -gt 30 ]; then  # unlocked (the boot moves on)
             sent='' text='' on=0
         fi

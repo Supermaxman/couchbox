@@ -86,7 +86,7 @@ def test_the_remote_types_the_passphrase_and_unlocks(boot):
     assert (boot.path / "answer").read_text() == "boA"
     # asked again: it was wrong; the field empties and says so
     boot.ask(2)
-    until(lambda: "cb:osk:1:0:0:1:0:1" in boot.said())
+    until(lambda: "cb:osk:1:0:0:0:0:1" in boot.said())  # and Shift is off again
 
 
 def test_before_the_passphrase_is_wanted_keys_show_the_log(boot):
