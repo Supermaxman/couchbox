@@ -3,7 +3,9 @@
 // again every 2 s, so changes in Settings show at once. home-data.js holds the same data
 // from when the home screen was installed, for the first paint.
 // Continue watching comes from the TV user's couchbox-ontv service, in the file home.json names
-// (continueWatching.file; null while it's turned off in Settings), read on the same beat.
+// (continueWatching.file; null while it's turned off in Settings), read on the same beat. Cards
+// taken off it (hold OK on one: Remove) stay off until watched again (the file's removed, and
+// dismiss() for at once); apps left out of it (continueWatching.off) are hidden at once.
 // While you were out (couchbox-away, the file in away.file) puts its card first in that row,
 // until its reel has been watched to the end or is 12 hours old. Today at home (couchbox-morning,
 // the file in day.file) puts its card next, until it's been watched or the next morning.
@@ -33,7 +35,16 @@ QtObject {
     property var dayCard: null
     property var dayInfo: null
     property string lastDay: ""
+    readonly property var continueOff: data && data.continueWatching ? data.continueWatching.off || [] : []
+    property var removedCards: ({})          // key -> when it was removed (couchbox.ontv.removed)
+    property var dismissed: ({})             // the same, taken off here before the service has written it
+    function isRemoved(x) {
+        const at = d.dismissed[x.key] !== undefined ? d.dismissed[x.key] : d.removedCards[x.key];
+        return at !== undefined && (x.watched || x.when || 0) <= at;
+    }
+    function dismiss(key) { const g = Object.assign({}, d.dismissed); g[key] = Date.now() / 1000; d.dismissed = g; }
     readonly property var continueItems: [awayCard, dayCard].filter(x => !!x).concat(watchingItems)
+        .filter(x => !isRemoved(x) && continueOff.indexOf(x.app) < 0)
     property string activeMoment: ""        // the Moment playing (couchbox.moments' state, by the voice service)
     property string last: ""
     property string lastContinue: ""
@@ -67,7 +78,12 @@ QtObject {
         }
         read(d.continueFile, text => {
             if (!text || text === d.lastContinue) return;
-            try { d.watchingItems = JSON.parse(text).items || []; d.lastContinue = text; } catch (e) {}
+            try {
+                const c = JSON.parse(text);
+                d.watchingItems = c.items || [];
+                d.removedCards = c.removed || {};
+                d.lastContinue = text;
+            } catch (e) {}
         });
     }
     function readAway() {

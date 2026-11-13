@@ -48,8 +48,13 @@ ApplicationWindow {
     }
     function refresh() {
         if (mode !== "app") return;
-        F.call("active", {}, r => { F.activeKinds = r.kinds || {}; F.activeCams = r.cameras; });
-        F.call("reviews", {severity: "alert", hours: 24, unreviewed: true, limit: 16}, r => win.alerts = r.items);
+        // only what changed: an unchanged list would rebuild the alert strip (its pictures blink, its scroll resets)
+        F.call("active", {}, r => {
+            if (JSON.stringify(r.kinds || {}) !== JSON.stringify(F.activeKinds)) F.activeKinds = r.kinds || {};
+            if (JSON.stringify(r.cameras) !== JSON.stringify(F.activeCams)) F.activeCams = r.cameras;
+        });
+        F.call("reviews", {severity: "alert", hours: 24, unreviewed: true, limit: 16},
+               r => { if (JSON.stringify(r.items) !== JSON.stringify(win.alerts)) win.alerts = r.items; });
     }
     Timer { interval: 10000; repeat: true; running: win.mode === "app" && win.overlay === ""; onTriggered: win.refresh() }
 
@@ -333,15 +338,21 @@ ApplicationWindow {
     onActiveFocusItemChanged: idle.restart()
     Timer { id: idle; interval: 60 * 60 * 1000; running: win.overlay === ""; onTriggered: Qt.quit() }
 
-    // --shot FILE [--open camera:NAME | review | detections | popups] [--signin] [--keys k1,k2,...]
+    // --shot FILE [--open camera:NAME | review | detections | popups] [--signin] [--keys k1,wait:SECONDS,k2,...]
+    property var shotKeys: []
+    function nextKey() {
+        while (shotKeys.length) {
+            const k = shotKeys.shift();
+            if (k.startsWith("wait:")) { keyWait.interval = parseFloat(k.slice(5)) * 1000; keyWait.start(); return; }
+            shooter.press(k);
+        }
+        shotTimer.start();
+    }
     Timer {
         running: !!win.shot
         interval: 2500
-        onTriggered: {
-            const keys = win.arg("--keys");
-            if (keys) for (const k of keys.split(",")) shooter.press(k);
-            shotTimer.start();
-        }
+        onTriggered: { win.shotKeys = win.arg("--keys").split(",").filter(k => !!k); win.nextKey(); }
     }
+    Timer { id: keyWait; onTriggered: win.nextKey() }
     Timer { id: shotTimer; interval: 2500; onTriggered: { shooter.save(win.shot); Qt.quit(); } }
 }

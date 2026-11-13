@@ -127,6 +127,13 @@ def cmd_home(a) -> None:
         _call("home.move", app=a.args[0], index=int(a.args[1]))
     elif a.action in ("hide", "show"):
         _call("home.hide", app=a.args[0], hidden=a.action == "hide")
+    elif a.action == "quit":  # as the TV user: its apps (the home tile's Restart)
+        from couchbox import apps
+
+        for x in apps.quit_app(a.args[0]):
+            print(f"closed {x}")
+    elif a.action in ("continue-off", "continue-on"):
+        _call("home.continue_app", app=a.args[0], shown=a.action == "continue-on")
 
 
 def cmd_doctor(a) -> None:
@@ -236,7 +243,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("name", nargs="?")
     s.add_argument("value", nargs="?")
     h = sub.add_parser("home")
-    h.add_argument("action", choices=["rebuild", "row", "move", "hide", "show"])
+    h.add_argument("action", choices=["rebuild", "row", "move", "hide", "show", "continue-off", "continue-on", "quit"])
     h.add_argument("args", nargs="*")
     h.add_argument("--restart", action="store_true")
     mo = sub.add_parser("moment")

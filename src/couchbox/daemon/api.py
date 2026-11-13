@@ -291,6 +291,15 @@ def home_hide(app: str, hidden: bool = True) -> dict[str, Any]:
     return _set(changes)
 
 
+@method("home.continue_app")
+@_user_errors
+def home_continue_app(app: str, shown: bool = True) -> dict[str, Any]:
+    """Continue watching shows (or leaves out) an app's cards (home.continue_off)."""
+    s = settings.load()
+    off = [x for x in s["home.continue_off"] if x != app] + ([] if shown else [app])
+    return _set({"home.continue_off": off})
+
+
 @method("home.rename")
 @_user_errors
 def home_rename(app: str, name: str) -> dict[str, Any]:

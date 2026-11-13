@@ -20,7 +20,11 @@ FocusScope {
     property int chip: 0                     // 0 the whole group, n: cams[n - 1]
     property int repeats: 0
     readonly property var cams: F.groupCams(group)
-    readonly property var lanes: only ? [F.camera(only)] : cams
+    readonly property var want: only ? [F.camera(only)] : cams
+    property var loaded: []                  // the cameras tl is for: the lanes change with their data, not before it
+    readonly property var lanes: tl ? loaded : want
+    property bool loadedOne: false
+    readonly property bool single: tl ? loadedOne : !!only     // one camera's lane: taller, no names
     readonly property var events: tl ? tl.items.slice().sort((a, b) => a.start - b.start) : []
     readonly property var here: eventAt(cursor, cam)
     readonly property real span: tl ? tl.end - tl.start : 86400
@@ -31,16 +35,17 @@ FocusScope {
     function show(camera) {                  // from a camera full screen: its timeline
         only = camera || "";
         chip = camera ? Math.max(0, cams.findIndex(c => c.name === camera) + 1) : 0;
-        cursor = 0; zone = 1;
+        tl = null; cursor = 0; zone = 1;         // not the last one's lanes, times and picture while this one loads
+        frameBox.clear();
         load();
     }
     property int req: 0
     function load() {
         loading = true; problem = "";
-        const names = lanes.map(c => c.name), n = ++req;
+        const names = want.map(c => c.name), n = ++req, wanted = want, one = !!only;
         F.call("timeline", {cameras: names}, r => {
             if (n !== req) return;               // the cameras changed since: a newer answer is coming
-            tl = r; loading = false;
+            loaded = wanted; loadedOne = one; tl = r; loading = false;
             if (!cursor || cursor < r.start || cursor > r.end) {
                 const last = events.length ? events[events.length - 1] : null;
                 cursor = last ? last.start : r.end - 60;
@@ -49,7 +54,7 @@ FocusScope {
             if (lanes.findIndex(c => c.name === cam) < 0) cam = names[0] || "";
         }, e => { if (n === req) { problem = e; loading = false; } });
     }
-    onGroupChanged: { only = ""; chip = 0; if (visible) load(); }
+    onGroupChanged: { only = ""; chip = 0; if (visible) load(); else { tl = null; cursor = 0; frameBox.clear(); } }   // not the old group's lanes when it shows
     onVisibleChanged: if (visible && !tl) load()
 
     function eventAt(t, camera) {
@@ -62,7 +67,7 @@ FocusScope {
         repeats = held ? repeats + 1 : 0;
         const step = repeats < 8 ? 60 : repeats < 24 ? 300 : 900;
         cursor = Math.max(tl.start, Math.min(tl.end - 5, cursor + dir * step));
-        if (!only) { const e = eventAt(cursor, ""); if (e) cam = e.camera; }
+        if (!single) { const e = eventAt(cursor, ""); if (e) cam = e.camera; }
     }
     function jump(dir) {
         const list = events;
@@ -109,44 +114,57 @@ FocusScope {
             Text { id: heading; text: "Timeline"; color: F.text; font.family: F.font; font.pixelSize: F.tTitle; font.weight: Font.Bold }
             Text { anchors.baseline: heading.baseline; text: "Last 24 hours"; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta + 2 * F.u }
         }
-        ListView {
-            id: chips
+        Item {                                   // the cameras: clipped to the page (it scrolls), with room for the focused chip to grow
             width: parent.width
             height: 64 * F.u
-            orientation: ListView.Horizontal
-            spacing: 12 * F.u
-            interactive: false
-            clip: false
-            model: [{name: "", label: (F.groups[page.group] || {name: "All cameras"}).name}].concat(page.cams)
-            currentIndex: page.chip
-            highlightRangeMode: ListView.ApplyRange
-            preferredHighlightBegin: 0
-            preferredHighlightEnd: width - 320 * F.u
-            highlightMoveDuration: 160
-            delegate: Rectangle {
-                required property var modelData
-                required property int index
-                readonly property bool on: (index === 0 && !page.only) || (index > 0 && page.only === modelData.name)
-                readonly property bool cur: page.activeFocus && page.zone === 0 && page.chip === index
-                width: Math.min(chipText.implicitWidth + 48 * F.u + (index === 0 ? 40 * F.u : 0), 340 * F.u)
-                height: chips.height; radius: height / 2
-                color: on ? F.panel2 : "transparent"
-                border.color: cur ? F.focus : F.line; border.width: (cur ? 3 : 1) * F.u
-                scale: cur ? F.lift : 1
-                Behavior on scale { NumberAnimation { duration: 120 } }
-                Image {
-                    visible: index === 0
-                    x: 22 * F.u; anchors.verticalCenter: parent.verticalCenter
-                    width: 28 * F.u; height: width; sourceSize: F.sz(width, height)
-                    source: F.icon("timeline"); opacity: 0.8
-                }
-                Text {
-                    id: chipText
-                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
-                              leftMargin: (index === 0 ? 62 : 24) * F.u; rightMargin: 24 * F.u }
-                    text: modelData.label; elide: Text.ElideRight
-                    color: parent.on || parent.cur ? F.text : F.dim
-                    font.family: F.font; font.pixelSize: F.tMeta + 1 * F.u; font.weight: parent.on ? Font.DemiBold : Font.Normal
+            ListView {
+                id: chips
+                readonly property real pad: spacing    // a scrolled-off chip stays out of sight
+                x: -pad; y: -pad
+                width: parent.width + 2 * pad
+                height: parent.height + 2 * pad
+                orientation: ListView.Horizontal
+                spacing: 12 * F.u
+                interactive: false
+                clip: true
+                model: [{name: "", label: (F.groups[page.group] || {name: "All cameras"}).name}].concat(page.cams)
+                currentIndex: page.chip
+                header: Item { width: chips.pad; height: 1 }
+                footer: Item { width: chips.pad; height: 1 }
+                highlightRangeMode: ListView.ApplyRange
+                preferredHighlightBegin: pad
+                preferredHighlightEnd: width - pad - 320 * F.u
+                highlightMoveDuration: 160
+                delegate: Item {
+                    id: chipItem
+                    required property var modelData
+                    required property int index
+                    readonly property bool on: (index === 0 && !page.only) || (index > 0 && page.only === modelData.name)
+                    readonly property bool cur: page.activeFocus && page.zone === 0 && page.chip === index
+                    width: Math.min(chipText.implicitWidth + 48 * F.u + (index === 0 ? 40 * F.u : 0), 340 * F.u)
+                    height: chips.height
+                    Rectangle {
+                        y: chips.pad
+                        width: parent.width; height: chips.height - 2 * chips.pad; radius: height / 2
+                        color: chipItem.on ? F.panel2 : "transparent"
+                        border.color: chipItem.cur ? F.focus : F.line; border.width: (chipItem.cur ? 3 : 1) * F.u
+                        scale: chipItem.cur ? F.lift : 1
+                        Behavior on scale { NumberAnimation { duration: 120 } }
+                        Image {
+                            visible: chipItem.index === 0
+                            x: 22 * F.u; anchors.verticalCenter: parent.verticalCenter
+                            width: 28 * F.u; height: width; sourceSize: F.sz(width, height)
+                            source: F.icon("timeline"); opacity: 0.8
+                        }
+                        Text {
+                            id: chipText
+                            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
+                                      leftMargin: (chipItem.index === 0 ? 62 : 24) * F.u; rightMargin: 24 * F.u }
+                            text: chipItem.modelData.label; elide: Text.ElideRight
+                            color: chipItem.on || chipItem.cur ? F.text : F.dim
+                            font.family: F.font; font.pixelSize: F.tMeta + 1 * F.u; font.weight: chipItem.on ? Font.DemiBold : Font.Normal
+                        }
+                    }
                 }
             }
         }
@@ -164,6 +182,7 @@ FocusScope {
             clip: true
             property bool showA: true
             property string want: ""
+            function clear() { a.source = ""; b.source = ""; showA = true; }
             function next(url) {                 // load into the hidden picture; it flips in when ready
                 if (!url) return;
                 const shown = showA ? a : b, hidden = showA ? b : a;
@@ -251,10 +270,10 @@ FocusScope {
     Item {
         id: lanesBox
         anchors { left: head.left; right: head.right; top: middle.bottom; topMargin: 44 * F.u; bottom: hints.top; bottomMargin: 60 * F.u }
-        readonly property real labelW: page.only ? 0 : 230 * F.u
+        readonly property real labelW: page.single ? 0 : 230 * F.u
         readonly property real trackX: labelW
         readonly property real trackW: width - labelW
-        readonly property real laneH: Math.min(page.only ? 130 * F.u : 56 * F.u, height / Math.max(1, page.lanes.length))
+        readonly property real laneH: Math.min(page.single ? 130 * F.u : 56 * F.u, height / Math.max(1, page.lanes.length))
         function xAt(t) { return trackX + (t - page.tl.start) / page.span * trackW; }
 
         Repeater {
@@ -267,7 +286,7 @@ FocusScope {
                 width: lanesBox.width; height: lanesBox.laneH
                 readonly property bool cur: page.cam === modelData.name
                 Text {
-                    visible: !page.only
+                    visible: !page.single
                     width: lanesBox.labelW - 20 * F.u; anchors.verticalCenter: parent.verticalCenter
                     text: lane.modelData.label; elide: Text.ElideRight
                     color: lane.cur ? F.text : F.dim; font.family: F.font
@@ -321,7 +340,7 @@ FocusScope {
             }
         }
         Rectangle {                              // the event under the cursor
-            visible: !!page.here && !!page.tl
+            visible: !!page.here && !!page.tl && li >= 0
             readonly property int li: page.here ? page.lanes.findIndex(c => c.name === page.here.camera) : -1
             x: page.here && page.tl ? lanesBox.xAt(page.here.start) - 5 * F.u : 0
             width: page.here && page.tl ? Math.max(5 * F.u, lanesBox.xAt(page.here.end || page.tl.end) - lanesBox.xAt(page.here.start)) + 10 * F.u : 0
@@ -345,7 +364,7 @@ FocusScope {
         }
         Text {
             anchors.centerIn: parent
-            visible: page.loading || !!page.problem
+            visible: (page.loading && !page.tl) || !!page.problem
             text: page.problem || "Loading the last day…"
             color: F.dim; font.family: F.font; font.pixelSize: F.tBody
         }

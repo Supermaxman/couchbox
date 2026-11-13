@@ -10,15 +10,26 @@ FocusScope {
     readonly property var cams: F.groupCams(group)
     readonly property int cols: 3
     readonly property real cardW: 360 * F.u
-    property int zone: alerts.length ? 0 : 1    // 0 alerts strip, 1 cameras
+    property int zone: 1                     // 0 alerts strip, 1 cameras
+    property bool moved: false               // the remote moved here since the group opened
     property int ai: 0
     property int ci: 0
     signal openCamera(int index)
     signal openReview(var r)
     signal toRail()
 
-    onAlertsChanged: { if (!alerts.length && zone === 0) zone = 1; ai = Math.min(ai, Math.max(0, alerts.length - 1)); }
-    onGroupChanged: { ci = 0; ai = 0; zone = alerts.length ? 0 : 1; flick.contentY = 0; }
+    // the first alerts to arrive take the focus, until the remote moves; later ones don't take it away from a camera
+    // (and the focused alert keeps the focus when others come or go)
+    property string aiId: ""
+    onAiChanged: aiId = alerts[ai] ? alerts[ai].id || "" : ""
+    onAlertsChanged: {
+        if (!alerts.length && zone === 0) zone = 1;
+        else if (alerts.length && !moved) zone = 0;
+        const i = aiId ? alerts.findIndex(x => x.id === aiId) : -1;
+        ai = i >= 0 ? i : Math.min(ai, Math.max(0, alerts.length - 1));
+        Qt.callLater(ensureVisible);         // the strip came or went: the cameras moved
+    }
+    onGroupChanged: { ci = 0; ai = 0; moved = false; zone = alerts.length ? 0 : 1; flick.contentY = 0; }
 
     function ensureVisible() {
         if (zone === 0) { flick.contentY = 0; return; }
@@ -32,18 +43,22 @@ FocusScope {
     onCiChanged: ensureVisible()
 
     Keys.onLeftPressed: {
+        moved = true;
         if (zone === 0) { if (ai > 0) ai--; else toRail(); }
         else if (ci % cols > 0) ci--; else toRail();
     }
     Keys.onRightPressed: {
+        moved = true;
         if (zone === 0) ai = Math.min(alerts.length - 1, ai + 1);
         else if (ci % cols < cols - 1 && ci + 1 < cams.length) ci++;
     }
     Keys.onUpPressed: {
+        moved = true;
         if (zone === 1 && ci >= cols) ci -= cols;
         else if (zone === 1 && alerts.length) zone = 0;
     }
     Keys.onDownPressed: {
+        moved = true;
         if (zone === 0) zone = 1;
         else if (ci + cols < cams.length) ci += cols;
         else if (Math.floor(ci / cols) < Math.floor((cams.length - 1) / cols)) ci = cams.length - 1;
@@ -80,26 +95,39 @@ FocusScope {
                     Text { anchors.baseline: stripHead.baseline; text: page.alerts.length + " not reviewed in the last day"; color: F.faint; font.family: F.font; font.pixelSize: F.tSmall + 1 * F.u }
                 }
                 ReviewCard { id: probe; visible: false; width: page.cardW }    // how tall the cards are
-                ListView {
-                    id: strip
+                Item {                           // clipped to the page (it scrolls), with room for the focused card to grow
                     width: parent.width
                     height: probe.implicitHeight
-                    orientation: ListView.Horizontal
-                    spacing: F.gap
-                    clip: false
-                    interactive: false
-                    model: page.alerts
-                    currentIndex: page.ai
-                    highlightRangeMode: ListView.ApplyRange
-                    preferredHighlightBegin: 0
-                    preferredHighlightEnd: width - page.cardW
-                    highlightMoveDuration: 180
-                    delegate: ReviewCard {
-                        required property var modelData
-                        required property int index
-                        width: page.cardW; height: implicitHeight
-                        r: modelData
-                        current: page.activeFocus && page.zone === 0 && page.ai === index
+                    ListView {
+                        id: strip
+                        readonly property real pad: 16 * F.u     // room for the focused card to grow (and less than the spacing: a scrolled-off card stays out of sight)
+                        x: -pad; y: -pad
+                        width: parent.width + 2 * pad
+                        height: parent.height + 2 * pad
+                        orientation: ListView.Horizontal
+                        spacing: F.gap
+                        clip: true
+                        interactive: false
+                        model: page.alerts
+                        currentIndex: page.ai
+                        header: Item { width: strip.pad; height: 1 }
+                        footer: Item { width: strip.pad; height: 1 }
+                        highlightRangeMode: ListView.ApplyRange
+                        preferredHighlightBegin: pad
+                        preferredHighlightEnd: width - pad - page.cardW
+                        highlightMoveDuration: 180
+                        delegate: Item {
+                            id: alertItem
+                            required property var modelData
+                            required property int index
+                            width: page.cardW; height: strip.height
+                            ReviewCard {
+                                y: strip.pad
+                                width: parent.width; height: implicitHeight
+                                r: alertItem.modelData
+                                current: page.activeFocus && page.zone === 0 && page.ai === alertItem.index
+                            }
+                        }
                     }
                 }
             }

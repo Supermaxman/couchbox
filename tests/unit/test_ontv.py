@@ -128,9 +128,14 @@ def test_twitch_live_channels_and_search_cards():
         "started": "2027-01-15T08:00:00Z",
     }
     vod = {"kind": "video", "id": "vod:9", "title": "Old", "live": False}
-    items = ontv.watching("twitch", [live, vod])
+    other = dict(live, id="live:followedonce", slug="followedonce")
+    # only channels watched on this TV lately: not every followed channel that happens to be live
+    watched = {"northcliff": NOW - 3600, "followedonce": NOW - ontv.TWITCH_RECENT - 60}
+    items = ontv.watching("twitch", [live, vod, other], watched, now=NOW)
     assert len(items) == 1
+    assert ontv.watching("twitch", [live], {}, now=NOW) == []
     it = items[0]
+    assert it["watched"] == NOW - 3600
     assert it["target"] == "twitch:play:live:northcliff" and it["live"] and it["viewers"] == "4.2K viewers"
     assert it["title"] == "Northcliff" and it["subtitle"] == "Speedrun" and it["when"] == ontv.when_of("2027-01-15T08:00:00Z")
     cat = ontv.stream_item("twitch", {"kind": "category", "id": "cat:Minecraft", "slug": "Minecraft", "title": "Minecraft", "poster": "p"})
@@ -157,8 +162,8 @@ def test_movies_and_shows_from_movies_and_tv():
 
 
 # ------------------------------------------------------------------ order
-def it(app, key, when=0.0, pos=None, live=False):
-    out = ontv.item(app, key, key, f"{app}:play:{key}", when=when, live=live)
+def it(app, key, when=0.0, pos=None, live=False, **kw):
+    out = ontv.item(app, key, key, f"{app}:play:{key}", when=when, live=live, **kw)
     if pos is not None:
         out["position"] = pos
     return out
@@ -205,6 +210,26 @@ def test_merge_caps_live_channels_and_the_row():
     assert [x["key"] for x in tie] == ["jellyfin:b", "nebula:a"]
 
 
+def test_removed_cards_stay_off_until_watched_again():
+    gone = ontv.remove({"jellyfin:old": NOW - ontv.REMOVED_KEEP - 1}, "jellyfin:j1", NOW)
+    assert gone == {"jellyfin:j1": NOW}  # (long-removed ones forgotten)
+    gone = ontv.remove(gone, "twitch:live:x", NOW)
+    row = ontv.merge(
+        {
+            "jellyfin": [it("jellyfin", "j1", when=NOW - 50), it("jellyfin", "j2", when=NOW - 60)],
+            "twitch": [it("twitch", "live:x", when=NOW + 900, live=True, watched=NOW - 10)],
+        },
+        gone=gone,
+    )
+    assert [x["key"] for x in row] == ["jellyfin:j2"]  # a new stream of x: still off, not watched here since
+    # watched again after it was removed: back
+    again = ontv.merge(
+        {"jellyfin": [it("jellyfin", "j1", when=NOW + 60)], "twitch": [it("twitch", "live:x", when=NOW, live=True, watched=NOW + 5)]},
+        gone=gone,
+    )
+    assert {x["key"] for x in again} == {"jellyfin:j1", "twitch:live:x"}
+
+
 # ------------------------------------------------------------------ which apps
 def write_home(box, ids):
     f = box / "var/lib/couchbox/home/home.json"
@@ -221,11 +246,15 @@ def test_only_apps_on_the_home_row_are_asked(box):
     (box / "var/lib/couchbox/home/home.json").unlink()
     settings.update({"apps.disabled": ["twitch"], "home.hidden": ["nebula"]})
     assert ontv.sources("continue") == ["dropout", "2ndtry", "youtube"]
+    # left out of Continue watching (a card's "Don't show ... here"): still searched
+    settings.update({"home.continue_off": ["dropout"]})
+    assert ontv.sources("continue") == ["2ndtry", "youtube"]
+    assert "dropout" in ontv.sources("search")
 
 
 def test_home_json_names_the_rows_file_unless_turned_off(box, runner):
     data = home.row_json()
-    assert data["continueWatching"] == {"file": str(box / "home/tv/.cache/couchbox-ontv/continue.json")}
+    assert data["continueWatching"] == {"file": str(box / "home/tv/.cache/couchbox-ontv/continue.json"), "off": []}
     settings.update({"home.continue": False})
     assert home.row_json()["continueWatching"] is None
 

@@ -1,7 +1,8 @@
 // couchbox: the Continue watching row under the apps: what's part-watched in Jellyfin, Dropout,
 // 2nd Try and Nebula, and followed Twitch channels that are live, newest first (couchbox-ontv
 // keeps the list; HomeData reads it). Left and Right move, OK plays it in its app (opened()),
-// Up or Back return to the apps. Plain Qt Quick (no Plasma), so couchbox-ontv can draw it off
+// held for half a second (or Menu) it opens the card's options (options(): Remove, Don't show
+// the app here), Up or Back return to the apps. Plain Qt Quick (no Plasma), so couchbox-ontv can draw it off
 // screen; Home.qml does the launching and the sounds.
 import QtQuick
 
@@ -15,6 +16,7 @@ FocusScope {
     property real cardHeight: 152
     property real gap: 22
     signal opened(var item)
+    signal options(var item, bool held)   // held: OK is still down (it opened them)
     signal moved()
 
     readonly property bool shown: items.length > 0
@@ -90,11 +92,22 @@ FocusScope {
         Keys.onDownPressed: (event) => event.accepted = true
         Keys.onEscapePressed: root.leave()
         Keys.onBackPressed: root.leave()
+        // OK plays the card when it's let go; held for half a second it opens the options instead
+        Timer { id: hold; interval: 550; onTriggered: if (root.currentItem) root.options(root.currentItem, true) }
+        function isOk(key) { return key === Qt.Key_Return || key === Qt.Key_Enter || key === Qt.Key_Select; }
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Select) {
+            if (isOk(event.key)) {
                 event.accepted = true;
-                if (!event.isAutoRepeat && root.currentItem) root.opened(root.currentItem);
+                if (!event.isAutoRepeat) hold.restart();
+            } else if (event.key === Qt.Key_Menu) {
+                event.accepted = true;
+                if (root.currentItem) root.options(root.currentItem, false);
             }
+        }
+        Keys.onReleased: (event) => {
+            if (!isOk(event.key) || event.isAutoRepeat) return;
+            event.accepted = true;
+            if (hold.running) { hold.stop(); if (root.currentItem) root.opened(root.currentItem); }
         }
     }
     function leave() {

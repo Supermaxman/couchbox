@@ -5,7 +5,9 @@ TV session as the TV user (couchbox-ontv.service), so it uses each app's own sig
 
 Every 5 minutes, and when the home screen comes to the front (--refresh, at most once in 45 s),
 it asks the apps on the home row what's part-watched: Jellyfin (its Resume list), Dropout,
-2nd Try and Nebula (their Continue Watching), Twitch (followed channels live now). One row,
+2nd Try and Nebula (their Continue Watching), YouTube (its History), Twitch (followed channels
+live now that were watched on this TV in the last two weeks). One row, without the cards removed
+from it (hold OK on one: Remove; it comes back once it's watched again),
 newest first (couchbox.ontv), goes to ~/.cache/couchbox-ontv/continue.json, which the home screen
 reads. Each app is asked on its own thread with a time limit; an app that can't be reached
 keeps its last items for a while (6 hours; Twitch's live channels 15 minutes), one that isn't
@@ -15,6 +17,8 @@ Continue watching is off.
   couchbox-ontv                     run the service
   couchbox-ontv --refresh           ask it to look again now (the home screen does, when shown)
   couchbox-ontv --open TARGET       open an item in its app (dropout:play:123, jellyfin:<id>, ...)
+  couchbox-ontv --remove KEY        take a card off the row until it's watched again (its key:
+                                    jellyfin:<id>, twitch:live:<login>, away, day, ...)
   couchbox-ontv --status            what the service knows: each app, when it answered, why not
   couchbox-ontv --list              the row as the home screen has it
   couchbox-ontv --once              look now, without the service, and print the row
@@ -64,6 +68,7 @@ class Service:
         st = ontv.read_json(self.state_file, {}) or {}
         self.seen = st.get("seen") or {}
         self.known = set(st.get("known") or [])
+        self.gone = st.get("removed") or {}      # key -> when it was removed (ontv.removed)
         self.status = {}             # source -> {ok, at, problem, count}
         self.last = {}               # source -> (when it answered, its items)
         self.looked = 0.0
@@ -113,11 +118,15 @@ class Service:
             status[src] = {"ok": keep, "at": at, "problem": problem, "count": len(items) if keep else 0}
         for src in [s for s in self.last if s not in srcs]:          # hidden or turned off since
             del self.last[src]
-        row = ontv.merge({src: items for src, (_, items) in self.last.items()})
-        ontv.write_json(ontv.continue_file(), {"updated": now, "items": row, "sources": status})
         with self.lock:
-            ontv.write_json(self.state_file, {"seen": self.seen, "known": sorted(self.known)}, 0o600)
             self.status, self.looked = status, now
+            return self.write(now)
+
+    def write(self, now):
+        """The row (from each app's last answer) and the state, to their files. Under self.lock."""
+        row = ontv.merge({src: items for src, (_, items) in self.last.items()}, gone=self.gone)
+        ontv.write_json(ontv.continue_file(), {"updated": now, "items": row, "sources": self.status, "removed": self.gone})
+        ontv.write_json(self.state_file, {"seen": self.seen, "known": sorted(self.known), "removed": self.gone}, 0o600)
         return row
 
     def run(self):
@@ -143,6 +152,14 @@ class Service:
             if due:
                 self.wake.set()
             return {"ok": True, "looking": due}
+        if op == "remove":
+            key = str(req.get("key") or "")
+            if not key:
+                return {"error": "no key"}
+            with self.lock:
+                self.gone = ontv.remove(self.gone, key, time.time())
+                self.write(time.time())
+            return {"ok": True}
         if op == "status":
             with self.lock:
                 return {"looked": self.looked, "sources": self.status, "on": settings.load()["home.continue"],
@@ -177,6 +194,15 @@ def cli():
         except Exception as err:  # noqa: BLE001
             log(f"couldn't open {arg('--open')}: {err}")
             return 1
+        return 0
+    if "--remove" in sys.argv:
+        key = arg("--remove")
+        if ask({"op": "remove", "key": key}) is None:      # the service isn't running: its state file
+            path = ontv.data_dir() / "continue-state.json"
+            st = ontv.read_json(path, {}) or {}
+            st["removed"] = ontv.remove(st.get("removed") or {}, key, time.time())
+            ontv.write_json(path, st, 0o600)
+        log(f"removed {key}")
         return 0
     if "--status" in sys.argv:
         r = ask({"op": "status"})

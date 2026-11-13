@@ -9,7 +9,8 @@ Sources, each only while its app is on the home row (as couchboxd last wrote it,
                   for when it doesn't
   dropout, 2ndtry their Continue Watching (VHX, vhx.py) and search
   nebula          its Continue Watching and search (nebula.py)
-  twitch          followed channels live now (signed in), and channel / category search (twitch.py)
+  twitch          followed channels live now that were watched on this TV in the last two weeks
+                  (signed in; twitch.py remembers what's played), and channel / category search
   movies          search only: TMDB through Seerr or a TMDB key (movies.py)
   youtube         Couchbox's own YouTube app (couchbox-yt): the part-watched videos of its History,
                   as the profile it last watched as (its own sign-in, ~/.local/share/couchbox-yt;
@@ -20,7 +21,12 @@ Sources, each only while its app is on the home row (as couchboxd last wrote it,
 Items are plain dicts, the same for both lists:
   {key, app, name, desktop, title, subtitle, art, fit, progress, left, live, viewers, when, target}
   fit: the art is a poster (fit it, don't crop it); left: "23 min left"; when: last watched
-  (unix time; for a live stream, when it started).
+  (unix time; for a live stream, when it started); watched (live streams only): when the channel
+  was last played on this TV.
+
+Hold OK on a card (or press Menu) for its options: Remove (removed(): hidden until it's watched
+again, its when or watched past the moment it was removed) and Don't show <app> here (Settings
+home.continue_off, the app left out of the row).
 
 Targets name the app and what its --open takes:
   dropout:play:123  dropout:series:45  nebula:play:<id>  twitch:play:live:<login>
@@ -87,6 +93,8 @@ KEEP = {"twitch": 15 * 60}  # a source that can't be reached keeps its last item
 KEEP_DEFAULT = 6 * 3600
 YOUTUBE_MAX = 4  # YouTube's History is long: its newest few, among the other apps' (by when)
 FORGET = 30 * 86400  # remembered positions of items gone from every list
+TWITCH_RECENT = 14 * 86400  # a followed channel that's live shows if it was watched here this lately
+REMOVED_KEEP = 180 * 86400  # a removed card is remembered this long
 VOICE = "http://127.0.0.1:8790"
 JELLYFIN_DEVTOOLS = 9224  # Jellyfin Desktop (couchbox-jellyfin)
 WEB_DEVTOOLS = 9223  # the Chromium web apps, Jellyfin's web app among them
@@ -132,8 +140,11 @@ def home_apps() -> list[str]:
 
 
 def sources(kind: str = "continue", on_home: list[str] | None = None) -> list[str]:
-    """The apps to ask, in order: those on the home row (hidden or turned-off apps are left out)."""
+    """The apps to ask, in order: those on the home row (hidden or turned-off apps are left out,
+    and for the row those left out of Continue watching, home.continue_off)."""
     on = set(home_apps() if on_home is None else on_home)
+    if kind == "continue":
+        on -= set(settings.load()["home.continue_off"])
     return [a for a in (CONTINUE_APPS if kind == "continue" else SEARCH_APPS) if a in on]
 
 
@@ -314,16 +325,25 @@ def stream_item(site: str, c: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
-def watching(site: str, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """A streaming app's Continue Watching as row items: started and not finished (Twitch: live)."""
-    out = []
+def watching(
+    site: str, cards: list[dict[str, Any]], watched: dict[str, float] | None = None, now: float | None = None
+) -> list[dict[str, Any]]:
+    """A streaming app's Continue Watching as row items: started and not finished. Twitch: the
+    followed channels live now that were watched on this TV in the last TWITCH_RECENT (watched:
+    {login: when it was last played here}), not every channel the account follows."""
+    out, now = [], now or time.time()
     for c in cards:
         if site != "twitch" and (c.get("completed") or (c.get("progress") or 0) >= DONE):
             continue
-        if site == "twitch" and not c.get("live"):
-            continue
+        at = 0.0
+        if site == "twitch":
+            at = (watched or {}).get(str(c.get("id") or "").removeprefix("live:").lower(), 0.0)
+            if not c.get("live") or now - at > TWITCH_RECENT:
+                continue
         it = stream_item(site, c)
         if it:
+            if at:
+                it["watched"] = at
             out.append(it)
     return out
 
@@ -421,11 +441,24 @@ def place(source: str, items: list[dict[str, Any]], seen: dict[str, Any], now: f
         del seen[k]
 
 
-def merge(lists: dict[str, list[dict[str, Any]]], limit: int = MAX_ITEMS) -> list[dict[str, Any]]:
+def removed(it: dict[str, Any], gone: dict[str, float]) -> bool:
+    """Taken off the row (its menu's Remove) and not watched since."""
+    at = gone.get(it.get("key", ""))
+    return at is not None and (it.get("watched") or it.get("when") or 0) <= at
+
+
+def remove(gone: dict[str, float], key: str, now: float) -> dict[str, float]:
+    """The removed cards with key added (now), those older than REMOVED_KEEP forgotten."""
+    out = {k: t for k, t in gone.items() if now - t < REMOVED_KEEP}
+    out[key] = now
+    return out
+
+
+def merge(lists: dict[str, list[dict[str, Any]]], limit: int = MAX_ITEMS, gone: dict[str, float] | None = None) -> list[dict[str, Any]]:
     """Every app's items in one row, newest first (ties: the order of CONTINUE_APPS), at most
-    MAX_LIVE live channels."""
+    MAX_LIVE live channels, without those removed from it (gone, removed())."""
     order = {a: i for i, a in enumerate(CONTINUE_APPS)}
-    flat = [(it, order.get(src, 99), i) for src, items in lists.items() for i, it in enumerate(items)]
+    flat = [(it, order.get(src, 99), i) for src, items in lists.items() for i, it in enumerate(items) if not removed(it, gone or {})]
     flat.sort(key=lambda x: (-x[0]["when"], x[1], x[2]))
     out, live, keys = [], 0, set()
     for it, _, _ in flat:
@@ -615,7 +648,7 @@ def fetch_continue(source: str, clients: Clients) -> list[dict[str, Any]]:
     if source == "twitch" and not c.signed_in:
         raise NotSignedIn("Twitch: not signed in")
     try:
-        return watching(source, c.watching()["items"])
+        return watching(source, c.watching()["items"], c.watched() if source == "twitch" else None)
     except vhx.SignInNeeded:
         raise NotSignedIn(f"{NAMES[source]}: not signed in") from None
     finally:

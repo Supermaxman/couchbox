@@ -10,8 +10,8 @@
 //                 there: the chapters when it has some ("Press up to view chapters"), else back
 //                 to the video; Up from the chapters: back to the video
 //   Back          from the related videos to the controls, then hide them, then leave the player
-// Description and comments open beside the video; the settings menu has quality, speed and
-// captions (CC turns captions on and off). At the end, Up next (the queue first) after a countdown.
+// Description and comments open beside the video; the settings menu has quality, speed,
+// captions (CC turns captions on and off) and Autoplay next video (Settings' switch, flipped here). At the end, Up next (the queue first) after a countdown.
 // Streams: ytstream.py (yt-dlp), H.264 up to 1080p60; at the end the next video plays.
 // Signed in: like and dislike, the channel's panel (Subscribe / Subscribed, Go to channel), the
 // bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
@@ -361,7 +361,8 @@ FocusScope {
             return saveOptions.map(o => ({label: o.title, icon: o.id === "WL" ? "history" : "list", checked: o.saved, id: o.id}));
         if (p === "settings")
             return [{label: "Quality", value: qualityLabel, icon: "settings"}, {label: "Playback speed", value: speed === 1 ? "Normal" : speed + "×", icon: "speed"},
-                    {label: "Captions", value: captionsOn || "Off", icon: "cc"}];
+                    {label: "Captions", value: captionsOn || "Off", icon: "cc"},
+                    {label: "Autoplay next video", value: Y.settings.autoplay !== false ? "On" : "Off", icon: "next"}];   // (Settings' own, the same setting)
         if (p === "quality")
             return [{label: "Auto", checked: !s || !s.maxHeight || s.maxHeight >= 1080, h: 1080}]
                 .concat(((s && s.heights) || []).map(h => ({label: h + "p", checked: s.maxHeight === h && h < 1080, h: h})));
@@ -435,7 +436,8 @@ FocusScope {
                 meta = Object.assign({}, meta, {video: Object.assign({}, v, {notify: o.level})});
             });
         } else if (panel === "settings") {
-            panel = ["quality", "speed", "captions"][i];
+            if (i === 3) Y.setting("autoplay", Y.settings.autoplay === false);   // flips in place; Up next and Settings follow
+            else panel = ["quality", "speed", "captions"][i];
         } else if (panel === "quality") {
             setQuality(o.h); panel = "";
         } else if (panel === "speed") {

@@ -226,12 +226,12 @@ FocusScope {
                                     Behavior on x { NumberAnimation { duration: 120 } }
                                 }
                             }
-                            Row {                        // a choice: ◀ value ▶ (the arrows while it has focus)
+                            Row {                        // a choice: ◀ value ▶ (the arrows while it has focus; their room always, so the value stays put)
                                 id: chooser
                                 visible: !rowCol.hasSwitch
                                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                                 spacing: 16 * F.u
-                                Text { visible: rowCol.cur; text: "◀"; color: rowCol.primary ? "white" : F.text; font.family: F.font; font.pixelSize: 26 * F.u }
+                                Text { opacity: rowCol.cur ? 1 : 0; text: "◀"; color: rowCol.primary ? "white" : F.text; font.family: F.font; font.pixelSize: 26 * F.u }
                                 Text {
                                     width: Math.min(implicitWidth, rowCol.width * 0.4)
                                     text: rowCol.modelData.value || ""
@@ -239,7 +239,7 @@ FocusScope {
                                     color: rowCol.primary ? "white" : rowCol.cur ? F.text : F.text2
                                     font.family: F.font; font.pixelSize: 26 * F.u; font.weight: rowCol.primary ? Font.DemiBold : Font.Normal
                                 }
-                                Text { visible: rowCol.cur; text: "▶"; color: rowCol.primary ? "white" : F.text; font.family: F.font; font.pixelSize: 26 * F.u }
+                                Text { opacity: rowCol.cur ? 1 : 0; text: "▶"; color: rowCol.primary ? "white" : F.text; font.family: F.font; font.pixelSize: 26 * F.u }
                             }
                         }
                     }
