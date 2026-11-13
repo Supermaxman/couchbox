@@ -35,10 +35,17 @@ FocusScope {
         loading = true;
         const p = page + 1;
         D.call(op, Object.assign({page: p}, args), r => {
-            for (const c of r.items || []) model.append({j: JSON.stringify(c)});
-            page = p; more = !!r.more; loading = false; loaded = true;
+            // its cards are made once the page has stopped scrolling: the answer often came in the
+            // middle of the scroll that woke the row, and making its cards then cost 3 frames of it
+            const fill = () => {
+                for (const c of r.items || []) model.append({j: JSON.stringify(c)});
+                page = p; more = !!r.more; loading = false; loaded = true;
+            };
+            const wait = D.movedAt + 220 - Date.now();
+            if (wait > 0) { later.fill = fill; later.interval = wait; later.restart(); } else fill();
         }, () => { loading = false; loaded = true; more = false; });
     }
+    Timer { id: later; property var fill: null; onTriggered: { const f = fill; fill = null; if (f) f(); } }
     function reload() { model.clear(); page = 0; more = true; loaded = false; loading = false; load(); }
     onActiveChanged: if (active && !loaded) load()
     onGivenChanged: if (given) load()

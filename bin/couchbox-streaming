@@ -4,9 +4,10 @@ couchbox-nebula; Twitch, with live chat: --site twitch / couchbox-twitch) as a T
 2nd Try run on VHX (Vimeo OTT, vhx.py); Nebula has its own API (nebula.py), same screens.
 
 Browse the website's rows, open a show (seasons, episodes), search, My List, and play with
-the remote: OK pauses, Left/Right skip 10 seconds, Up/Down show the controls (subtitles, next
-episode), Back leaves the player. Progress goes back to Dropout, so Continue Watching and
-resume positions match the website and the other apps.
+the remote as in the YouTube app (CouchKit's PlayerControls): OK shows the controls (subtitles,
+next episode), Left/Right skip 10 seconds, Up from the controls scrubs, Back hides them, then
+leaves the player. Progress goes back to Dropout, so Continue Watching and resume positions
+match the website and the other apps.
 
 Sign-in: copied from the TV's browser if it's signed in to Dropout, else email and password
 (keyboard pop-up or phone). The QML is in /usr/share/couchbox/ui/streaming/qml, the Python (vhx.py,
@@ -43,6 +44,8 @@ TVKIT = os.environ.get("COUCHBOX_TVKIT", str(paths.share() / "ui"))
 # libmpv draws on Qt Quick's thread: the basic render loop (mpv deadlocks with the threaded one)
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"         # CouchKit reads the phone page's address
+os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # skips to a keyframe: 1.5-2 s sooner on the Pi (player.KEYFRAMES)
+os.environ.setdefault("COUCHBOX_MPV_SUB_CLEAR", "1")        # subtitles aren't shown twice after a skip back (player.py)
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
@@ -300,6 +303,12 @@ def main():
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
+    from couchbox import frameclock
+
+    frameclock.attach(shooter.window)  # animations in step with the screen's frames (the basic render loop)
+    from couchbox import keyguard
+
+    shooter.guard = keyguard.install(shooter.window)  # OK, Back, Menu and Play/Pause act once per press
     code = app.exec()
     if control.server:
         control.server.close()

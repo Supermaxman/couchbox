@@ -3,10 +3,12 @@
 // the bottom and a bar across the top (a segment a part, as long as the part): yesterday's
 // backyard sped up, the night's camera moments, the pets' best of yesterday, the radar with
 // today's forecast, the new videos from the YouTube subscriptions. Left/Right: the clip or part
-// before or after. OK on a camera moment: the Frigate app at that time; on a video: the YouTube
-// app. Back leaves. When the window goes to the back (an app opened, Home), the show pauses;
-// back in front it carries on. At the end (the last video part's time, or the last part when
-// there are no videos) the show is watched: its tile goes.
+// before or after (one a press; Rewind/Fast-forward too). Play/Pause holds the show where it is,
+// with a small mark top right, until Play/Pause again (or a step). OK on a camera moment: the
+// Frigate app at that time; on a video: the YouTube app. Back leaves. When the window goes to the
+// back (an app opened, Home), the show holds too; back in front it carries on from there. At the
+// end (the last video part's time, or the last part when there are no videos) the show is
+// watched: its tile goes.
 // --reels: the Reels app instead (couchbox.reels): the list of kept reels (Library), OK plays one
 // here as a show of one part; Back or its end goes back to the list. --open ID: that reel at once
 // (Today at home's card on the home screen), and Back or its end leaves.
@@ -46,6 +48,11 @@ ApplicationWindow {
     property bool finished: false
     property var weather: null
     readonly property bool awake: win.active || noVideo   // (off screen there's no active window)
+    property bool paused: false                  // Play/Pause on the remote: held where it is
+    readonly property bool going: awake && !paused
+    property string loaded: ""                   // the clip the player has (held, not dropped, at the back)
+    // what the remote's media keys reach: the show in front (not the list, not once it's over)
+    readonly property bool onAir: awake && !library && !finished && pi >= 0
 
     Component.onCompleted: {
         S.u = u;
@@ -64,7 +71,8 @@ ApplicationWindow {
 
     // ------------------------------------------------------------------ the Reels app
     function showLibrary() {
-        video.stop();
+        paused = false;
+        halt();
         library = true;
         finished = false;
         lib.load(!!show);
@@ -74,7 +82,7 @@ ApplicationWindow {
     function openReel(id, card) {
         S.call("reel", {id: id}, s => {
             if (!s.parts.length) { if (card) Qt.quit(); else showLibrary(); return; }    // (gone since)
-            video.stop();
+            halt();
             win.show = s;
             reelId = id;
             fromCard = card;
@@ -85,7 +93,7 @@ ApplicationWindow {
         }, () => { if (card) Qt.quit(); });
     }
     function leave() {                           // Back, or the end of what's playing
-        video.stop();
+        halt();
         if (reelsMode && !library && !fromCard) showLibrary();
         else Qt.quit();
     }
@@ -93,7 +101,8 @@ ApplicationWindow {
     // ------------------------------------------------------------------ playing
     function begin(i, fromEnd) {
         if (i < 0 || i >= parts.length) return;
-        video.stop();
+        paused = false;
+        halt();
         pi = i;
         const p = parts[i];
         ci = fromEnd && p.clips ? p.clips.length - 1 : 0;
@@ -109,8 +118,15 @@ ApplicationWindow {
         if (!clips || !awake || !clip.file) return;
         if (clip.file === "demo:clip") video.load("demo:clip", 0);
         else video.loadWith(clip.file, 0, "aid=no");          // cameras: never any sound
+        loaded = clip.file;
     }
+    function halt() { video.stop(); loaded = ""; }
+    function hold() {                            // the clip stands still while paused or at the back
+        if (clips && loaded && loaded === clip.file) video.setPaused(paused || !awake);
+    }
+    onPausedChanged: { hold(); publish(); }
     function step(d) {
+        paused = false;                          // (a step carries on)
         if (clips) {
             const j = ci + d;
             if (j >= 0 && j < part.clips.length) { ci = j; words.opacity = 0; fadeIn.restart(); play(); return; }
@@ -124,20 +140,24 @@ ApplicationWindow {
         else end();
     }
     function end() {                             // watched: the tile goes; on the videos, stay for a pick
-        video.stop();
+        halt();
         if (!finished) { finished = true; S.call(reelsMode ? "reelSeen" : "seen", {id: reelId}); }
         if (kind !== "videos") leave();
     }
     function open(target) {
         if (!target) return;
-        video.stop();
-        S.call("open", {target: target});
+        S.call("open", {target: target});            // (the clip holds once that app is in front)
     }
-    onAwakeChanged: if (awake && !library) play(); else video.stop()
+    onAwakeChanged: {                            // back in front: on from where it was
+        if (awake) paused = false;                   // (Home pauses every player on its way out: not held for that)
+        if (library || !clips) return;
+        if (awake && loaded !== clip.file) play();
+        else hold();
+    }
 
     Timer {                                      // the timed parts' clock
         interval: 100; repeat: true
-        running: win.awake && !win.finished && (win.kind === "weather" || win.kind === "videos")
+        running: win.going && !win.finished && (win.kind === "weather" || win.kind === "videos")
         onTriggered: {
             win.elapsed += 0.1;
             if (win.elapsed >= (win.part.seconds || 12)) win.nextPart();
@@ -149,7 +169,7 @@ ApplicationWindow {
     }
     Timer {                                      // off screen there's no end to a video: 5 s each
         interval: 5000; repeat: true
-        running: noVideo && win.clips && !win.shot && !win.library
+        running: noVideo && win.clips && !win.shot && !win.library && !win.paused
         onTriggered: win.step(1)
     }
     // Left the TV on it: gone after a while (when it's been watched, or set aside for an hour)
@@ -174,11 +194,30 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ the remote
+    // Play/Pause, Rewind and Fast-forward come over MPRIS (couchbox-mediakeys): the clip or part
+    // before or after, as Left and Right
+    readonly property string onAirTitle: part.title || ""
+    function publish() { if (mpris) mpris.update(onAir, paused, onAirTitle, win.title, 0, 0); }
+    onOnAirChanged: publish()
+    onOnAirTitleChanged: publish()
+    Connections {
+        target: mpris
+        ignoreUnknownSignals: true
+        function onCommand(action, seconds) { win.media(action, seconds); }
+    }
+    function media(action, seconds) {
+        if (!onAir) return;
+        if (action === "playpause") paused = !paused;
+        else if (action === "pause" || action === "stop") paused = true;
+        else if (action === "play") paused = false;
+        else if (action === "next" || action === "seek" && seconds > 0) step(1);
+        else if (action === "previous" || action === "seek") step(-1);
+    }
     Item {
         id: keys
         focus: true
-        Keys.onLeftPressed: win.step(-1)
-        Keys.onRightPressed: win.step(1)
+        Keys.onLeftPressed: (event) => { if (!event.isAutoRepeat) win.step(-1); }     // one a press: held, each repeat loaded a clip
+        Keys.onRightPressed: (event) => { if (!event.isAutoRepeat) win.step(1); }
         Keys.onReturnPressed: if (win.clips) win.open(win.clip.target)
         Keys.onEnterPressed: if (win.clips) win.open(win.clip.target)
         Keys.onUpPressed: (event) => event.accepted = true
@@ -226,14 +265,14 @@ ApplicationWindow {
         anchors.fill: parent
         visible: win.kind === "yard"
         part: win.kind === "yard" ? win.part : ({})
-        running: visible && win.awake
+        running: visible && win.going
         onDone: win.nextPart()
     }
     Forecast {
         anchors.fill: parent
         visible: win.kind === "weather"
         info: win.weather
-        running: visible && win.awake
+        running: visible && win.going
     }
     Rectangle {                                  // the videos, over the morning's own dark
         anchors.fill: parent
@@ -351,6 +390,17 @@ ApplicationWindow {
         }
     }
     NumberAnimation { id: fadeIn; target: words; property: "opacity"; from: 0; to: 1; duration: 350; easing.type: Easing.OutCubic }
+
+    Row {                                        // paused (Play/Pause): a quiet mark, top right under the bar
+        anchors { right: parent.right; rightMargin: S.side; top: parent.top; topMargin: 86 * win.u }
+        spacing: 9 * win.u
+        opacity: win.paused && !win.library ? 0.92 : 0
+        Behavior on opacity { NumberAnimation { duration: win.paused ? 180 : 140; easing.type: Easing.OutCubic } }
+        Repeater {
+            model: 2
+            Rectangle { width: 9 * win.u; height: 30 * win.u; radius: 2 * win.u; color: S.text }
+        }
+    }
 
     // ------------------------------------------------------------------ the Reels app's list, over all of it
     Library {

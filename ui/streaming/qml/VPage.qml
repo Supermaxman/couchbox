@@ -94,7 +94,9 @@ FocusScope {
         let y = flick.contentY;
         if (bottom > y + flick.height) y = bottom - flick.height;
         if (top < y) y = top;
-        flick.contentY = Math.max(0, Math.min(y, flick.contentHeight - flick.height));
+        const to = Math.max(0, Math.min(y, flick.contentHeight - flick.height));
+        if (Math.abs(to - flick.contentY) > 1) D.movedAt = Date.now();     // (a scroll of 180 ms begins)
+        flick.contentY = to;
     }
 
     Connections {

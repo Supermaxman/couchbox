@@ -46,6 +46,7 @@ FocusScope {
     property int col: 0
     property bool caps: false
     property bool allSelected: false       // after Ctrl+A: the next Backspace clears
+    readonly property bool okRepeats: layout[row][col].k === "del"   // OK held on ⌫ keeps deleting (couchbox.keyguard lets its repeats through)
 
     readonly property var layout: {
         const ch = s => s.split("").map(k => ({k: k, label: k, w: 1}));

@@ -23,10 +23,10 @@ Rectangle {
     function setPaused(p) { paused = p; }
     property bool muted: false
     function toggleMute() { muted = !muted; return muted; }
-    function seek(d) { position = Math.max(0, Math.min(duration, position + d)); }
-    function seekTo(p) { position = p; }
+    function seek(d) { position = Math.max(0, Math.min(duration, position + d)); if (position < duration) ended = false; }
+    function seekTo(p) { position = p; if (position < duration) ended = false; }
     function setSubtitle(s) { subtitle = s; }
-    function stop() { hasFrame = false; firstFrame.stop(); }
+    function stop() { hasFrame = false; firstFrame.stop(); position = 0; duration = 0; ended = false; }   // (nothing plays on)
     Timer { id: firstFrame; interval: 400; onTriggered: parent.hasFrame = true }
     function warmUp() {}
     function preload(url, start, opts) {}

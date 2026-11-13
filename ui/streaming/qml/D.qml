@@ -17,6 +17,7 @@ QtObject {
     property bool subtitles: true              // CC on (saved by Main)
     property string chatMode: "overlay"        // Twitch chat: overlay, side, off (saved by Main)
     property real videoInset: 0                // the player page's side chat takes this from the video
+    property real movedAt: 0                   // when a page last began to scroll (VPage; ms): rows fill in after it
     readonly property string name: site.name || "Dropout"
 
     // ------------------------------------------------------------------ Dropout's look

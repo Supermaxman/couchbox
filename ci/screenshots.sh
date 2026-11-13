@@ -27,6 +27,12 @@ shot frigate-camera couchbox-frigate --keys down,ok
 shot frigate-camera-strip couchbox-frigate --keys down,ok,down
 shot frigate-review couchbox-frigate --open review
 shot frigate-recording couchbox-frigate --open review --keys right,ok
+# its controls (CouchKit's PlayerControls, shared with the streaming apps): a button in focus, the bar
+# scrubbing, a 10 s skip from the hidden controls, paused with the controls away (the pause mark)
+shot frigate-recording-button couchbox-frigate --open review --keys right,ok,wait:1,right
+shot frigate-recording-scrub couchbox-frigate --open review --keys right,ok,wait:1,up,right,right,right
+shot frigate-recording-skip couchbox-frigate --open review --keys right,ok,wait:1,back,right
+shot frigate-recording-paused couchbox-frigate --open review --keys right,ok,wait:1,ok,back
 shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin

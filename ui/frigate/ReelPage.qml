@@ -1,7 +1,9 @@
 // While you were out (couchbox.away): the home screen card's reel. Short silent clips of what the
 // cameras saw, one after another, each with what happened, when and where. Left/Right: the clip
-// before or after, OK: the whole recording in the player, Back: leave. At the end it's done (the
-// card goes) and the app leaves too.
+// before or after (one a press), OK: the whole recording in the player, Back: leave. Play/Pause
+// holds the clip (a small mark top right) until Play/Pause again or a step. While the window is
+// at the back (Home, another app) it holds too, and carries on when it's in front again. At the
+// end it's done (the card goes) and the app leaves too.
 import QtQuick
 
 FocusScope {
@@ -11,27 +13,36 @@ FocusScope {
     property int index: 0
     property bool stills: false              // no video (off-screen screenshots): the stills
     readonly property var now: clips[index] || {}
+    property bool paused: false              // Play/Pause on the remote
+    property bool away: false                // the window isn't in front: held until it is
+    readonly property bool held: paused || away
     signal openClip(var clip)
     signal closed()
     signal finished()
 
     function start(i) {
         index = Math.max(0, Math.min(clips.length - 1, i || 0));
+        paused = false;
         play();
     }
     function play() {
         if (!video || !now.file) return;
         if (now.file === "demo:clip") video.load("demo:clip", 0);
         else video.loadWith(now.file, 0, "aid=no");          // cameras: never any sound (a local file: opens at once)
+        if (held) video.setPaused(true);                      // (started at the back: from its start once in front)
     }
+    function togglePause() { paused = !paused; }
+    onHeldChanged: if (video && visible) video.setPaused(held)
+    onAwayChanged: if (!away) paused = false                  // (Home pauses every player on its way out: not held for that)
     function step(d) {
+        paused = false;                                       // (a step carries on)
         const i = index + d;
         if (i < 0) return play();                             // the first clip again
         if (i >= clips.length) return finished();
         index = i;
         play();
     }
-    function stop() { if (video) video.stop(); }
+    function stop() { paused = false; if (video) video.stop(); }
     onVisibleChanged: if (!visible) stop()
 
     Connections {
@@ -39,8 +50,8 @@ FocusScope {
         function onEndedChanged() { if (reel.visible && reel.video.ended && !reel.stills) reel.step(1); }
     }
 
-    Keys.onLeftPressed: step(-1)
-    Keys.onRightPressed: step(1)
+    Keys.onLeftPressed: (event) => { if (!event.isAutoRepeat) step(-1); }       // one a press: held, it raced through the clips
+    Keys.onRightPressed: (event) => { if (!event.isAutoRepeat) step(1); }
     Keys.onReturnPressed: openClip(now)
     Keys.onEnterPressed: openClip(now)
     Keys.onEscapePressed: closed()
@@ -114,6 +125,17 @@ FocusScope {
                          : reel.video && reel.video.duration > 0 ? parent.width * Math.min(1, reel.video.position / reel.video.duration) : 0
                 }
             }
+        }
+    }
+
+    Row {                                        // paused (Play/Pause): a quiet mark, top right under the bar
+        anchors { right: parent.right; rightMargin: reel.side; top: parent.top; topMargin: 86 * F.u }
+        spacing: 9 * F.u
+        opacity: reel.paused ? 0.92 : 0
+        Behavior on opacity { NumberAnimation { duration: reel.paused ? 180 : 140; easing.type: Easing.OutCubic } }
+        Repeater {
+            model: 2
+            Rectangle { width: 9 * F.u; height: 30 * F.u; radius: 2 * F.u; color: F.text }
         }
     }
 

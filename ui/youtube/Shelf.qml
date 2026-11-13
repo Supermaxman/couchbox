@@ -179,6 +179,7 @@ FocusScope {
             item: (shelf.row.items || [])[k] || ({})
             on: ListView.isCurrentItem && shelf.activeFocus
             w: shelf.cardW
+            fullW: shelf.grow && !shelf.row.hero && !shelf.row.topics ? Y.bigW : shelf.cardW
             boxed: shelf.boxed
             behind: shelf.behind
             captioned: !shelf.row.hero

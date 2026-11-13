@@ -118,6 +118,13 @@ FAST = {
     "hdr-compute-peak": "no",
 }
 _DEBUG = bool(os.environ.get("COUCHBOX_MPV_LOG"))  # also: what draws after a seek (MpvVideo._debug)
+# mpv's render call can wait for the picture's moment (its default: the picture handed over 50 ms
+# early, the call held until it's due). It draws on Qt's thread here, so that held the whole app:
+# over a 24-a-second video the controls and the focus moved 24 times a second too, and a key
+# waited up to 42 ms (measured: 31-36 ms of every frame inside mpv's render). Now mpv hands the
+# picture over when it's due and the call returns at once; it shows with the screen's next
+# frame, as before. COUCHBOX_MPV_BLOCK=1: mpv's default again (to compare).
+BLOCK = os.environ.get("COUCHBOX_MPV_BLOCK") == "1"
 _players = weakref.WeakSet()
 # Seeks to the keyframe at or before the spot (COUCHBOX_MPV_KEYFRAME_SEEKS=1, the YouTube app): a
 # precise one decodes from that keyframe up to the second asked for, in software on the Pi
@@ -184,7 +191,7 @@ class _Renderer(QQuickFramebufferObject.Renderer):
             t = time.monotonic()
             TIMING("frame", open=round((it._t_loaded - it._t_load) * 1000), frame=round((t - it._t_loaded) * 1000), start=it._t_start)
             it._t_load = it._t_loaded = 0.0
-        self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()})
+        self.ctx.render(flip_y=False, opengl_fbo={"w": fbo.width(), "h": fbo.height(), "fbo": fbo.handle()}, block_for_target_time=BLOCK)
         if it._await_frame == "render":  # this file's first picture is drawn: what covers it can go
             it._await_frame = ""
             it._prop.emit("frame", True)
@@ -249,6 +256,18 @@ class MpvVideo(QQuickFramebufferObject):
             if os.environ.get("COUCHBOX_MPV_LOG")
             else None,
         )
+        if not BLOCK:
+            try:
+                self.mpv["video-timing-offset"] = 0  # each picture handed over when it's due (BLOCK, above)
+            except Exception:  # noqa: BLE001  (an mpv without the option: early, as before)
+                pass
+        if os.environ.get("COUCHBOX_MPV_SUB_CLEAR") == "1":
+            # the streaming apps' subtitles: after a skip back, mpv read the same lines again and
+            # showed them twice (three times after two skips); it forgets them at each seek instead
+            try:
+                self.mpv["sub-clear-on-seek"] = "yes"
+            except Exception:  # noqa: BLE001
+                pass
         if os.environ.get("COUCHBOX_MPV_SUB_BOX") == "1":
             # an app's caption look, the YouTube app's as VacuumTube draws them (measured at 1080p):
             # Roboto at 48 px on a solid black box, lines left-aligned from 441 px in, the last one

@@ -99,7 +99,11 @@ FocusScope {
         footer: Item { width: 1; height: feed.bottomRoom }
         Keys.onUpPressed: e => { if (currentIndex === 0) feed.atTop(); else decrementCurrentIndex(); }
         Keys.onDownPressed: incrementCurrentIndex()
-        onCurrentIndexChanged: if (count && currentIndex >= count - 3) feed.loadMore()
+        onCurrentIndexChanged: {
+            feed.rested = false;
+            rest.restart();
+            if (count && currentIndex >= count - 3) feed.loadMore();
+        }
         delegate: Loader {
             id: cell
             required property int k
@@ -111,7 +115,22 @@ FocusScope {
             // rows above the current one are gone (as on YouTube), and their cards' corners
             // (Shapes) mustn't draw past the list's clip
             visible: index >= list.currentIndex
-            sourceComponent: ({chips: chipsC, nudge: nudgeC, tiles: tilesC, cluster: clusterC, refresh: refreshC})[modelData.kind] || shelfC
+            // A row off screen (kept ready past the edge: cacheBuffer) is made once the feed has come
+            // to rest, a row in sight at once. Making one takes about 50 ms on the Pi: as the list
+            // scrolled the next one into its buffer, that was 3 frames lost in the middle of the move.
+            readonly property bool near: current || (index > list.currentIndex && y < list.contentY + list.height)
+            property bool made: false
+            property bool placed: false               // the list has put it in its place (it starts at 0: "in sight")
+            function make() { if (!made && placed && (near || feed.rested)) made = true; }
+            onNearChanged: make()
+            Timer { interval: 0; running: true; onTriggered: { cell.placed = true; cell.make(); } }   // (a timer: it goes with the row, should the list drop it first)
+            Connections { target: feed; function onRestedChanged() { cell.make(); } }
+            sourceComponent: !made ? waitingC
+                : ({chips: chipsC, nudge: nudgeC, tiles: tilesC, cluster: clusterC, refresh: refreshC})[modelData.kind] || shelfC
+            Component {
+                id: waitingC
+                Item { width: 1; height: 560 * Y.u }      // about a shelf's height, until it's made
+            }
             Component {
                 id: shelfC
                 Shelf {
@@ -183,6 +202,10 @@ FocusScope {
             }
         }
     }
+
+    // the feed has stopped moving (a little after the last step: the scroll takes 220 ms)
+    property bool rested: true
+    Timer { id: rest; interval: 300; onTriggered: feed.rested = true }
 
     property bool loading: false
     function loadMore() {
