@@ -43,6 +43,11 @@ chapters with their pictures, the storyboard while scrubbing, Description, comme
 replies, the channel's panel and notifications), the card menu (hold OK), Shorts, Cast from
 phones and Link with TV code, Restricted mode and a parent code, Autoplay next video.
 
+Ours: Autoplay next video is also a row in the player's settings menu (On / Off, the same
+setting as Settings'), and Up next says AUTOPLAY IS OFF when it won't count down. YouTube's TV
+app has it only in Settings: its player menu (Quality, Captions, Speed, Repeat...) has no
+autoplay row, and only YouTube Kids puts an autoplay button in the player.
+
 Extras (VacuumTube's, in Settings): no ads, SponsorBlock (the marked parts on the bar, skipped by
 kind), DeArrow, Return YouTube Dislike, Hide Shorts, H.264 only, Unlock resolution, Remove Super
 Resolution, Show remaining time, Pause on blur, Block "Continue watching?", the guide's tabs,

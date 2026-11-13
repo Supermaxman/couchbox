@@ -182,7 +182,12 @@ shot yt-player-comment-plain couchbox-yt --open video:demo0000003 --keys left,le
 shot yt-player-settings couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok
 shot yt-player-quality couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,ok
 shot yt-player-cc couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,ok
+# ... Autoplay next video in it (the same switch as Settings'), focused, and flipped off
+shot yt-player-autoplay couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,down,down,down
+shot yt-player-autoplay-off couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,down,down,down,ok,wait:1
 shot yt-player-end couchbox-yt --open video:demo0000003@3598
+# ... with autoplay turned off in the player first: no countdown, AUTOPLAY IS OFF beside UP NEXT
+shot yt-player-end-autoplay-off couchbox-yt --open video:demo0000003@3592 --keys right,right,right,right,right,right,right,right,right,ok,down,down,down,ok,back,back,wait:6
 # ... its Replay focused (Left), the row of more videos (Down)
 shot yt-player-end-replay couchbox-yt --open video:demo0000003@3598 --keys wait:3,left
 shot yt-player-end-more couchbox-yt --open video:demo0000003@3598 --keys wait:3,down,right

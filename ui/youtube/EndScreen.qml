@@ -130,6 +130,13 @@ FocusScope {
             height: 72 * Y.u
             text: end.queued ? "NEXT IN YOUR QUEUE" : end.counting ? "UP NEXT IN " + Math.max(0, end.remaining) : "UP NEXT"
             color: Y.text; font.family: Y.font; font.pixelSize: 36 * Y.u; font.weight: Font.Bold
+            // Autoplay next video off (the player's settings menu, or Settings): said beside it
+            Text {
+                visible: !end.auto
+                x: parent.contentWidth + 24 * Y.u; height: parent.height
+                text: "AUTOPLAY IS OFF"
+                color: "#909090"; font: parent.font
+            }
         }
         Text {
             width: parent.width
