@@ -3,8 +3,9 @@
 front of the home screen. It plays this morning's show silently with captions: yesterday's
 backyard sped up, the night's camera moments, the pets' best of yesterday, the radar with
 today's forecast (fetched as it plays), and the YouTube subscriptions' new videos. Left/Right:
-the clip or part before or after; OK on a camera moment opens it in the Frigate app at that
-time, OK on a video plays it in the YouTube app; Back leaves. Watched to the end, its tile goes.
+the clip or part before or after (Rewind/Fast-forward too); Play/Pause holds it there; OK on a
+camera moment opens it in the Frigate app at that time, OK on a video plays it in the YouTube
+app; Back leaves. Watched to the end, its tile goes.
 couchbox-morning (the TV user's service) makes the show overnight; the QML is in
 /usr/share/couchbox/ui/show.
 
@@ -16,7 +17,7 @@ couchbox-morning (the TV user's service) makes the show overnight; the QML is in
                                      render once off screen (a made-up show; --file: a real one
                                      couchbox-morning wrote; --part: start at that part; --reels:
                                      made-up reels)
-Tests: COUCHBOX_MUTE=1 (no sound).
+Tests: COUCHBOX_MUTE=1 (no sound), COUCHBOX_NO_MPRIS=1 (don't take the remote's media keys).
 """
 import json
 import locale
@@ -40,6 +41,7 @@ def arg(name):
 
 os.environ.setdefault("QSG_RENDER_LOOP", "basic")   # libmpv draws on Qt Quick's thread
 os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"
+os.environ.setdefault("COUCHBOX_MPV_KEYFRAME_SEEKS", "1")   # skips to a keyframe: 1.5-2 s sooner on the Pi (player.KEYFRAMES)
 
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QUrl, Signal, Slot  # noqa: E402
 from PySide6.QtGui import QGuiApplication, QKeyEvent  # noqa: E402
@@ -285,10 +287,24 @@ def main():
     ctx.setContextProperty("control", control)
     ctx.setContextProperty("shooter", shooter)
     ctx.setContextProperty("noVideo", bool(os.environ.get("COUCHBOX_NO_VIDEO")))
+    mpris = None
+    if not os.environ.get("COUCHBOX_NO_VIDEO") and not os.environ.get("COUCHBOX_NO_MPRIS"):
+        try:                                         # the remote's Play/Pause, Rewind and Fast-forward (couchbox-mediakeys)
+            from couchbox import mpris as mpris_mod
+            mpris = mpris_mod.Mpris(f"couchbox_{SITE}", "Reels" if REELS else "Morning show", name)
+        except Exception as err:
+            print(f"MPRIS not available: {err}", flush=True)
+    ctx.setContextProperty("mpris", mpris)
     engine.load(QUrl.fromLocalFile(QML))
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
+    from couchbox import frameclock
+
+    frameclock.attach(shooter.window)  # animations in step with the screen's frames (the basic render loop)
+    from couchbox import keyguard
+
+    shooter.guard = keyguard.install(shooter.window)  # OK, Back, Menu and Play/Pause act once per press
     code = app.exec()
     if control.server:
         control.server.close()

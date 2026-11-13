@@ -249,15 +249,14 @@ ApplicationWindow {
         else if (o === "mylist") win.showSection(2);
         else if (o === "home") win.showSection(0);
     }
-    function mediaCommand(a, s) {
+    function mediaCommand(a, s) {              // through the player page: shown on screen as the remote's keys are
         if (!win.playing) return;
-        if (a === "play") video.setPaused(false);
-        else if (a === "pause") video.setPaused(true);
-        else if (a === "toggle") video.togglePause();
-        else if (a === "forward") video.seek(s || 30);
-        else if (a === "back") video.seek(-(s || 10));
-        else if (a === "seek") video.seekTo(s);
-        else if (a === "restart") video.seekTo(0);
+        const p = stack.currentItem;
+        if (a === "play" || a === "pause" || a === "toggle") p.media(a);
+        else if (a === "forward") p.media("seek", s || 10);
+        else if (a === "back") p.media("seek", -(s || 10));
+        else if (a === "seek") p.media("seekTo", s);
+        else if (a === "restart") p.media("seekTo", 0);
         Qt.callLater(win.pushState);
     }
     function pushState() {

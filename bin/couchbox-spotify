@@ -394,6 +394,12 @@ def app_main():
     if not engine.rootObjects():
         sys.exit("Main.qml didn't load")
     shooter.window = engine.rootObjects()[0]
+    from couchbox import frameclock
+
+    frameclock.attach(shooter.window)  # animations in step with the screen's frames (the basic render loop)
+    from couchbox import keyguard
+
+    shooter.guard = keyguard.install(shooter.window)  # OK, Back, Menu and Play/Pause act once per press
     backend.first_paint()
     code = app.exec()
     if control.server:

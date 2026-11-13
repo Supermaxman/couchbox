@@ -2,7 +2,9 @@
 // previous or next camera in the group. Down: this camera's timeline and recent activity (OK
 // opens the timeline or plays the item).
 // Back: the strip, then the dashboard. If live video doesn't start, its picture refreshes
-// every second instead.
+// every second instead. A live camera has nothing to pause: the remote's Play/Pause does nothing
+// here. While the window is at the back (Home, another app) the stream is let go (Main), and
+// connects again (live()) once it's in front.
 import QtQuick
 
 FocusScope {
@@ -17,19 +19,26 @@ FocusScope {
     property var recent: []
     property bool strip: false
     property int si: 0
+    property int asked: 0                    // the stream asked for last (an answer to an earlier ask is dropped)
     signal closed()
     signal openReview(var r, var list)
     signal openTimeline(string name)
 
     function start() {
-        connecting = true; stills = false; lastPos = -1; strip = false; recent = [];
+        strip = false; recent = [];
+        if (cam.name) F.call("reviews", {severity: "all", cameras: [cam.name], limit: 12}, r => { if (r.items) recent = r.items; });
+        live();
+    }
+    function live() {                            // the stream (again: the strip and what's in it stay)
+        connecting = true; stills = false; lastPos = -1;
+        const n = ++asked;
         if (!cam.name) return;
-        F.call("live", {stream: cam.stream}, r => { if (view.visible && r.url) video.loadLive(r.url); else if (!r.url) stalled.fail(); },
-               () => stalled.fail());
-        F.call("reviews", {severity: "all", cameras: [cam.name], limit: 12}, r => { if (r.items) recent = r.items; });
+        F.call("live", {stream: cam.stream}, r => { if (n !== view.asked) return; if (view.visible && r.url) video.loadLive(r.url); else if (!r.url) stalled.fail(); },
+               () => { if (n === view.asked) stalled.fail(); });
         watchdog.restart();
     }
-    function stop() { watchdog.stop(); if (video) video.stop(); }
+    function stop() { asked++; watchdog.stop(); if (video) video.stop(); }
+    function letGo() { stop(); stills = false; connecting = true; }   // at the back: no stream, no pictures, until live()
     function step(d) {
         if (cams.length < 2) return;
         index = (index + d + cams.length) % cams.length;

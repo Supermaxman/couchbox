@@ -71,6 +71,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkDiskCache  # noqa: 
 from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory, qmlRegisterType  # noqa: E402
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
+from couchbox import keyguard  # noqa: E402
 from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming, ytworker  # noqa: E402
 
 
@@ -963,44 +964,6 @@ class Watch(QObject):
 watch = Watch()
 
 
-class KeyFilter(QObject):
-    """OK, Back and the other one-shot keys act once per press, on whatever had the focus when
-    they went down: their repeats (held, or the compositor's) are dropped, and so is a release
-    that arrives after the press moved the focus (the press that opened Search typed nothing,
-    the press that opened a panel picked nothing in it)."""
-    ONCE = ("Key_Return", "Key_Enter", "Key_Select", "Key_Escape", "Key_Back", "Key_Menu", "Key_MediaTogglePlayPause",
-            "Key_MediaPlay", "Key_MediaPause")
-
-    pressed = Signal()                               # any key (someone's there: no "Continue watching?")
-
-    def __init__(self, window=None):
-        from PySide6.QtCore import Qt
-
-        super().__init__()
-        self.window = window
-        self.keys = {int(getattr(Qt, k)) for k in self.ONCE}
-        self.down = {}
-
-    def eventFilter(self, obj, ev):
-        from PySide6.QtCore import QEvent, Qt
-
-        if ev.type() == QEvent.KeyPress and not ev.isAutoRepeat():
-            self.pressed.emit()
-            try:
-                watch.key(Qt.Key(int(ev.key())).name)
-            except ValueError:                           # (a key Qt has no name for)
-                watch.key(str(int(ev.key())))
-        if ev.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or int(ev.key()) not in self.keys:
-            return False
-        if ev.isAutoRepeat():
-            return True
-        focus = self.window.activeFocusItem()
-        if ev.type() == QEvent.KeyPress:
-            self.down[int(ev.key())] = focus
-            return False
-        return self.down.pop(int(ev.key()), None) is not focus
-
-
 class Network(QQmlNetworkAccessManagerFactory):
     """The QML's downloads (thumbnails, channel pictures), through a disk cache, so going back to a
     page doesn't fetch its pictures again."""
@@ -1060,7 +1023,7 @@ def main():
     ctx.setContextProperty("backend", backend)
     ctx.setContextProperty("control", control)
     ctx.setContextProperty("shooter", shooter)
-    keyfilter = KeyFilter()
+    keyfilter = keyguard.KeyGuard(on_key=watch.key)   # OK, Back, Menu, Play/Pause: once per press; its pressed signal
     ctx.setContextProperty("keyfilter", keyfilter)
     ctx.setContextProperty("demo", demo)
     ctx.setContextProperty("hasVideo", not os.environ.get("COUCHBOX_NO_VIDEO"))
@@ -1077,9 +1040,11 @@ def main():
         sys.exit("Main.qml didn't load")
     started("qml")
     shooter.window = Shooter.window = engine.rootObjects()[0]     # (the class's too: the memory report's census)
+    from couchbox import frameclock
+
+    frameclock.attach(shooter.window)  # animations in step with the screen's frames (the basic render loop)
     shooter.window.frameSwapped.connect(lambda: getattr(shooter, "_drawn", False) or (setattr(shooter, "_drawn", True), started("first-frame")))
-    keyfilter.window = shooter.window
-    shooter.window.installEventFilter(keyfilter)
+    keyfilter.attach(shooter.window)
     from PySide6.QtCore import QTimer
 
     from couchbox import playback, player

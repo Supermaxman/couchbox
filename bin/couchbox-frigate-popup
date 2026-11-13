@@ -763,6 +763,9 @@ def main():
     if not engine.rootObjects():
         sys.exit("Popup.qml didn't load")
     shooter.window = engine.rootObjects()[0]
+    from couchbox import frameclock
+
+    frameclock.attach(shooter.window)  # animations in step with the screen's frames (the basic render loop)
     if shot and arg("--weather") == "now":           # what the weather would pop up now (real forecast)
         QTimer.singleShot(300, lambda: (popup.check_alerts(time.time()), popup.check_rain(time.time())))
     elif shot and "--weather" in sys.argv:           # a made-up weather pop-up (--test: labelled as one)

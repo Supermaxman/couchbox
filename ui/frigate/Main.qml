@@ -32,6 +32,8 @@ ApplicationWindow {
     property string overlay: ""              // "" | camera | player | reel
     property string playerFrom: ""           // where Back from a recording goes
     property var typed: null                 // the keyboard pop-up types for this
+    readonly property bool front: win.active || noVideo   // in front (off screen there's no active window)
+    property bool camLetGo: false            // the camera's stream was let go while the window was at the back
 
     Component.onCompleted: { F.u = u; start(); }
     function start() {
@@ -79,6 +81,7 @@ ApplicationWindow {
         else if (e.kind === "signout") F.call("signout", {}, s => { F.status = s; mode = "signin"; signin.user = ""; signin.forceActiveFocus(); });
     }
     function openCamera(cams, i) {
+        camLetGo = false;
         camera.cams = cams; camera.index = i;
         overlay = "camera";
         camera.forceActiveFocus();
@@ -129,6 +132,16 @@ ApplicationWindow {
         if (watched) F.call("reelSeen", {}, () => Qt.quit(), () => Qt.quit());
         else Qt.quit();
     }
+    // At the back (Home, another app): nothing plays on unseen. The reel holds (ReelPage.away: it
+    // used to play on, mark itself watched at its end and quit) and a live camera's stream is let
+    // go; in front again the reel carries on and the camera connects again. A recording stays as
+    // it is: Home pauses it (couchbox-pause-all) and Play/Pause brings it back.
+    onFrontChanged: {
+        if (overlay === "camera" && !front) camera.letGo();
+        else if (overlay === "camera" && camLetGo) camera.live();
+        camLetGo = overlay === "camera" && !front;
+        updateState();
+    }
     function openFromArgs() {
         const o = arg("--open");
         if (o) openTarget(o);
@@ -169,8 +182,8 @@ ApplicationWindow {
         if (overlay === "camera") st.camera = camera.cam.label;
         if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + F.seen(player.r);
         control.setState(JSON.stringify(st));
-        if (mpris) {
-            const on = overlay !== "";
+        if (mpris) {                             // (a camera or the reel at the back plays nothing: not a player then)
+            const on = overlay === "player" || overlay !== "" && front;
             mpris.update(on, on && video.paused, overlay === "camera" ? camera.cam.label || "" : (player.r.cameraLabel || ""),
                          "Frigate", overlay === "player" ? video.duration : 0, overlay === "player" ? video.position : 0);
         }
@@ -189,12 +202,24 @@ ApplicationWindow {
         function onCommand(action, seconds) { win.media(action, seconds); }
     }
     function media(action, seconds) {               // the remote's media keys, Home (pause-all), the voice assistant
-        if (overlay === "player") {
+        if (overlay === "player" && player.media) {     // the recording's player does it, and shows it on screen
+            if (action === "playpause") player.media("toggle");
+            else if (action === "pause" || action === "stop") player.media("pause");
+            else if (action === "play") player.media("play");
+            else if (action === "seek" || action === "previous") player.media("seek", seconds || 10);
+            else if (action === "seekto") player.media("seekTo", seconds || 0);
+        } else if (overlay === "player") {
             if (action === "playpause") video.togglePause();
             else if (action === "pause" || action === "stop") video.setPaused(true);
             else if (action === "play") video.setPaused(false);
             else if (action === "seek" || action === "previous") video.seek(seconds || 10);
-        } else if (overlay === "camera" && (action === "pause" || action === "stop")) closeCamera();
+        } else if (overlay === "reel" && front) {       // Rewind / Fast-forward: the clip before or after
+            if (action === "playpause") reel.togglePause();
+            else if (action === "pause" || action === "stop") reel.paused = true;
+            else if (action === "play") reel.paused = false;
+            else if (action === "next" || action === "seek" && seconds > 0) reel.step(1);
+            else if (action === "previous" || action === "seek") reel.step(-1);
+        } else if (overlay === "camera" && action === "stop") closeCamera();   // (a live camera has nothing to pause)
         updateState();
     }
 
@@ -277,6 +302,7 @@ ApplicationWindow {
         visible: win.overlay === "reel"
         video: video
         stills: noVideo
+        away: !win.front
         onOpenClip: c => win.openReview(c.r, [c.r], "reel")
         onClosed: win.leaveReel(false)
         onFinished: win.leaveReel(true)
@@ -334,9 +360,10 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ idle, off-screen tests
-    // Quit after an hour without use, unless a camera or a recording is up.
+    // Quit after an hour without use, unless a camera or a recording is up (a camera or the reel
+    // left at the back for an hour goes too).
     onActiveFocusItemChanged: idle.restart()
-    Timer { id: idle; interval: 60 * 60 * 1000; running: win.overlay === ""; onTriggered: Qt.quit() }
+    Timer { id: idle; interval: 60 * 60 * 1000; running: win.overlay === "" || !win.front && win.overlay !== "player"; onTriggered: Qt.quit() }
 
     // --shot FILE [--open camera:NAME | review | detections | popups] [--signin] [--keys k1,wait:SECONDS,k2,...]
     property var shotKeys: []
