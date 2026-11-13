@@ -33,15 +33,21 @@ FocusScope {
     property string focusedKey: ""
     property string hadFirst: ""
     function welcome(x) { return x.key === "away" || x.key === "day"; }
+    // (the list's model is set here, after the place is worked out: a new model puts the list
+    // back at its first card, which would count as the card in focus; a removed card's place goes
+    // to the one after it)
     onItemsChanged: {
         const first = items.length > 0 && welcome(items[0]) ? items[0].key : "";
         if (first && first !== hadFirst) focusedKey = first;
         hadFirst = first;
         let i = items.findIndex(x => x.key === focusedKey);
         if (i < 0) i = Math.min(Math.max(0, list.currentIndex), items.length - 1);
+        list.model = items;
         list.currentIndex = i;
         if (!shown && activeFocus && navigationUp) navigationUp.forceActiveFocus();
     }
+
+    Component.onCompleted: if (list.count === 0 && items.length > 0) list.model = items
 
     Text {
         id: label
@@ -68,7 +74,6 @@ FocusScope {
         preferredHighlightBegin: 0
         preferredHighlightEnd: width
         boundsBehavior: Flickable.StopAtBounds
-        model: root.items
         onCurrentIndexChanged: if (currentIndex >= 0 && currentIndex < root.items.length) root.focusedKey = root.items[currentIndex].key
 
         delegate: ContinueCard {
