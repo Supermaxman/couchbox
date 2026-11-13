@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/Supermaxman/couchbox/compare/v0.26.0...v0.27.0) (2026-11-13)
+
+
+### New
+
+* **home:** Continue watching card menu, Twitch only when watched here, Restart on app tiles; Frigate and YouTube fixes ([#138](https://github.com/Supermaxman/couchbox/issues/138)) ([18e58fe](https://github.com/Supermaxman/couchbox/commit/18e58feb726cf7c5b015758924408bb844f935e5))
+
 ## [0.26.0](https://github.com/Supermaxman/couchbox/compare/v0.25.0...v0.26.0) (2026-11-12)
 
 
