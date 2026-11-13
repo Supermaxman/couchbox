@@ -16,16 +16,20 @@ FocusScope {
     signal openReview(var r, var list)
     signal toRail()
 
+    property int req: 0
     function load() {
         loading = true; problem = "";
-        const g = F.groups[group];
+        const g = F.groups[group], n = ++req;
         F.call("reviews", {severity: tab === 0 ? "alert" : "detection", cameras: group > 0 && g ? g.cameras : null, limit: 80},
-               r => { items = r.items; loading = false; ci = Math.min(ci, Math.max(0, items.length - 1)); },
-               e => { problem = e; loading = false; });
+               r => { if (n !== req) return;      // the tab or group changed since: a newer answer is coming
+                      if (JSON.stringify(r.items) !== JSON.stringify(items)) items = r.items;   // unchanged: the cards stay as they are
+                      loading = false; ci = Math.min(ci, Math.max(0, items.length - 1)); },
+               e => { if (n === req) { problem = e; loading = false; } });
     }
-    // only while it's showing (and so signed in): it isn't loaded behind the sign-in page
-    onGroupChanged: { ci = 0; if (visible) load(); }
-    onTabChanged: { ci = 0; if (visible) load(); }
+    // only while it's showing (and so signed in): it isn't loaded behind the sign-in page. Other alerts or
+    // detections: not the last ones' cards (under "Loading…") while they come
+    onGroupChanged: { ci = 0; items = []; if (visible) load(); }
+    onTabChanged: { ci = 0; items = []; if (visible) load(); }
     onVisibleChanged: if (visible) load()
 
     function ensureVisible() {
@@ -110,7 +114,7 @@ FocusScope {
     }
     Text {
         anchors.centerIn: flick
-        visible: page.loading || page.problem || !page.items.length
+        visible: !page.items.length
         text: page.loading ? "Loading…" : page.problem ? page.problem : page.tab === 0 ? "No alerts." : "No detections."
         color: F.dim; font.family: F.font; font.pixelSize: 30 * F.u
     }

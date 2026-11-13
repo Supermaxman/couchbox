@@ -66,12 +66,24 @@ FocusScope {
             FButton { visible: page.configured; width: parent.width; primary: true; text: page.busy ? "Signing in…" : "Sign in"
                       color: page.activeFocus && page.idx === 2 ? F.accent : "#1d4ed8"
                       border.color: page.activeFocus && page.idx === 2 ? "white" : "transparent"; border.width: 3 * F.u }
-            Text { visible: !!page.problem; width: parent.width; wrapMode: Text.WordWrap; text: page.problem; color: F.alert; font.family: F.font; font.pixelSize: 25 * F.u }
-            Text {
-                visible: page.configured
-                width: parent.width; wrapMode: Text.WordWrap
-                text: "A Viewer account is enough (Frigate → Settings → Users). The TV remembers it and signs in again by itself."
-                color: F.faint; font.family: F.font; font.pixelSize: 22 * F.u
+            Item {                               // a problem takes the note's place: the box doesn't grow and jump
+                visible: page.configured || !!page.problem
+                width: parent.width
+                height: Math.max(note.implicitHeight, problemText.implicitHeight)
+                Text {
+                    id: note
+                    visible: page.configured && !page.problem
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: "A Viewer account is enough (Frigate → Settings → Users). The TV remembers it and signs in again by itself."
+                    color: F.faint; font.family: F.font; font.pixelSize: 22 * F.u
+                }
+                Text {
+                    id: problemText
+                    visible: !!page.problem
+                    width: parent.width; wrapMode: Text.WordWrap
+                    text: page.problem
+                    color: F.alert; font.family: F.font; font.pixelSize: 22 * F.u
+                }
             }
         }
     }

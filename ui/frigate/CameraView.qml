@@ -128,7 +128,7 @@ FocusScope {
 
     Rectangle {                                  // Down: this camera's recent activity
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        height: stripList.height + 150 * F.u
+        height: probe.implicitHeight + 150 * F.u
         visible: view.strip
         gradient: Gradient {
             GradientStop { position: 0; color: "#00000000" }
@@ -137,47 +137,56 @@ FocusScope {
         }
         Text { x: 60 * F.u; y: 40 * F.u; text: "Timeline and recent activity"; color: F.text; font.family: F.font; font.pixelSize: F.tHead - 2 * F.u; font.weight: Font.DemiBold }
         ReviewCard { id: probe; visible: false; width: 330 * F.u; showCamera: false }
-        ListView {
+        ListView {                               // clipped to the margins (it scrolls), with room for the focused card to grow
             id: stripList
-            x: 60 * F.u; y: 100 * F.u
-            width: parent.width - 60 * F.u - F.edge
-            height: probe.implicitHeight
+            readonly property real pad: 16 * F.u   // room for the focused card to grow (less than the spacing: a scrolled-off card stays out of sight)
+            x: 60 * F.u - pad; y: 100 * F.u - pad
+            width: parent.width - 60 * F.u - F.edge + 2 * pad
+            height: probe.implicitHeight + 2 * pad
             orientation: ListView.Horizontal
             spacing: F.gap
             interactive: false
+            clip: true
             model: [null].concat(view.recent)
             currentIndex: view.si
+            header: Item { width: stripList.pad; height: 1 }
+            footer: Item { width: stripList.pad; height: 1 }
             highlightRangeMode: ListView.ApplyRange
-            preferredHighlightBegin: 0
-            preferredHighlightEnd: width - 340 * F.u
+            preferredHighlightBegin: pad
+            preferredHighlightEnd: width - pad - 340 * F.u
             highlightMoveDuration: 180
-            delegate: Loader {
+            delegate: Item {
+                id: slot
                 required property var modelData
                 required property int index
-                width: 330 * F.u; height: probe.implicitHeight
-                sourceComponent: index === 0 ? timelineCard : itemCard
-                Component {
-                    id: itemCard
-                    ReviewCard { r: modelData; showCamera: false; current: view.si === index }
-                }
-                Component {
-                    id: timelineCard
-                    Item {
-                        Rectangle {
-                            anchors.fill: parent; radius: F.radius
-                            color: view.si === 0 ? F.panel2 : F.panel
-                            Column {
-                                anchors.centerIn: parent
-                                spacing: 16 * F.u
-                                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 84 * F.u; height: width; sourceSize: F.sz(width, height); source: F.icon("timeline") }
-                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Timeline"; color: F.text; font.family: F.font; font.pixelSize: F.tBody; font.weight: Font.DemiBold }
-                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "The last 24 hours"; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta }
+                width: 330 * F.u; height: stripList.height
+                Loader {
+                    y: stripList.pad
+                    width: parent.width; height: probe.implicitHeight
+                    sourceComponent: index === 0 ? timelineCard : itemCard
+                    Component {
+                        id: itemCard
+                        ReviewCard { r: modelData; showCamera: false; current: view.si === index }
+                    }
+                    Component {
+                        id: timelineCard
+                        Item {
+                            Rectangle {
+                                anchors.fill: parent; radius: F.radius
+                                color: view.si === 0 ? F.panel2 : F.panel
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 16 * F.u
+                                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 84 * F.u; height: width; sourceSize: F.sz(width, height); source: F.icon("timeline") }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Timeline"; color: F.text; font.family: F.font; font.pixelSize: F.tBody; font.weight: Font.DemiBold }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "The last 24 hours"; color: F.dim; font.family: F.font; font.pixelSize: F.tMeta }
+                                }
                             }
+                            Rectangle { anchors.fill: parent; anchors.margins: -F.ring; radius: F.radius + F.ring; color: "transparent"
+                                        border.color: F.focus; border.width: F.ring; visible: view.si === 0 }
+                            scale: view.si === 0 ? F.lift : 1
+                            Behavior on scale { NumberAnimation { duration: 120 } }
                         }
-                        Rectangle { anchors.fill: parent; anchors.margins: -F.ring; radius: F.radius + F.ring; color: "transparent"
-                                    border.color: F.focus; border.width: F.ring; visible: view.si === 0 }
-                        scale: view.si === 0 ? F.lift : 1
-                        Behavior on scale { NumberAnimation { duration: 120 } }
                     }
                 }
             }

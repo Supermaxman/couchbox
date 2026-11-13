@@ -89,7 +89,7 @@ FocusScope {
                         visible: n > 0
                         anchors { right: parent.right; rightMargin: 18 * F.u; verticalCenter: parent.verticalCenter }
                         width: Math.max(height, badgeText.implicitWidth + 18 * F.u); height: 36 * F.u; radius: height / 2
-                        color: entryCol.modelData.kind === "review" ? F.alert : F.panel2
+                        color: entryCol.modelData.kind === "review" ? F.alert : parent.cur ? "#3f3f46" : F.panel2   // (zinc-700: seen on the focused row too)
                         Text { id: badgeText; anchors.centerIn: parent; text: badge.n; color: entryCol.modelData.kind === "review" ? "white" : F.dim; font.family: F.font; font.pixelSize: 20 * F.u; font.weight: Font.DemiBold }
                     }
                 }
