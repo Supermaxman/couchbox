@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.1](https://github.com/Supermaxman/couchbox/compare/v0.27.0...v0.27.1) (2026-11-13)
+
+
+### Fixed
+
+* **remote:** Bluetooth on at every login, so a reboot can't leave the Fire remote dead ([#140](https://github.com/Supermaxman/couchbox/issues/140)) ([3b61ce9](https://github.com/Supermaxman/couchbox/commit/3b61ce9c7bdc159e9eb64d6c745ed2bae946a6f9))
+* **remote:** Bluetooth on at every login, so a reboot can't leave the Fire remote dead ([#140](https://github.com/Supermaxman/couchbox/issues/140)) ([d47a0c8](https://github.com/Supermaxman/couchbox/commit/d47a0c84f70596a9cf2c2a6f7990fdca9d339b77))
+
 ## [0.27.0](https://github.com/Supermaxman/couchbox/compare/v0.26.0...v0.27.0) (2026-11-13)
 
 
