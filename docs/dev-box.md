@@ -79,6 +79,21 @@ ci/box-check.sh couchbox-dev --perf  # any ci/yt-box-check.py arguments pass thr
   ```
 - **Releases:** with updates on Manual, a new release never lands on the box by itself. Install it from Settings → Updates (or `couchbox update install`) when you're ready. It replaces everything you pushed.
 
+## Testing the setup again
+
+Keep a USB stick in one of the box's blue ports and the Ethernet cable in: the stick is the box's installer, and Ethernet is always the way back in. Nothing here needs anyone at the box.
+
+```sh
+ci/box-reset.sh couchbox-dev --quick --keep-remote      # setup from Hello again, in about two minutes
+ci/box-reset.sh couchbox-dev --image latest --preseed couchbox.toml --keys ~/.ssh/id_ed25519.pub
+ci/box-wifi-check.sh couchbox-dev MyWiFi wifi-password.txt --hotspot --scan-from laptop
+```
+
+- **`--quick`** clears the setup's progress, saved Wi-Fi and (without `--keep-remote`) the paired remotes, then restarts. The system and its apps stay.
+- **`--image VERSION|latest`** is a first start as on a new box: it writes that release onto the stick (checked against its published checksum), adds the preseed and the admin keys, blanks the SSD's partition table and start-up partition, and restarts at once. The Pi tries the SSD before USB, so the box starts from the stick, and the setup runs from Hello, Install to SSD included. The preseed needs `[ssh] github_user` (SSH is off on a new box) and, to find the box on Tailscale, a `[tailscale] auth_key`.
+- **`box-wifi-check.sh`** joins a Wi-Fi network the way the setup does, with Ethernet off, checks it's online over Wi-Fi, and (`--hotspot`) starts the setup's own Wi-Fi while another Linux host with Wi-Fi scans for it on a timer. A timer on the box brings Ethernet back whatever happens (`--lifeline MINUTES`). The password is read from a file and never put on a command line.
+- Drive the setup's screens with `couchbox-remote` and check each one with a screenshot (below). Only pairing a remote needs a hand on it.
+
 ## Screenshots and recordings
 
 ```sh
