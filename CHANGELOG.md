@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.4](https://github.com/Supermaxman/couchbox/compare/v0.29.3...v0.29.4) (2026-11-15)
+
+
+### Fixed
+
+* **setup:** something always moves while setup works, the cursor starts on the recommended action, and YouTube is ready on a new box ([#154](https://github.com/Supermaxman/couchbox/issues/154)) ([056955b](https://github.com/Supermaxman/couchbox/commit/056955b87a98252328c087b04cdeaac7b1f93312))
+
 ## [0.29.3](https://github.com/Supermaxman/couchbox/compare/v0.29.2...v0.29.3) (2026-11-15)
 
 
