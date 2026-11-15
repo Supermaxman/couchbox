@@ -204,8 +204,8 @@ def _run_progress(cmd: list[str], on_line: Callable[[str], None], timeout: float
     log.info("running %s", " ".join(cmd))
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env={**os.environ, "LC_ALL": "C"})
     end, line, tail, prev = time.monotonic() + timeout, "", [], ""
-    assert p.stdout
-    while chunk := os.read(p.stdout.fileno(), 4096).decode(errors="replace"):
+    fd = p.stdout.fileno() if p.stdout else -1
+    while chunk := os.read(fd, 4096).decode(errors="replace"):
         for ch in chunk:
             if ch == "\n":
                 on_line(line)
