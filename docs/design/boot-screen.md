@@ -18,15 +18,22 @@ box that unlocks its disk over the network spends most of its boot there.
   bar and line in the same places) fills the rest as Plasma starts, so the hand-over doesn't show.
 - **The log panel** slides up over the bottom third with the last lines of the journal. It
   opens by itself when a step takes more than twice as long as usual (at least 12 s more),
-  or when the unlock is stuck. Any key on a USB keyboard shows or hides it, except while the
-  passphrase is being asked for (keys type it then; Esc still switches to Plymouth's full
-  text log).
+  or when the unlock is stuck (unless the remote's keyboard comes up there instead). Any key
+  on the remote or a USB keyboard shows or hides it, except while the passphrase is being
+  asked for: keys type it then, the remote's Menu still shows or hides the log, and a USB
+  keyboard's Esc switches to Plymouth's full text log.
 - **When the network unlock can't finish** (no DHCP lease within 45 s, or no unlock after
   twice the usual time and at least 50 s), the bar turns amber and the line says why: "Can't
   join Wi-Fi" or "Can't reach the unlock server", then "Still trying. To unlock now, type the
   disk passphrase on a USB keyboard." with the passphrase field. Clevis keeps trying meanwhile,
   so a server that comes back still unlocks the box.
 - **Passphrase-only boxes** see "Type the disk passphrase on a USB keyboard" at once.
+- **With a paired remote** the words say "with the remote or a USB keyboard", and the
+  passphrase field has an on-screen keyboard under it: CouchKit's (`ui/CouchKit/TextEntry.qml`),
+  plus a second page (#+=) with the digits and every other symbol on a keyboard, so any
+  passphrase can be typed. Arrows move, OK presses a key, Back deletes, Shift switches the
+  letters' case, Unlock sends it. A wrong one empties the field and says "That
+  passphrase didn't work". The remote wakes and connects on its first key press.
 
 ## How it's built
 
@@ -38,6 +45,18 @@ box that unlocks its disk over the network spends most of its boot there.
   long each step took to `/var/lib/couchbox/boot-pace`.
 - `system/dracut/89couchbox-boot/`: puts the helper, the pace, the fonts and its units into
   every initrd. Plymouth's own dracut module brings the theme.
+- `bin/couchbox-boot-remote`: the remote in the initrd. A reader per input device of a
+  Bluetooth remote (udev starts `couchbox-boot-remote@eventN`) takes the device for itself
+  with `evtest --grab`, so its arrows don't also reach Plymouth through the console, and
+  passes the keys on. The keyboard itself (focus, Shift, what's typed) lives in `run`, which
+  tells the theme what to draw (`cb:osk:…`) and answers the disk unlock's password request
+  with `systemd-reply-password`, as Clevis does. The passphrase never leaves its memory.
+- The dracut module brings Bluetooth (dracut's own `bluetooth` module, plus `hci_uart` for
+  the Pi's chip and `uhid` and `hid-generic` for remotes that pair over Bluetooth LE) and the
+  remote's pairing from `/var/lib/bluetooth`, only when the box is paired with something. The
+  pairing then sits on the unencrypted boot partition, as the Wi-Fi password does when Wi-Fi
+  at boot is on: someone with the box could pose as its remote to it. Pairing or forgetting
+  a remote on an encrypted box builds a new initrd (a test boot, as below).
 - `plymouth-quit.service.d/couchbox.conf`: saves the pace and quits with `--retain-splash`,
   so the last frame stays until the TV session draws.
 - The kernel command line gets `quiet splash loglevel=3 vt.global_cursor_default=0

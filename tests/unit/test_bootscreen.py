@@ -88,3 +88,41 @@ def test_no_theme_or_no_piboot_leaves_the_boot_alone(box, runner):
     (theme / "couchbox.plymouth").write_text("")
     assert bootscreen.apply() == "no piboot layout"
     assert not runner.ran("dracut")
+
+
+INFO = """[General]
+Name=Amazon Remote
+Appearance=0x0180
+
+[LongTermKey]
+Key={key}
+Authenticated=0
+
+[ConnectionParameters]
+MinInterval={interval}
+"""
+
+
+def test_a_new_remote_pairing_rebuilds_but_bluetoothd_s_own_notes_dont(box, runner):
+    fw = setup_box(box, runner)
+    info = box / bootscreen.BLUETOOTH / "AA:AA:AA:AA:AA:AA/BB:BB:BB:BB:BB:BB/info"
+    info.parent.mkdir(parents=True)
+    info.write_text(INFO.format(key="0011", interval=6))
+    bootscreen.apply()
+    shutil.rmtree(fw / "current")
+    (fw / "new").rename(fw / "current")
+    runner.calls.clear()
+    info.write_text(INFO.format(key="0011", interval=9))  # bluetoothd rewrote something else
+    assert bootscreen.apply() == "up to date"
+    info.write_text(INFO.format(key="2233", interval=9))  # paired again
+    assert bootscreen.apply().startswith("test boot ready")
+
+
+def test_encrypted_means_crypttab_names_a_disk(box):
+    assert not bootscreen.encrypted()
+    tab = box / "etc/crypttab"
+    tab.parent.mkdir(parents=True, exist_ok=True)
+    tab.write_text("# <target name> <source device> <key file> <options>\n")
+    assert not bootscreen.encrypted()
+    tab.write_text("root UUID=8087 none luks,discard\n")
+    assert bootscreen.encrypted()

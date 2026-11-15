@@ -1,0 +1,185 @@
+#!/bin/bash
+# couchbox-boot-remote: the paired Bluetooth remote on the boot screen, in the initrd. Before
+# the disk is unlocked, any key shows or hides the log; when the boot screen asks for the disk
+# passphrase (the network unlock can't finish, or the box has none) the remote types it on the
+# boot screen's on-screen keyboard, and Unlock answers the unlock's password request the way
+# Clevis does (systemd-reply-password).
+#   run          the keyboard: reads the remote's keys from the readers, tells the boot screen
+#                what to draw (plymouth update --status=cb:osk:…), sends the passphrase
+#   read DEVICE  one of the remote's input devices (udev starts one per device): takes it for
+#                itself, so its keys don't also reach the console, and passes them to run
+# The keyboard is CouchKit's (ui/CouchKit/TextEntry.qml) with a symbols page added, so every
+# character a passphrase can have is there: arrows move, OK presses the key, Back deletes, Menu
+# shows or hides the log. The passphrase only ever lives in run's memory.
+set -u
+RUN=${COUCHBOX_BOOT_RUN:-/run/couchbox-boot}       # couchbox-boot-status's marks and pace
+KEYS=$RUN/remote-keys                               # readers -> run, one key name a line
+ASK=${COUCHBOX_BOOT_ASK:-/run/systemd/ask-password}
+REPLY=${COUCHBOX_BOOT_REPLY:-/usr/lib/systemd/systemd-reply-password}
+
+say() { plymouth update --status="cb:$1" 2>/dev/null || true; }
+
+# seconds since boot, whole
+uptime_s() { local up; read -r up _ < /proc/uptime; echo "${up%.*}"; }
+mark_s() { local t; [ -r "$RUN/$1" ] && read -r t < "$RUN/$1" && echo "${t%.*}"; }
+
+# the disk unlock's pending password request: sets ask (its file) and sock (where to answer)
+find_ask() {
+    ask='' sock=''
+    local f l id s
+    for f in "$ASK"/ask.*; do
+        [ -f "$f" ] || continue
+        id='' s=''
+        while IFS= read -r l; do
+            case $l in Id=cryptsetup:*) id=1 ;; Socket=*) s=${l#Socket=} ;; esac
+        done < "$f"
+        if [ -n "$id" ] && [ -n "$s" ]; then ask=$f sock=$s; return 0; fi
+    done
+    return 1
+}
+
+# Whether the boot screen is asking for the passphrase: the same rule as the theme's stuck()
+# (no network, or no unlock after twice the usual time and at least 50 s), or a box with no
+# network unlock at all.
+asking() {
+    local w u net first now limit
+    [ -r "$RUN/pace" ] && IFS=: read -r w u _ net < "$RUN/pace" || return 1
+    [ "$net" = 1 ] || return 0
+    [ -e "$RUN/net-down" ] && return 0
+    first=$(mark_s wifi) || first=$(mark_s unlock) || return 1
+    now=$(uptime_s)
+    limit=$(( (w + u) / 5 )); [ "$limit" -lt 50 ] && limit=50
+    [ $((now - first)) -gt "$limit" ]
+}
+
+# ------------------------------------------------------------------ the keyboard
+# Two pages: letters (Shift for capitals), and digits with every other symbol on a keyboard,
+# so any passphrase can be typed. #+= switches to the symbols, abc back.
+ROWS=(abcdefghijklm nopqrstuvwxyz "1234567890@.-")
+SYMBOLS=("1234567890!?#" '$%&*()_+=/\:;' "\"',<>[]{}|^\`~")
+BOTTOM=(shift page space del clear "done")
+BOTTOM_W=(2 2 2 2 2 3)
+
+row_len() { if [ "$1" -eq 3 ]; then echo 6; else echo 13; fi; }
+
+# centre of key i in row r, in hundredths of a key (a gap is 0.12 of a key), as in CouchKit
+centre() {
+    local r=$1 i=$2 x=0 j
+    if [ "$r" -lt 3 ]; then echo $((i * 112 + 50)); return; fi
+    for ((j = 0; j < i; j++)); do x=$((x + BOTTOM_W[j] * 100 + 12)); done
+    echo $((x + BOTTOM_W[i] * 50))
+}
+
+# up or down a row, to the key nearest the one in focus
+move_row() {
+    local r=$((row + $1)) want best=0 i d bd n
+    [ "$r" -lt 0 ] || [ "$r" -gt 3 ] && return
+    want=$(centre "$row" "$col")
+    n=$(row_len "$r")
+    bd=999999
+    for ((i = 0; i < n; i++)); do
+        d=$(( $(centre "$r" "$i") - want )); d=${d#-}
+        if [ "$d" -lt "$bd" ]; then bd=$d best=$i; fi
+    done
+    row=$r col=$best
+}
+
+press() {
+    local k c
+    if [ "$row" -lt 3 ]; then
+        if [ "$page" = 1 ]; then c=${SYMBOLS[row]:col:1}; else c=${ROWS[row]:col:1}; fi
+        if [ "$caps" = 1 ]; then c=${c^^}; fi
+        text+=$c wrong=0
+        return
+    fi
+    k=${BOTTOM[col]}
+    case $k in
+    shift) caps=$((1 - caps)) ;;
+    page) page=$((1 - page)) ;;
+    space) text+=" " wrong=0 ;;
+    del) text=${text%?} ;;
+    clear) text='' ;;
+    done) send ;;
+    esac
+}
+
+send() {
+    [ -n "$text" ] && [ -z "$sent" ] && find_ask || return 0
+    # printf is a shell builtin: the passphrase never shows in a process list
+    if printf '%s' "$text" | "$REPLY" 1 "$sock" 2>/dev/null; then
+        sent=$ask sent_at=$(uptime_s)
+    fi
+}
+
+key() {
+    local k=$1 repeat=
+    case $k in r:*) repeat=1 k=${k#r:} ;; esac
+    if [ "$on" != 1 ]; then
+        [ -z "$repeat" ] && say log      # any key shows or hides the log
+        return
+    fi
+    [ -n "$sent" ] && return             # checking the passphrase
+    case $k in
+    UP) move_row -1 ;;
+    DOWN) move_row 1 ;;
+    LEFT) [ "$col" -gt 0 ] && col=$((col - 1)) ;;
+    RIGHT) [ "$col" -lt $(($(row_len "$row") - 1)) ] && col=$((col + 1)) ;;
+    SELECT | ENTER | KPENTER | OK) [ -z "$repeat" ] && press ;;
+    BACK | ESC | BACKSPACE) text=${text%?} ;;
+    MENU) [ -z "$repeat" ] && say log ;;
+    esac
+}
+
+# Each half second (and after each key): is the passphrase wanted, did the last one work?
+tick() {
+    if [ -n "$sent" ]; then
+        if [ -e "$sent" ]; then :                       # not taken yet
+        elif find_ask; then                             # asked again: it was wrong
+            sent='' text='' wrong=1 row=0 col=0 caps=0 page=0
+        elif [ $(($(uptime_s) - sent_at)) -gt 30 ]; then  # unlocked (the boot moves on)
+            sent='' text='' on=0
+        fi
+    fi
+    if [ -z "$sent" ]; then
+        if find_ask && { [ "$on" = 1 ] || asking; }; then on=1; else on=0 text='' wrong=0; fi
+    fi
+    local state="osk:$on:$row:$col:$caps:${#text}:$wrong:$page"
+    # again now and then: Plymouth drops what it's told before the theme is drawing
+    if [ "$state" != "$last" ] || [ $((SECONDS - said)) -ge 2 ]; then
+        say remote; say "$state"
+        last=$state said=$SECONDS
+    fi
+}
+
+run() {
+    mkdir -p "$RUN"
+    rm -f "$KEYS"
+    mkfifo -m 600 "$KEYS"
+    exec 3<> "$KEYS"
+    row=0 col=0 caps=0 page=0 text='' wrong=0 on=0 sent='' sent_at=0 last='' said=0
+    local k
+    while :; do
+        if IFS= read -r -t 0.5 k <&3; then key "$k"; fi
+        tick
+    done
+}
+
+# ------------------------------------------------------------------ a reader
+read_device() {
+    local dev=$1 line k
+    while [ ! -p "$KEYS" ]; do sleep 0.2; done
+    exec 3> "$KEYS"
+    # "Event: time 12.3, type 1 (EV_KEY), code 103 (KEY_UP), value 1"; value 2 repeats a held key
+    evtest --grab "$dev" 2>/dev/null | while IFS= read -r line; do
+        case $line in
+        *"(EV_KEY)"*"(KEY_"*", value 1") k=${line#*(KEY_}; echo "${k%%)*}" >&3 ;;
+        *"(EV_KEY)"*"(KEY_"*", value 2") k=${line#*(KEY_}; echo "r:${k%%)*}" >&3 ;;
+        esac
+    done
+}
+
+case "${1:-}" in
+run) run ;;
+read) read_device "${2:?device}" ;;
+*) echo "usage: couchbox-boot-remote run|read DEVICE" >&2; exit 2 ;;
+esac

@@ -1,0 +1,12 @@
+# initrd, with a paired Bluetooth remote: the remote on the boot screen (the log, and the disk
+# passphrase on the on-screen keyboard). Its readers (couchbox-boot-remote@) feed it the keys.
+[Unit]
+Description=Couchbox boot screen: the remote
+DefaultDependencies=no
+After=couchbox-boot-begin.service
+
+[Service]
+ExecStart=/usr/bin/couchbox-boot-remote run
+
+[Install]
+WantedBy=initrd.target
