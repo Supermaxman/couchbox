@@ -41,12 +41,22 @@ FocusScope {
     readonly property real unit: 84 * u    // one key's width and height
     readonly property real gap: 10 * u
     property var returnFocus: null
+    property var fallbackFocus: null       // where the remote goes when returnFocus is gone
     property string phoneUrl: ""
+    // the app's own phone page address and its QR code, instead of phoneDir's (setup: the box's
+    // address on the home network or its setup Wi-Fi, which a new phone can open; phoneDir's can
+    // be the tailnet name, which only the owner's devices reach)
+    property string phoneLink: ""
+    property string phoneQr: ""
     property int row: 0
     property int col: 0
     property bool caps: false
     property bool allSelected: false       // after Ctrl+A: the next Backspace clears
-    readonly property bool okRepeats: layout[row][col].k === "del"   // OK held on ⌫ keeps deleting (couchbox.keyguard lets its repeats through)
+    // the key under the cursor. Moving between rows changes row and col one after the other, so
+    // for a moment they can point past a shorter row's end: never read the key without a guard
+    // (that was "TextEntry.qml:49: TypeError" in setup, Down into the bottom row)
+    readonly property var key: (layout[row] || [])[col] || ({k: "", label: "", w: 1})
+    readonly property bool okRepeats: key.k === "del"   // OK held on ⌫ keeps deleting (couchbox.keyguard lets its repeats through)
 
     readonly property var layout: {
         const ch = s => s.split("").map(k => ({k: k, label: k, w: 1}));
@@ -72,6 +82,13 @@ FocusScope {
         returnFocus = focusAfter || null;
         row = 0; col = 0; caps = false; allSelected = false;
         qr.source = "";
+        if (phoneLink) {
+            phoneUrl = phoneLink;
+            qr.source = phoneQr;
+            visible = true;
+            forceActiveFocus();
+            return;
+        }
         qr.source = "file://" + phoneDir + "/phone.png";
         const x = new XMLHttpRequest();
         x.onreadystatechange = () => {
@@ -86,8 +103,12 @@ FocusScope {
 
     function close() {
         visible = false;
-        if (returnFocus)
+        // the item that had focus may be gone meanwhile (its page was rebuilt): then the remote's
+        // keys would go nowhere, so focus goes to whatever the app set up instead (fallbackFocus)
+        if (returnFocus && returnFocus.visible)
             returnFocus.forceActiveFocus();
+        else if (fallbackFocus)
+            fallbackFocus.forceActiveFocus();
     }
 
     function type(s) {
@@ -138,7 +159,7 @@ FocusScope {
         else if (k === Qt.Key_Right) col = Math.min(layout[row].length - 1, col + 1);
         else if (k === Qt.Key_Up) moveRow(-1);
         else if (k === Qt.Key_Down) moveRow(1);
-        else if (k === Qt.Key_Return) press(layout[row][col].k);
+        else if (k === Qt.Key_Return) press(key.k);
         else if (k === Qt.Key_Enter) done();                      // the phone's Enter
         else if (k === Qt.Key_Escape || k === Qt.Key_Back) { close(); canceled(); }
         else if (k === Qt.Key_Backspace) backspace();
@@ -306,7 +327,7 @@ FocusScope {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: "Scan with the camera" + (entry.phoneUrl ? "\n" + entry.phoneUrl.replace(/^https?:\/\//, "").replace(/:\d+$/, "") : "")
+                    text: "Scan with the camera" + (entry.phoneUrl ? "\n" + entry.phoneUrl.replace(/#.*$/, "").replace(/^https?:\/\//, "").replace(/:\d+\/?$/, "") : "")
                     color: entry.dim
                     font.pixelSize: 22 * u
                     lineHeight: 1.2

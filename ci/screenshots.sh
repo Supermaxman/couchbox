@@ -257,6 +257,8 @@ dshot pair:failed,hotspot setup-hello-failed couchbox-setup --step 0
 dshot hotspot setup-hello-paired couchbox-setup --step 0
 dshot pair:searching setup-remote-looking couchbox-setup --step 1
 for st in prepare copy finish; do dshot "install:$st" "setup-install-$st" couchbox-setup --step 2; done
+# the keyboard (Name): its phone code is the card's, on the home network
+shot setup-keyboard couchbox-setup --step 5 --keys ok,down,down,right,right,right,right,right,right,right,right,right,right,right,right,down
 # the remote's Back key on every app's pages: it goes back a level or closes the app
 python3 ci/back_check.py "$OUT/back" || fail=1
 exit $fail

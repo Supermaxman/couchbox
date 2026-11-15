@@ -100,6 +100,10 @@ Window {
         target: T
         function onAskText(title, text, password, done) {
             win.typed = done; keyboard.title = title; keyboard.password = password; keyboard.doneLabel = "Done";
+            // the same phone address as the card on the left: one a new user's phone can open
+            const ph = phoneCard.phone;
+            keyboard.phoneLink = ph.mode === "lan" || ph.mode === "hotspot" ? ph.url : "";
+            keyboard.phoneQr = keyboard.phoneLink ? backend.qr(keyboard.phoneLink) : "";
             keyboard.open(text, win.activeFocusItem);
         }
         function onPick(title, options, current, done) { picker.open(title, options, current, done); }
@@ -155,6 +159,7 @@ Window {
             }
         }
         PhoneCard {
+            id: phoneCard
             anchors { left: parent.left; leftMargin: 72 * T.u; bottom: dots.top; bottomMargin: 48 * T.u; right: parent.right; rightMargin: 72 * T.u }
         }
     }
@@ -178,6 +183,7 @@ Window {
         id: keyboard
         anchors.fill: parent
         accent: T.accent; bg: T.bg; panel: T.panel; keyColor: T.panel2; line: T.line; ink: T.text; dim: T.dim
+        fallbackFocus: page.item
         onAccepted: t => { const done = win.typed; win.typed = null; if (done) done(t); }
         onCanceled: win.typed = null
     }
