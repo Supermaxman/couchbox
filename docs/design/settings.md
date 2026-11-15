@@ -22,7 +22,7 @@ Every setting lives in one schema (`schema.json`). This doc is the spec for it. 
 |---|---|---|---|
 | — (NetworkManager) | — | Wi-Fi list (signal, lock), join (keyboard), forget, hidden network. Ethernet status. IP address, MAC address | KDE network settings / `nmcli` |
 | `network.hostname` | `couchbox` | Also used for the mDNS name, the Tailscale name, the CEC on-screen name (14 characters max, trimmed) and the AirPlay name, each unless set separately | `MTV_HOSTNAME` |
-| `network.wifi_country` | from the time zone | Regulatory domain (5 GHz channels) | `cfg80211.ieee80211_regdom=US` |
+| `network.wifi_country` | from the time zone (tzdata's `zone.tab`) | Regulatory domain (5 GHz channels, the setup Wi-Fi). couchboxd sets it (`iw reg set`) at every start and when the time zone changes | `cfg80211.ieee80211_regdom=US` |
 | — | — | "Unlock disk over Wi-Fi" shortcut, shown when encryption with Tang is on (→ §9) | `6-bind-tang.sh` prompt |
 
 ### 2. Home screen

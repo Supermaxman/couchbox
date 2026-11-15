@@ -255,7 +255,7 @@ def write_wifi_conf(enabled: bool) -> bool:
     conf = "\n".join(ln for ln in conf.splitlines() if not ln.strip().startswith("#psk="))
     from couchbox import settings
 
-    country = settings.get("network.wifi_country") or "US"
+    country = settings.derived()["wifi_country"] or "US"
     f.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:

@@ -160,8 +160,11 @@ def ir_program(brand: str) -> dict[str, Any]:
 
 @method("apps.install_status", write=False)
 def apps_install_status() -> dict[str, Any]:
-    from couchbox import paths
+    from couchbox import install_disk, paths
 
+    held = install_disk.downloads_held()
+    if held and not (paths.state() / "state/apps.done").exists():
+        return {"state": "held", "why": held, "app": "", "done": 0, "total": 0}
     try:
         return json.loads((paths.run() / "apps.json").read_text())
     except (OSError, ValueError):

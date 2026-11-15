@@ -30,7 +30,7 @@ Setting up a new box takes about 20 minutes. **You don't need a keyboard, a mous
 
 1. On your computer, use **Raspberry Pi Imager** to write Couchbox onto the USB stick. Enter your Wi-Fi there too.
 2. Put the stick in the Pi, connect it to the TV and plug in the power.
-3. On the TV, pair your remote or scan the QR code with your phone. Choose **Install to the SSD**. The box restarts from the SSD; pull out the stick, then finish the setup.
+3. On the TV's first screen, hold **Home** on the Fire TV remote for 10 seconds, or scan the QR code with your phone. Choose **Install to the SSD**. The box restarts from the SSD; pull out the stick, then finish the setup.
 
 ## 1. Write Couchbox onto a USB stick
 
@@ -86,9 +86,9 @@ The first start takes **2–3 minutes**. The Pi first prepares the stick. The TV
 You can use any of these, and switch between them whenever you like.
 
 - **The TV's remote:** the arrows, OK and Back work straight away over HDMI-CEC.
-- **A Fire TV remote:** on the **Your remote** screen, hold its **Home** button for about 10 seconds, until the light blinks. It pairs by itself. From then on it works like a normal TV remote, and its power and volume buttons can control the TV (a later step sets that up).
+- **A Fire TV remote:** from the first screen (**Hello**) on, hold its **Home** button for about 10 seconds. It pairs by itself. The remote's light is hard to see, so watch the screen: it says **Looking**, then **Found AR…**, **Pairing** and **Paired**. If it doesn't pair, the screen says why; hold Home for 10 seconds again. From then on it works like a normal TV remote, and its power and volume buttons can control the TV (a later step sets that up).
 - **Your phone:** point the phone's camera at the **QR code** on the left of the screen and open the link. You get a remote with arrows, OK, Back, Home and play/pause, and a keyboard that types on the TV.
-  - **When the box isn't online yet** (no Ethernet, and no Wi-Fi set in Imager), it opens its own Wi-Fi after about 30 seconds (2 minutes if it has a Wi-Fi from Imager that it can't reach), and the TV shows two codes:
+  - **When the box isn't online yet** (no Ethernet, and no Wi-Fi set in Imager), it opens its own Wi-Fi after about 30 seconds (2 minutes if it has a Wi-Fi from Imager that it can't reach). Until then the TV keeps two empty places for the codes and says about when they come. Then it shows two codes:
     1. **Join its Wi-Fi.** Scan the first code, and the phone joins **Couchbox-XXXX**. If the phone warns that the network has no internet, choose to stay connected.
     2. **Open the remote.** Scan the second code.
   - On the **Internet** step, pick your home Wi-Fi and type its password on the phone. The box joins your network and its own Wi-Fi closes. Your phone goes back to your home Wi-Fi, and the TV shows a new code: scan it to keep using the phone.
@@ -98,13 +98,15 @@ You can use any of these, and switch between them whenever you like.
 Right after the remote, the setup offers **Install to the SSD**. It copies Couchbox from the stick onto the SSD inside the box. The SSD is faster, and the stick is free again afterwards.
 
 1. Choose **Install to SSD …**, then confirm. Everything on the SSD is erased.
-2. Wait about 5 minutes. The screen shows the progress. Leave the box on.
+2. Wait about 5 minutes. Leave the box on. A bar shows the whole install, and one more for each step: preparing the SSD, formatting it, copying the system (so many GB of the total), and making it bootable.
 3. Choose **Restart now**. The box starts from the SSD and carries on with the setup where you left it. Your Wi-Fi and the paired remote come along.
 4. **Pull out the USB stick** whenever you like. You can use it for something else.
 
+While it runs from the stick, the box downloads nothing: its apps and system updates wait for the SSD, so the stick stays quick for the setup.
+
 **From an SD card instead of a stick:** the last button is **Shut down**. Take the card out, then plug the power back in.
 
-**No SSD?** Choose *Skip* and Couchbox keeps running from the stick or card. It works, but it's slower. You can install to an SSD later: Settings → System → Run the setup again.
+**No SSD?** Choose *Skip* and Couchbox keeps running from the stick or card. It works, but it's slower, and the apps download once the setup is finished. You can install to an SSD later: Settings → System → Run the setup again.
 
 ## 5. Finish the setup
 
@@ -118,7 +120,7 @@ The rest takes a few minutes. Every step can be skipped and changed later in **S
 | TV buttons | Makes the Fire TV remote's power and volume buttons control your TV |
 | Updates | **Automatic** (recommended): updates install while nobody's watching. Or Manual |
 | Extras | Optional: Jellyfin, Seerr, voice, Tailscale, disk encryption, SSH |
-| Apps | YouTube and the other apps download in the background (about 1.5 GB) |
+| Apps | YouTube and the other apps download in the background (about 1.5 GB). From a stick or card with no SSD, they start when the setup is finished |
 
 Then you're on the home screen.
 - **Home** on any remote brings you back to it.
@@ -143,7 +145,7 @@ Then you're on the home screen.
 | The Pi doesn't start from the stick | Take out any SD card. Use a blue USB port. Pi 5 boards made before 2024 may need a bootloader update: in Imager, *Misc utility images* → *Bootloader (Pi 5)* → *USB Boot*, written to a spare SD card. Start the Pi with that card until the green light blinks steadily, then remove the card |
 | The TV remote does nothing | Turn on HDMI-CEC in the TV's settings (Anynet+, SimpLink, Bravia Sync). Some cheap cables don't carry CEC. Meanwhile, use your phone |
 | The phone code doesn't open | The phone has to be on the same Wi-Fi as the box, or on **Couchbox-XXXX** when the box shows that network. Turn off "private relay" or a VPN on the phone while you set up |
-| The Fire TV remote doesn't pair | Unplug any Fire TV Stick it was paired with. Take the remote's batteries out for 5 seconds, then hold Home for 10 seconds. **Don't** reset it with Menu + Back + Left: that erases its TV buttons |
+| The Fire TV remote doesn't pair | The setup screen says what it sees. "Looking" and nothing more: the remote isn't in pairing mode. Unplug any Fire TV Stick it was paired with, put in fresh batteries, then hold Home for 10 seconds. **Don't** reset it with Menu + Back + Left: that erases its TV buttons |
 | "Install to the SSD" isn't offered | The SSD isn't detected. Power off, then check the ribbon cable between the Pi and the M.2 HAT+ (contacts facing the right way) and that the SSD is screwed in |
 | Something else | Settings → System → **Run checks** shows what isn't working. Over SSH: `couchbox doctor` and `journalctl -u 'couchbox*'`. Report bugs at [GitHub issues](https://github.com/Supermaxman/couchbox/issues) with the `couchbox doctor` output |
 

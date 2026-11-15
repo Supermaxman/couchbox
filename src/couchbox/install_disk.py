@@ -14,6 +14,12 @@ both). The Pi 5 bootloader's default order is SD card, NVMe, then USB:
 
     status()              where we booted from, drives we can install to, the job's state
     start(device)         copy in a background thread; progress through on_progress
+    downloads_held()      why app and system downloads wait (running setup from a stick), or ""
+
+Progress ({state, stage, step, detail, percent, fraction, copied, total}) goes out at least
+every couple of seconds, so the screen never looks stuck. stage is prepare, format, copy or
+finish; fraction is how far the stage is (formatting: from mkfs.ext4's own counters), percent
+the whole install's (PHASES).
 """
 
 import json
@@ -36,6 +42,17 @@ MOUNT = Path("/run/couchbox/install")
 EXCLUDE = ["/swapfile", "/var/cache/apt/archives/*.deb", "/lost+found"]
 
 _job: dict[str, Any] = {"state": "idle"}
+# each stage's share of the whole install's percent, start to end (copying takes most of the time)
+PHASES = {"prepare": (0, 2), "format": (2, 12), "copy": (12, 97), "finish": (97, 100)}
+# mkfs.ext4's counters (label: N/M), as parts of formatting: discarding the old blocks takes
+# longest on a big SSD, then the inode tables
+MKFS_PARTS = {
+    "Discarding device blocks": (0.0, 0.4),
+    "Allocating group tables": (0.4, 0.5),
+    "Writing inode tables": (0.5, 0.9),
+    "Creating journal": (0.9, 0.97),
+    "Writing superblocks": (0.97, 1.0),
+}
 _lock = threading.Lock()
 
 
@@ -104,6 +121,28 @@ def status() -> dict[str, Any]:
     return {"booted_from": me["tran"], "can_install": bool(t) and _job["state"] in ("idle", "failed"), "targets": t, "job": dict(_job)}
 
 
+def downloads_held() -> str:
+    """Why the apps (Flatpak, about 1.5 GB) and apt downloads wait, or "" when they may run.
+
+    While setup runs from a USB stick or SD card, they saturate it (I/O pressure near 100% for
+    20 minutes on a fresh box): the screen, SSH and Bluetooth stall, and a Fire TV remote
+    can't pair. They start after Install to the SSD (the next boot runs from it), or once
+    setup is finished when there's no SSD. The units ask through `couchbox downloads-allowed`.
+    """
+    from couchbox import paths
+
+    try:
+        done = json.loads((paths.state() / "state/setup.json").read_text()).get("done")
+    except (OSError, ValueError):
+        done = False
+    if done:
+        return ""
+    tran = root_disk().get("tran", "")
+    if tran in ("usb", "mmc"):
+        return f"setup is running from the {'SD card' if tran == 'mmc' else 'USB stick'}"
+    return ""
+
+
 def part(disk: str, n: int) -> str:
     """/dev/nvme0n1 -> /dev/nvme0n1p1, /dev/sda -> /dev/sda1."""
     return f"{disk}p{n}" if disk[-1].isdigit() else f"{disk}{n}"
@@ -141,6 +180,72 @@ def _used(p: str) -> int:
     return (st.f_blocks - st.f_bfree) * st.f_frsize
 
 
+def overall(stage: str, fraction: float) -> int:
+    a, b = PHASES[stage]
+    return int(a + (b - a) * max(0.0, min(1.0, fraction)))
+
+
+def mkfs_fraction(line: str) -> float | None:
+    """One line of mkfs.ext4's output (as a terminal would show it) -> how far formatting is."""
+    label, _, rest = line.partition(":")
+    part = next((v for k, v in MKFS_PARTS.items() if label.strip().startswith(k)), None)  # "Creating journal (65536 blocks)"
+    if not part:
+        return None
+    nums = re.findall(r"(\d+)/(\d+)", rest)
+    done = 1.0 if "done" in rest else int(nums[-1][0]) / max(1, int(nums[-1][1])) if nums else 0.0
+    return part[0] + (part[1] - part[0]) * min(1.0, done)
+
+
+def _run_progress(cmd: list[str], on_line: Callable[[str], None], timeout: float) -> None:
+    """Run cmd, passing on_line its current output line as a terminal shows it (mkfs rewrites
+    its counters in place with backspaces)."""
+    import subprocess
+
+    log.info("running %s", " ".join(cmd))
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env={**os.environ, "LC_ALL": "C"})
+    end, line, tail, prev = time.monotonic() + timeout, "", [], ""
+    fd = p.stdout.fileno() if p.stdout else -1
+    while chunk := os.read(fd, 4096).decode(errors="replace"):
+        for ch in chunk:
+            if ch == "\n":
+                on_line(line)
+                tail = (tail + [line])[-5:]
+                line = ""
+            elif ch == "\b":
+                if prev != "\b":
+                    on_line(line)  # a counter fully written, about to be rewritten
+                line = line[:-1]
+            else:
+                line += ch
+            prev = ch
+        if line:
+            on_line(line)
+        if time.monotonic() > end:
+            p.kill()
+    if p.wait() != 0:
+        raise CommandError(f"{cmd[0]} failed: {' / '.join(x.strip() for x in tail + [line] if x.strip())}")
+
+
+def _format(p2: str, on_progress: Callable[[dict[str, Any]], None] | None) -> None:
+    """mkfs.ext4 with its progress on the screen (discarding a big SSD's blocks can take minutes)."""
+    last = [0.0, -1.0]  # time, fraction
+
+    def seen(line: str) -> None:
+        f = mkfs_fraction(line)
+        if f is not None and (f - last[1] >= 0.01 or time.monotonic() - last[0] > 1) and f != last[1]:
+            last[:] = [time.monotonic(), f]
+            _publish(on_progress, fraction=f, percent=overall("format", f))
+
+    _run_progress(["mkfs.ext4", "-F", "-L", "writable", p2], seen, timeout=1800)
+
+
+def _allocated(f: Path) -> int:
+    try:
+        return f.stat().st_blocks * 512
+    except OSError:
+        return 0
+
+
 def copy(disk: str, on_progress: Callable[[dict[str, Any]], None] | None = None, source: str = "/") -> None:
     """Partition, format and fill `disk` from the running system (or `source`, for tests)."""
     src = Path(source)
@@ -150,7 +255,7 @@ def copy(disk: str, on_progress: Callable[[dict[str, Any]], None] | None = None,
     if bsrc:
         boot_mb = max(256, int(out(["lsblk", "-n", "-b", "-d", "-o", "SIZE", bsrc]) or 0) // 2**20)
 
-    _publish(on_progress, state="running", step="Preparing the drive", percent=0)
+    _publish(on_progress, state="running", stage="prepare", step="Preparing the drive", detail="Erasing", fraction=0, percent=0)
     sh(["wipefs", "-a", disk])
     sh(["sfdisk", "--quiet", disk], input=f"label: dos\n,{boot_mb}MiB,c,*\n,,83\n")
     sh(["udevadm", "settle"], check=False)
@@ -160,7 +265,8 @@ def copy(disk: str, on_progress: Callable[[dict[str, Any]], None] | None = None,
             break
         time.sleep(0.5)
     sh(["mkfs.vfat", "-F", "32", "-n", "system-boot", p1])
-    sh(["mkfs.ext4", "-q", "-F", "-L", "writable", p2], timeout=600)
+    _publish(on_progress, stage="format", step="Formatting the drive", detail="", fraction=0, percent=overall("format", 0))
+    _format(p2, on_progress)
     root_uuid = out(["blkid", "-s", "PARTUUID", "-o", "value", p2])
     boot_uuid = out(["blkid", "-s", "PARTUUID", "-o", "value", p1])
 
@@ -168,18 +274,21 @@ def copy(disk: str, on_progress: Callable[[dict[str, Any]], None] | None = None,
     mnt.mkdir(parents=True, exist_ok=True)
     sh(["mount", p2, str(mnt)])
     try:
-        need = max(1, _used(str(src)))
+        need = max(1, _used(str(src)) - _allocated(src / "swapfile"))  # the swap file isn't copied
         if need > int(out(["lsblk", "-n", "-b", "-d", "-o", "SIZE", disk]) or 0) * 0.9:
             raise InstallError("The system doesn't fit on that drive.")
+        base = _used(str(mnt))  # a fresh ext4's own metadata
 
-        _publish(on_progress, step="Copying the system", percent=1)
+        log.info("install to %s: copying %.1f GB", disk, need / 10**9)
+        _publish(
+            on_progress, stage="copy", step="Copying the system", detail="", fraction=0, percent=overall("copy", 0), copied=0, total=need
+        )
         done = threading.Event()
 
         def watch():
             while not done.wait(2):
-                pct = min(98, int(100 * _used(str(mnt)) / need))
-                if pct != _job.get("percent"):
-                    _publish(on_progress, percent=pct)
+                copied = max(0, min(need, _used(str(mnt)) - base))
+                _publish(on_progress, fraction=copied / need, percent=overall("copy", copied / need), copied=copied)
 
         threading.Thread(target=watch, daemon=True).start()
         try:
@@ -188,11 +297,12 @@ def copy(disk: str, on_progress: Callable[[dict[str, Any]], None] | None = None,
             sh(["rsync", "-aHAXx", "--numeric-ids", *[f"--exclude={e}" for e in EXCLUDE], f"{src}/", f"{mnt}/"], timeout=3 * 3600)
         finally:
             done.set()
+        _publish(on_progress, copied=need, fraction=1, percent=overall("copy", 1), detail="Boot files")
         (mnt / "boot/firmware").mkdir(parents=True, exist_ok=True)
         sh(["mount", p1, str(mnt / "boot/firmware")])
         sh(["rsync", "-rt", "--modify-window=2", f"{boot_src}/", f"{mnt}/boot/firmware/"], timeout=600)
 
-        _publish(on_progress, step="Making it bootable", percent=99)
+        _publish(on_progress, stage="finish", step="Making it bootable", detail="", fraction=0, percent=overall("finish", 0))
         fstab = mnt / "etc/fstab"
         if fstab.exists():
             fstab.write_text(fix_fstab(fstab.read_text(), root_uuid, boot_uuid))
@@ -223,13 +333,16 @@ def start(device: str, on_progress: Callable[[dict[str, Any]], None] | None = No
         if device not in ok:
             raise InstallError("That drive isn't available to install to.")
         _job.clear()
-        _job.update({"state": "running", "device": device, "label": ok[device]["label"], "from": me["tran"], "percent": 0})
+        _job.update(
+            {"state": "running", "stage": "prepare", "device": device, "label": ok[device]["label"], "from": me["tran"], "percent": 0}
+        )
 
     def run():
         try:
             copy(device, on_progress)
             # From USB, a restart boots the SSD (SD, NVMe, USB is the bootloader's order).
             # From an SD card, the card has to come out first.
+            log.info("install to %s: done", device)
             _publish(on_progress, state="done", percent=100, step="Done", next="restart" if me["tran"] == "usb" else "remove_card")
         except (CommandError, InstallError, OSError) as e:
             log.error("install to %s: %s", device, e)

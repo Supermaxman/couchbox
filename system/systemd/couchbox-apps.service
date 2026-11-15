@@ -6,6 +6,8 @@ ConditionPathExists=!/var/lib/couchbox/state/apps.done
 
 [Service]
 Type=oneshot
+# not while setup runs from a USB stick or SD card: setup finishing (or the SSD) starts it
+ExecCondition=/usr/bin/couchbox downloads-allowed
 ExecStart=/usr/lib/couchbox/bin/couchbox-apps
 Restart=on-failure
 RestartSec=60

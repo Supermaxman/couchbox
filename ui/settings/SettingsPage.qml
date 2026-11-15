@@ -1,6 +1,10 @@
 // One Settings page: a title and a list of rows (see T.row). Up/Down move, OK acts,
 // Left (or Back) goes back to the sections. Rows are plain objects:
 //   {kind: toggle | choice | text | action | info | section | qr | app, label, value, help, on, act}
+// and key (what keeps a row the same row while its label changes: by default kind + label),
+// current (the cursor starts on it: the choice already made);
+// for something under way: busy (dots that pulse beside the value), progress (a bar under
+// the label: 0..1, or -1 while there's nothing to count)
 import QtQuick
 
 FocusScope {
@@ -13,6 +17,40 @@ FocusScope {
     signal back()
     readonly property alias list: list
     function move(d) { return false; }
+
+    // Pages rebuild their rows on every change (a Wi-Fi scan, a setting, a progress event). The
+    // list keeps one entry per row key and updates it in place, so nothing flashes, and the
+    // cursor stays on the same row (by key) while rows above it come, go or move.
+    ListModel { id: keyed }
+    property var byKey: ({})
+    onRowsChanged: sync()
+    Component.onCompleted: sync()
+    function rowKey(r) { return r.key || ((r.kind || "") + ":" + (r.label || "")); }
+    function focusable(r) { return !!r && (["section", "info", "qr"].indexOf(r.kind) < 0 || !!r.act); }
+    function sync() {
+        const was = list.currentIndex;
+        const cur = was >= 0 && was < keyed.count ? keyed.get(was).key : "";
+        const want = [], map = {}, seen = {};
+        for (const r of rows) {
+            let k = rowKey(r);
+            seen[k] = (seen[k] || 0) + 1;
+            if (seen[k] > 1) k += "#" + seen[k];
+            want.push(k);
+            map[k] = r;
+        }
+        byKey = map;
+        for (let i = keyed.count - 1; i >= 0; i--)
+            if (!(keyed.get(i).key in map)) keyed.remove(i);
+        for (let i = 0; i < want.length; i++) {
+            if (i < keyed.count && keyed.get(i).key === want[i]) continue;
+            let j = -1;
+            for (let x = i + 1; x < keyed.count; x++) if (keyed.get(x).key === want[i]) { j = x; break; }
+            if (j >= 0) keyed.move(j, i, 1); else keyed.insert(i, {key: want[i]});
+        }
+        const at = cur ? want.indexOf(cur) : rows.findIndex(r => r.current);
+        if (at >= 0 && focusable(rows[at])) list.currentIndex = at;
+        else list.settle(was);
+    }
 
     Text {
         id: heading
@@ -40,7 +78,7 @@ FocusScope {
         clip: true
         focus: true
         spacing: 6 * T.u
-        model: page.rows
+        model: keyed
         highlightMoveDuration: 120
         preferredHighlightBegin: height * 0.3
         preferredHighlightEnd: height * 0.7
@@ -50,22 +88,18 @@ FocusScope {
 
         function step(d) {
             let i = currentIndex + d;
-            while (i >= 0 && i < count && ["section", "info", "qr"].indexOf(page.rows[i].kind) >= 0 && !page.rows[i].act)
+            while (i >= 0 && i < count && !page.focusable(page.rows[i]))
                 i += d;
             if (i >= 0 && i < count) currentIndex = i;
             else if (d < 0) positionViewAtBeginning();
         }
-        // The rows are rebuilt on every change: keep the cursor where it was.
-        property int keep: -1
-        onCurrentIndexChanged: if (currentIndex >= 0) keep = currentIndex
-        onModelChanged: Qt.callLater(restore)
-        Component.onCompleted: restore()
-        function restore() {
-            if (count === 0) return;
-            const k = keep;
-            currentIndex = -1;
-            if (k >= 0 && k < count && ["section", "info", "qr"].indexOf(page.rows[k].kind) < 0) currentIndex = k;
-            else { currentIndex = Math.min(Math.max(k, 0), count - 1) - 1; step(1); }
+        // the row in focus went away: the nearest one to where it was, below first
+        function settle(was) {
+            const n = page.rows.length;
+            if (!n) return;
+            const from = Math.min(Math.max(was, 0), n - 1);
+            for (let i = from; i < n; i++) if (page.focusable(page.rows[i])) { currentIndex = i; return; }
+            for (let i = from - 1; i >= 0; i--) if (page.focusable(page.rows[i])) { currentIndex = i; return; }
         }
         Keys.onUpPressed: if (!page.moving || !page.move(-1)) step(-1)
         Keys.onDownPressed: if (!page.moving || !page.move(1)) step(1)
@@ -80,9 +114,9 @@ FocusScope {
 
         delegate: Item {
             id: d
-            required property var modelData
+            required property string key
             required property int index
-            readonly property var r: modelData
+            readonly property var r: page.byKey[key] || ({})
             readonly property bool cur: ListView.isCurrentItem && list.activeFocus
             width: list.width
             height: r.kind === "section" ? 74 * T.u : r.kind === "qr" ? qr.height + 40 * T.u
@@ -124,11 +158,59 @@ FocusScope {
                         wrapMode: Text.WordWrap
                         font.family: T.font; font.pixelSize: 20 * T.u
                     }
+                    Item {                             // progress
+                        visible: d.r.progress !== undefined
+                        width: d.width - 56 * T.u      // the row's full width, past the value
+                        height: visible ? 18 * T.u : 0
+                        Rectangle {
+                            id: track
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                            height: 8 * T.u; radius: height / 2
+                            color: T.line
+                            clip: true
+                            Rectangle {
+                                visible: d.r.progress >= 0
+                                width: parent.width * Math.max(d.r.progress > 0 ? 0.015 : 0, d.r.progress || 0); height: parent.height; radius: parent.radius
+                                color: d.r.progress >= 1 ? T.good : T.accent
+                            }
+                            Rectangle {                // nothing to count yet: a segment sweeps across
+                                visible: d.r.progress < 0
+                                width: parent.width * 0.22; height: parent.height; radius: parent.radius
+                                color: T.accent
+                                NumberAnimation on x {
+                                    running: d.r.progress < 0; loops: Animation.Infinite
+                                    from: -track.width * 0.22; to: track.width; duration: 1600; easing.type: Easing.InOutCubic
+                                }
+                            }
+                        }
+                    }
                 }
                 Row {
                     id: side
                     anchors { right: parent.right; rightMargin: 28 * T.u; verticalCenter: parent.verticalCenter }
                     spacing: 16 * T.u
+                    Row {                              // busy: three dots pulse in turn
+                        visible: !!d.r.busy
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 7 * T.u
+                        Repeater {
+                            model: d.r.busy ? 3 : 0
+                            Rectangle {
+                                required property int index
+                                width: 9 * T.u; height: width; radius: width / 2
+                                color: T.accent
+                                property real glow                 // 0..0.75 over a dim 0.25
+                                opacity: 0.25 + glow
+                                SequentialAnimation on glow {
+                                    loops: Animation.Infinite
+                                    PauseAnimation { duration: index * 200 }
+                                    NumberAnimation { to: 0.75; duration: 300; easing.type: Easing.OutCubic }
+                                    NumberAnimation { to: 0; duration: 500; easing.type: Easing.InCubic }
+                                    PauseAnimation { duration: (2 - index) * 200 }
+                                }
+                            }
+                        }
+                    }
                     Text {
                         visible: d.r.kind !== "toggle" && !!d.r.value
                         anchors.verticalCenter: parent.verticalCenter

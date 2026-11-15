@@ -65,8 +65,9 @@ SettingsPage {
         const a = apps.slice();
         const ai = a.findIndex(x => x.id === onHome[i].id), aj = a.findIndex(x => x.id === onHome[j].id);
         const tmp = a[ai]; a[ai] = a[aj]; a[aj] = tmp;
+        const want = list.currentIndex + d;
         p.apps = a;
-        list.currentIndex += d;
+        if (list.currentIndex !== want) list.currentIndex = want;   // the list keeps the carried tile in focus by itself
         return true;
     }
     function drop() {

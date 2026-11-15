@@ -6,23 +6,17 @@ StepPage {
     id: p
     title: "Your remote"
     intro: "Have an Amazon Fire TV remote? Hold its Home button for about 10 seconds, until the light blinks. It pairs by itself.\n\nIf it's paired with a Fire TV Stick, unplug the Stick first. Don't reset it with Menu + Back + Left: that erases its TV buttons."
-    property var pstate: ({state: "searching"})
     property var devices: []
-    Component.onCompleted: { T.call("remote.devices", {}, r => p.devices = r, () => {}); T.call("remote.pair_start", {seconds: 0}, () => {}); }
+    // pairing itself runs in Main (from Hello on): this page follows it
+    Component.onCompleted: { T.call("remote.devices", {}, r => p.devices = r, () => {}); T.call("remote.pair_start", {seconds: 0}, r => win.pair = r, () => {}); }
     Connections {
         target: T
         function onEvent(topic, d) {
-            if (topic !== "remote.pairing") return;
-            p.pstate = d;
-            if (d.state === "paired") { T.toast("Paired " + d.name + ". Try its buttons."); T.call("remote.devices", {}, r => p.devices = r); }
-            if (d.state === "failed" || d.state === "stopped") Qt.callLater(() => T.call("remote.pair_start", {seconds: 0}, () => {}));
+            if (topic === "remote.pairing" && d.state === "paired") { T.toast("Paired " + d.name + ". Try its buttons."); T.call("remote.devices", {}, r => p.devices = r); }
         }
     }
     rows: {
-        const state = pstate;
-        const r = [T.info(state.state === "paired" ? "Paired " + state.name : state.state === "pairing" ? "Pairing " + (state.name || "") + "…"
-                          : state.state === "found" ? "Found " + state.name : "Looking for remotes…", "",
-                          {tone: state.state === "paired" ? "good" : "", help: state.state === "paired" ? "Press a few buttons on it to check." : ""})];
+        const r = [win.pairRow(false)];
         for (const d of devices)
             r.push(T.info(d.name, d.connected ? "Connected" : "Paired", {tone: "good"}));
         r.push(cont(devices.length ? "Continue" : "Skip: use the TV's remote"));

@@ -41,18 +41,31 @@ FocusScope {
     readonly property real unit: 84 * u    // one key's width and height
     readonly property real gap: 10 * u
     property var returnFocus: null
+    property var fallbackFocus: null       // where the remote goes when returnFocus is gone
     property string phoneUrl: ""
+    // the app's own phone page address and its QR code, instead of phoneDir's (setup: the box's
+    // address on the home network or its setup Wi-Fi, which a new phone can open; phoneDir's can
+    // be the tailnet name, which only the owner's devices reach)
+    property string phoneLink: ""
+    property string phoneQr: ""
     property int row: 0
     property int col: 0
     property bool caps: false
+    property bool symbols: false           // the second page: the symbols a password can have (as the boot screen's keyboard)
+    property bool reveal: false            // a password's last character shows for a moment, so a slip can be seen
     property bool allSelected: false       // after Ctrl+A: the next Backspace clears
-    readonly property bool okRepeats: layout[row][col].k === "del"   // OK held on ⌫ keeps deleting (couchbox.keyguard lets its repeats through)
+    // the key under the cursor. Moving between rows changes row and col one after the other, so
+    // for a moment they can point past a shorter row's end: never read the key without a guard
+    // (that was "TextEntry.qml:49: TypeError" in setup, Down into the bottom row)
+    readonly property var key: (layout[row] || [])[col] || ({k: "", label: "", w: 1})
+    readonly property bool okRepeats: key.k === "del"   // OK held on ⌫ keeps deleting (couchbox.keyguard lets its repeats through)
 
     readonly property var layout: {
         const ch = s => s.split("").map(k => ({k: k, label: k, w: 1}));
-        return [ch("abcdefghijklm"), ch("nopqrstuvwxyz"), ch("1234567890@.-"),
-                [{k: "shift", label: "⇧", w: 2}, {k: "space", label: "Space", w: 4}, {k: "del", label: "⌫", w: 2},
-                 {k: "clear", label: "Clear", w: 2}, {k: "done", label: doneLabel, w: 3}]];
+        const top = symbols ? [ch("1234567890!?#"), ch("$%&*()_+=/\\:;"), ch("\"',<>[]{}|^`~")]
+                            : [ch("abcdefghijklm"), ch("nopqrstuvwxyz"), ch("1234567890@.-")];
+        return top.concat([[{k: "shift", label: "⇧", w: 2}, {k: "page", label: symbols ? "abc" : "#+=", w: 2}, {k: "space", label: "Space", w: 3},
+                            {k: "del", label: "⌫", w: 2}, {k: "clear", label: "Clear", w: 2}, {k: "done", label: doneLabel, w: 2}]]);
     }
 
     // tell couchbox-voice the pop-up is open (it expires after 2 minutes, so keep saying it)
@@ -70,8 +83,15 @@ FocusScope {
     function open(initial, focusAfter) {
         text = initial || "";
         returnFocus = focusAfter || null;
-        row = 0; col = 0; caps = false; allSelected = false;
+        row = 0; col = 0; caps = false; symbols = false; reveal = false; allSelected = false;
         qr.source = "";
+        if (phoneLink) {
+            phoneUrl = phoneLink;
+            qr.source = phoneQr;
+            visible = true;
+            forceActiveFocus();
+            return;
+        }
         qr.source = "file://" + phoneDir + "/phone.png";
         const x = new XMLHttpRequest();
         x.onreadystatechange = () => {
@@ -86,14 +106,20 @@ FocusScope {
 
     function close() {
         visible = false;
-        if (returnFocus)
+        // the item that had focus may be gone meanwhile (its page was rebuilt): then the remote's
+        // keys would go nowhere, so focus goes to whatever the app set up instead (fallbackFocus)
+        if (returnFocus && returnFocus.visible)
             returnFocus.forceActiveFocus();
+        else if (fallbackFocus)
+            fallbackFocus.forceActiveFocus();
     }
 
     function type(s) {
         if (allSelected) { text = ""; allSelected = false; }
         text += s;
+        if (password) { reveal = true; revealTimer.restart(); }
     }
+    Timer { id: revealTimer; interval: 1500; onTriggered: entry.reveal = false }
 
     function backspace() {
         text = allSelected ? "" : text.slice(0, -1);
@@ -108,6 +134,7 @@ FocusScope {
 
     function press(k) {
         if (k === "shift") caps = !caps;
+        else if (k === "page") symbols = !symbols;
         else if (k === "space") type(" ");
         else if (k === "del") backspace();
         else if (k === "clear") { text = ""; allSelected = false; }
@@ -138,7 +165,7 @@ FocusScope {
         else if (k === Qt.Key_Right) col = Math.min(layout[row].length - 1, col + 1);
         else if (k === Qt.Key_Up) moveRow(-1);
         else if (k === Qt.Key_Down) moveRow(1);
-        else if (k === Qt.Key_Return) press(layout[row][col].k);
+        else if (k === Qt.Key_Return) press(key.k);
         else if (k === Qt.Key_Enter) done();                      // the phone's Enter
         else if (k === Qt.Key_Escape || k === Qt.Key_Back) { close(); canceled(); }
         else if (k === Qt.Key_Backspace) backspace();
@@ -197,7 +224,8 @@ FocusScope {
                         spacing: 2 * u
                         Text {
                             id: shown
-                            text: entry.text ? (entry.password ? "•".repeat(entry.text.length) : entry.text) : ""
+                            text: !entry.text ? "" : !entry.password ? entry.text
+                                  : "•".repeat(entry.text.length - (entry.reveal ? 1 : 0)) + (entry.reveal ? entry.text.slice(-1) : "")
                             color: entry.allSelected ? entry.bg : entry.ink
                             font.pixelSize: 36 * u
                             Rectangle {        // Ctrl+A from the phone: show it as selected
@@ -306,7 +334,7 @@ FocusScope {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: "Scan with the camera" + (entry.phoneUrl ? "\n" + entry.phoneUrl.replace(/^https?:\/\//, "").replace(/:\d+$/, "") : "")
+                    text: "Scan with the camera" + (entry.phoneUrl ? "\n" + entry.phoneUrl.replace(/#.*$/, "").replace(/^https?:\/\//, "").replace(/:\d+\/?$/, "") : "")
                     color: entry.dim
                     font.pixelSize: 22 * u
                     lineHeight: 1.2

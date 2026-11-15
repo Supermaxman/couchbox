@@ -5,5 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# not while setup runs from a USB stick or SD card (it waits for the next week)
+ExecCondition=/usr/bin/couchbox downloads-allowed
 ExecStart=/usr/bin/flatpak update --system --noninteractive -y
 ExecStart=/usr/bin/flatpak uninstall --system --unused --noninteractive -y

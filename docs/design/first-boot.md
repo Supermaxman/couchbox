@@ -85,13 +85,15 @@ Order: package defaults, then Imager/cloud-init, then `couchbox.toml`, then the 
    - a USB keyboard;
    - **the phone:** every step shows the phone page's QR code (by IP address, since not every phone resolves `.local`).
      - Offline for 25 s (no Ethernet, no Wi-Fi from Imager or the preseed), or for 2 minutes with a saved Wi-Fi that may still be joining? couchboxd opens a **setup Wi-Fi**, `Couchbox-XXXX`, with a random password. It's NetworkManager's hotspot at 10.42.0.1.
+     - Until then the card holds the codes' places and says about when they come (`setup.phone` mode `waiting`, `eta`).
      - The TV then shows two codes: a `WIFI:` code to join, and the phone page at `http://10.42.0.1:8791`.
+     - Wi-Fi power save is off on the hotspot (`iw … power_save off`, and `802-11-wireless.powersave 2` on the connection): with the image's default (on), an iPhone neither listed nor joined it.
      - The radio can't scan while it's a hotspot, so the Wi-Fi list is the scan from just before.
      - Joining home Wi-Fi closes the hotspot, and reopens it if the join fails. Ethernet coming up, or the end of the wizard, closes it too.
 
 | Step | What it shows | Skippable |
 |---|---|---|
-| 1. Hello | "Couchbox. Use your TV remote's arrows and OK." Also starts **scanning for remotes** in the background | — |
+| 1. Hello | How to pair a Fire TV remote (hold Home 10 s), with the pairing's status live (Looking, Found, Pairing, Paired, or why it failed): the remote's light barely shows. The TV remote over CEC. **Scanning for remotes** runs from here on | — |
 | 2. Remote | "Have a Fire TV remote? Hold its **Home** button for 10 seconds." Pairs automatically as soon as one shows up (BlueZ agent, retries), then: "Press any button on the new remote" to confirm. Also explains: don't factory-reset the remote (Menu + Back + Left) because that erases its TV IR codes | yes ("Use the TV remote") |
 | 2b. Install to the SSD | Only when running from a USB stick or SD card with an SSD present. Copy, then restart (stick) or shut down and remove the card (SD). Setup resumes at Network on the SSD | yes ("keep running from the stick") |
 | 3. Network | Ethernet connected → shows it, Next. Otherwise the Wi-Fi list → password on the on-screen keyboard. Checks internet access and shows the result | no (needed for apps and time) |
@@ -100,7 +102,7 @@ Order: package defaults, then Imager/cloud-init, then `couchbox.toml`, then the 
 | 6. TV buttons | If a Fire remote is paired: "Program its Power and Volume buttons for your TV?" Brand list → test → keep | yes |
 | 7. Updates | **Automatic (recommended)** or Manual | default Automatic |
 | 8. Extras | A checklist that leads into the same Settings pages: Jellyfin (offers servers found on the LAN), Seerr, voice and assistant, Tailscale (QR sign-in), encryption, SSH | yes, all |
-| 9. Apps | YouTube, Chromium and Jellyfin download in the background from step 3 on (Flatpak, about 1.5 GB). This step shows progress, then "You're set" | no wait if already done |
+| 9. Apps | YouTube, Chromium and Jellyfin download in the background once online (Flatpak, about 1.5 GB). This step shows progress, then "You're set". **Not while setup runs from a USB stick or SD card:** the apps, Flatpak and apt updates wait (`ExecCondition=couchbox downloads-allowed`) until the box runs from the SSD, or until setup finishes when there's none. On a stick they saturated it for 20 minutes, and a Fire remote couldn't pair | no wait if already done |
 | 10. Done | The home screen. Tips: Home goes home, Menu on a tile customizes it, the mic button needs voice set up | — |
 
 The wizard stores its progress in `/var/lib/couchbox/state/setup.json`, so a reboot or power loss resumes at the same step. Running it again: Settings → System → "Run setup again".

@@ -66,7 +66,13 @@ async def startup() -> None:
         log.warning("env file: %s", e)
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, _safe(home.build))
+    loop.run_in_executor(None, _safe(wifi_region))
     loop.run_in_executor(None, pending_jobs)
+
+
+def wifi_region() -> None:
+    """The kernel forgets the Wi-Fi region at every restart ("country 00"): set it again."""
+    apply._wifi_country(settings.load())
 
 
 def _safe(fn):
@@ -762,6 +768,8 @@ def setup_save(step: int, completed: list[str] | None = None, done: bool = False
     if done:
         api_setup.hotspot_stop()
         events.publish("setup.done")
+        # the apps waited while setup ran from a USB stick or SD card (install_disk.downloads_held)
+        sh(["systemctl", "start", "--no-block", "couchbox-apps.service"], check=False)
     return st
 
 

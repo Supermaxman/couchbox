@@ -50,7 +50,7 @@ async def pair_start(seconds: float = 45, address: str = "") -> dict[str, Any]:
                 await _boot_screen_follows()
         except Exception as e:  # noqa: BLE001
             log.exception("pairing")
-            _progress("failed", {"reason": str(e)})
+            _progress("failed", {"reason": str(e), "error": str(e), "why": remote.why(str(e))})
 
     _task = asyncio.create_task(run())
     await asyncio.sleep(0)

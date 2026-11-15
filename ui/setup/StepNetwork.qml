@@ -10,7 +10,7 @@ StepPage {
     property var nets: []
     function refresh(rescan, bounce) {
         T.call("network.status", {}, r => p.status = r);
-        T.call("network.wifi_scan", {rescan: rescan, bounce: !!bounce}, r => p.nets = r, () => {});
+        T.call("network.wifi_scan", {rescan: rescan, bounce: !!bounce}, r => p.nets = T.keepOrder(p.nets, r, n => n.ssid), () => {});
     }
     Component.onCompleted: refresh(true)
     Timer { interval: 8000; running: true; repeat: true; onTriggered: p.refresh(false) }
@@ -23,7 +23,7 @@ StepPage {
         if (n.secure) T.askText("Password for " + n.ssid, "", true, go); else go("");
     }
     rows: {
-        const r = [T.info(online ? "You're online" : "Not online yet", Object.values(status.ips || {}).join(", "), {tone: online ? "good" : "warn"})];
+        const r = [T.info(online ? "You're online" : "Not online yet", Object.values(status.ips || {}).join(", "), {tone: online ? "good" : "warn", key: "status"})];
         if (online) r.push(cont());
         r.push(T.section("Wi-Fi networks"));
         for (const n of nets)

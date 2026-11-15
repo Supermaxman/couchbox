@@ -17,9 +17,9 @@ Record each run in `tests/hardware/RESULTS.md`: date, release, board RAM, bootlo
 | A1 | Imager with the Couchbox repository URL | Couchbox shows under Raspberry Pi 5; customisation is offered |
 | A2 | Write to the stick, with Wi-Fi set in Imager | Writes and verifies |
 | A3 | First power-on, stick in a blue port, HDMI 0 | Picture within 3 minutes. CEC wakes the TV and switches input |
-| A4 | Setup, Hello | Phone QR in the corner: it opens the phone remote, and its arrows and OK move the setup |
-| A5 | Your remote: hold Home 10 s on the Fire TV remote (Fire TV Stick unplugged) | "Paired AR…" within about 20 s. The remote's arrows and OK work |
-| A6 | Install to the SSD | Offered with the SSD's name. Progress climbs to 100% in under about 10 minutes |
+| A4 | Setup, Hello | Says how to pair a Fire TV remote, with its status (Looking). Phone QR in the corner: it opens the phone remote, and its arrows and OK move the setup. No downloads yet (`systemctl status couchbox-apps` over SSH: skipped, "ExecCondition" failed) |
+| A5 | On Hello: hold Home 10 s on the Fire TV remote (Fire TV Stick unplugged, fresh batteries) | Found, Pairing, then Paired within about 20 s; Start works with the remote. A failure says why on screen, and `journalctl -u couchboxd \| grep couchbox.remote` shows each step |
+| A6 | Install to the SSD | Offered with the SSD's name. An overall bar, and each step's own as it runs (Prepare, Format with its %, Copy with GB copied, Make it bootable), something always moving; done in under about 10 minutes |
 | A7 | Restart now | Boots from the SSD, with the stick still in. Setup carries on at Internet. The remote and Wi-Fi still work |
 | A8 | Unplug the stick, restart from Settings → System | Still boots, from the SSD |
 | A9 | Rest of the setup, TV remote only (CEC) | Time zone, name, TV buttons (the Fire remote's power and volume work the TV), updates, extras, apps download |
@@ -28,8 +28,8 @@ Record each run in `tests/hardware/RESULTS.md`: date, release, board RAM, bootlo
 
 | # | Check | Expect |
 |---|---|---|
-| B1 | Write the stick **without** Imager's Wi-Fi, no Ethernet | Setup starts. After about 30 s the corner shows two codes, and a Couchbox-XXXX Wi-Fi exists |
-| B2 | Scan code 1, then code 2 | The phone joins it and opens the remote. The arrows work |
+| B1 | Write the stick **without** Imager's Wi-Fi, no Ethernet | Setup starts. The corner keeps two places for the codes and says about when they come; after about 40 s it shows them, and a Couchbox-XXXX Wi-Fi exists. `iw reg get` shows the time zone's country, not `00` |
+| B2 | Scan code 1, then code 2, with an iPhone and an Android phone | Each joins it and opens the remote. The arrows work. `iw dev wlan0 get power_save` says off |
 | B3 | Internet step: pick home Wi-Fi, type the password on the phone | Joins. The setup Wi-Fi closes. The corner shows a new code on the home network |
 | B4 | Wrong password once | "Wrong password". The setup Wi-Fi comes back, and the phone can rejoin it |
 

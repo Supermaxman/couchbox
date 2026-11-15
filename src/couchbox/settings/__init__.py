@@ -227,6 +227,18 @@ def env() -> dict[str, str]:
     return out
 
 
+def country_for_timezone(tz: str) -> str:
+    """America/Los_Angeles -> US (tzdata's zone.tab), "" when the zone has no country (UTC)."""
+    try:
+        for line in (paths.root() / "usr/share/zoneinfo/zone.tab").read_text().splitlines():
+            f = line.split("\t")
+            if len(f) >= 3 and not line.startswith("#") and f[2] == tz:
+                return f[0]
+    except OSError:
+        pass
+    return ""
+
+
 def derived(s: dict[str, Any] | None = None) -> dict[str, Any]:
     """Values worked out from other settings (names default to the device name, ...)."""
     s = s or load()
@@ -240,6 +252,8 @@ def derived(s: dict[str, Any] | None = None) -> dict[str, Any]:
         "cec.name": (s["tv.cec.name"] or name)[:14],
         "units": units,
         "clock24": s["home.clock"] == "24h" or (s["home.clock"] == "auto" and units == "metric"),
+        # the Wi-Fi region (channels, power, the setup hotspot): set, or the time zone's country
+        "wifi_country": s["network.wifi_country"] or country_for_timezone(s["time.timezone"]),
         "weather": (f"{s['location.lat']},{s['location.lon']},{s['location.name']}" if s["home.weather"] and s["location.name"] else ""),
     }
 

@@ -45,6 +45,7 @@ install: $(HELPER)
 	  $(DESTDIR)/usr/lib/tmpfiles.d $(DESTDIR)/usr/lib/environment.d $(DESTDIR)/usr/lib/sddm/sddm.conf.d \
 	  $(DESTDIR)/usr/lib/dracut/modules.d/90couchbox $(DESTDIR)/usr/share/applications \
 	  $(DESTDIR)/usr/lib/dracut/modules.d/89couchbox-boot $(SYSD)/system/plymouth-quit.service.d \
+	  $(SYSD)/system/apt-daily.service.d $(SYSD)/system/apt-daily-upgrade.service.d \
 	  $(DESTDIR)/usr/share/plymouth/themes/couchbox $(LOOKFEEL)/contents/splash/images
 	install -m 644 system/systemd/* $(SYSD)/system/
 	install -m 644 system/user/* $(SYSD)/user/
@@ -62,6 +63,8 @@ install: $(HELPER)
 	chmod 755 $(DESTDIR)/usr/lib/dracut/modules.d/89couchbox-boot/module-setup.sh
 	install -m 644 system/plymouth/couchbox/* $(DESTDIR)/usr/share/plymouth/themes/couchbox/
 	install -m 644 system/plymouth/plymouth-quit.conf $(SYSD)/system/plymouth-quit.service.d/couchbox.conf
+	install -m 644 system/apt/couchbox-hold.conf $(SYSD)/system/apt-daily.service.d/couchbox-hold.conf
+	install -m 644 system/apt/couchbox-hold.conf $(SYSD)/system/apt-daily-upgrade.service.d/couchbox-hold.conf
 	install -m 644 shell/ksplash/org.couchbox.boot/metadata.json $(LOOKFEEL)/
 	install -m 644 shell/ksplash/org.couchbox.boot/contents/splash/Splash.qml $(LOOKFEEL)/contents/splash/
 	install -m 644 system/plymouth/couchbox/logo.png $(LOOKFEEL)/contents/splash/images/

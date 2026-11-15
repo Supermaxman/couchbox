@@ -39,7 +39,9 @@ def _timezone(s: dict[str, Any]) -> None:
 
 
 def _wifi_country(s: dict[str, Any]) -> None:
-    c = s["network.wifi_country"]
+    """The Wi-Fi region: set, or from the time zone. Not kept by the kernel across a restart,
+    so couchboxd sets it again at every start."""
+    c = settings.derived(s)["wifi_country"]
     if c:
         sh(["iw", "reg", "set", c], check=False)
 
@@ -109,7 +111,7 @@ def preseed(changed: dict[str, Any], s: dict[str, Any]) -> None:
 # key prefix -> (step, note shown on screen or "")
 STEPS: list[tuple[tuple[str, ...], Callable[[dict[str, Any]], None], str]] = [
     (("network.hostname",), _hostname, ""),
-    (("network.wifi_country",), _wifi_country, ""),
+    (("network.wifi_country", "time.timezone"), _wifi_country, ""),
     (("time.timezone",), _timezone, ""),
     (("ssh.enabled",), _ssh, ""),
     (("network.hostname", "apps.airplay."), _airplay, ""),

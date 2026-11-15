@@ -2,6 +2,12 @@
 the real couchboxd, in this process, against a throwaway root and a fake system whose
 commands answer with plausible output. Nothing on the machine is touched.
 
+For the setup wizard's screenshots, COUCHBOX_DEMO picks a state (comma-separated):
+  pair:searching | pair:found | pair:pairing | pair:failed   remote pairing stops there
+  offline | hotspot      no network: the phone card waits for the setup Wi-Fi / it's open
+  install:prepare | install:format | install:copy | install:finish   Install to the SSD under way
+  install:ends           copying, then done a second later (an event only)
+
     from couchbox import demo
     demo.start()        # sets COUCHBOX_ROOT / COUCHBOX_SOCKET, starts the daemon thread
 """
@@ -76,6 +82,7 @@ ANSWERS = {
             "UTC",
         ]
     ),
+    ("nmcli", "-t", "-f", "DEVICE,TYPE", "device"): "eth0:ethernet\nwlan0:wifi\n",
     ("tailscale", "status", "--json"): json.dumps({"BackendState": "NeedsLogin", "Self": {}}),
     ("systemctl", "is-active", "couchbox-reencrypt.service"): "inactive\n",
     ("systemctl", "is-active", "couchbox-updater.service"): "inactive\n",
@@ -154,9 +161,14 @@ def start(share: str | None = None) -> Path:
     system.RUNNER = Runner()
     paired: list[dict] = []
 
+    want = set(filter(None, os.environ.get("COUCHBOX_DEMO", "").split(",")))
+    failed_once: list[bool] = []
+
     async def fake_pair(progress, mac="", seconds=45, stop=None):
         progress("searching", {"seconds": seconds})
-        await asyncio.sleep(2)
+        if "pair:searching" in want or "pair:failed" in want and failed_once:
+            await asyncio.Event().wait()  # keeps looking
+        await asyncio.sleep(1)
         d = {
             "address": "AA:BB:CC:00:11:22",
             "name": "AR Remote",
@@ -166,8 +178,21 @@ def start(share: str | None = None) -> Path:
             "battery": 90,
             "remote": True,
         }
-        progress("found", d)
-        await asyncio.sleep(1)
+        progress("found", {**d, "paired": False})
+        if "pair:found" in want:
+            await asyncio.Event().wait()
+        await asyncio.sleep(0.5)
+        progress("pairing", {"attempt": 2, **d, "paired": False})
+        if "pair:pairing" in want:
+            await asyncio.Event().wait()
+        if "pair:failed" in want:
+            failed_once.append(True)
+            progress(
+                "failed",
+                {"reason": "pairing refused", "error": "org.bluez.Error.AuthenticationCanceled", "why": remote.why("Authentication"), **d},
+            )
+            return None
+        await asyncio.sleep(0.5)
         paired[:] = [d]
         progress("paired", d)
         return d
@@ -179,6 +204,43 @@ def start(share: str | None = None) -> Path:
         paired.clear()
 
     remote.pair, remote.list_devices, remote.forget = fake_pair, fake_devices, fake_forget
+    if want & {"offline", "hotspot"}:
+        ANSWERS[("ip", "-4", "-o", "route", "get")] = ""
+        from couchbox.daemon import api_setup
+
+        if "hotspot" in want:
+            api_setup.OFFLINE_GRACE = 0
+            api_setup._creds.update({"ssid": "Couchbox-6G8P", "password": "k7mq2xr9tp"})
+    if "install:ends" in want:  # copying, then done a second later: told by an event only
+        from couchbox import install_disk
+        from couchbox.daemon import events
+
+        install_disk._job.update(
+            {"state": "running", "stage": "copy", "label": "SSD PM9C1a (256 GB)", "percent": 90, "copied": 9e9, "total": 9.8e9}
+        )
+
+        def ends():
+            install_disk._job.update({"state": "done", "percent": 100, "step": "Done", "next": "restart"})
+            events.publish("install.progress", dict(install_disk._job))
+
+        threading.Timer(1.0, ends).start()
+    for stage in ("prepare", "format", "copy", "finish"):
+        if f"install:{stage}" in want:
+            from couchbox import install_disk
+
+            install_disk._job.update(
+                {
+                    "state": "running",
+                    "stage": stage,
+                    "label": "SSD PM9C1a (256 GB)",
+                    "device": "/dev/nvme0n1",
+                    "detail": {"prepare": "Erasing"}.get(stage, ""),
+                    "fraction": {"format": 0.62, "copy": 0.37}.get(stage, 0),
+                    "percent": install_disk.overall(stage, {"format": 0.62, "copy": 0.37}.get(stage, 0)),
+                    "copied": 3.6e9,
+                    "total": 9.8e9,
+                }
+            )
     settings._schema_cache.clear()
     demo_moments()
     from couchbox.daemon import server
