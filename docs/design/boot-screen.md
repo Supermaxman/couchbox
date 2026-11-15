@@ -30,8 +30,9 @@ box that unlocks its disk over the network spends most of its boot there.
 - **Passphrase-only boxes** see "Type the disk passphrase on a USB keyboard" at once.
 - **With a paired remote** the words say "with the remote or a USB keyboard", and the
   passphrase field has an on-screen keyboard under it: CouchKit's (`ui/CouchKit/TextEntry.qml`),
-  the same keys in the same places. Arrows move, OK presses a key, Back deletes, Shift
-  switches the letters' case, Unlock sends it. A wrong one empties the field and says "That
+  plus a second page (#+=) with the digits and every other symbol on a keyboard, so any
+  passphrase can be typed. Arrows move, OK presses a key, Back deletes, Shift switches the
+  letters' case, Unlock sends it. A wrong one empties the field and says "That
   passphrase didn't work". The remote wakes and connects on its first key press.
 
 ## How it's built

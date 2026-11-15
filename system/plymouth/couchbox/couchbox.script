@@ -12,9 +12,10 @@
 # and feeds it the journal as display-message, one line each. couchbox-boot-remote, on a box
 # with a paired Bluetooth remote, adds:
 #   cb:remote                              the remote can type the passphrase here
-#   cb:osk:<on>:<row>:<col>:<caps>:<n>:<wrong>  the on-screen keyboard: shown or not, the key
-#                                          in focus, Shift, how many characters are typed, and
-#                                          whether the last passphrase was wrong
+#   cb:osk:<on>:<row>:<col>:<caps>:<n>:<wrong>:<page>  the on-screen keyboard: shown or not,
+#                                          the key in focus, Shift, how many characters are
+#                                          typed, whether the last passphrase was wrong, and
+#                                          which page (letters, or digits and symbols)
 #   cb:log                                 show or hide the log panel
 
 BG.r = 0.043; BG.g = 0.051; BG.b = 0.071;    # #0b0d12, the app icon's background
@@ -26,13 +27,15 @@ MONO = "DejaVu Sans Mono";
 BAR_END = 0.85;          # the Plasma splash fills the rest of the bar
 LOG_LINES = 9;
 
-# The on-screen keyboard: CouchKit's (ui/CouchKit/TextEntry.qml), the same keys in the same
-# places. Rows 0-2 are 13 one-unit keys; row 3 is Shift, Space, Delete, Clear and Unlock.
+# The on-screen keyboard: CouchKit's (ui/CouchKit/TextEntry.qml), with a second page of digits
+# and every other symbol on a keyboard, so any passphrase can be typed. Rows 0-2 are 13
+# one-unit keys; row 3 is Shift, the page key (#+= / abc), Space, Delete, Clear and Unlock.
 # couchbox-boot-remote moves the focus and types; this only draws it.
 ROWS[0] = "abcdefghijklm"; ROWS[1] = "nopqrstuvwxyz"; ROWS[2] = "1234567890@.-";
-BOTTOM[0] = "shift"; BOTTOM[1] = "Space"; BOTTOM[2] = "del"; BOTTOM[3] = "Clear"; BOTTOM[4] = "Unlock";
-BOTTOM_W[0] = 2; BOTTOM_W[1] = 4; BOTTOM_W[2] = 2; BOTTOM_W[3] = 2; BOTTOM_W[4] = 3;
-KEYS = 44;               # 3 x 13 + 5
+ROWS[3] = "1234567890!?#"; ROWS[4] = "$%&*()_+=/\\:;"; ROWS[5] = "\"',<>[]{}|^`~";
+BOTTOM[0] = "shift"; BOTTOM[1] = "#+="; BOTTOM[2] = "Space"; BOTTOM[3] = "del"; BOTTOM[4] = "Clear"; BOTTOM[5] = "Unlock";
+BOTTOM_W[0] = 2; BOTTOM_W[1] = 2; BOTTOM_W[2] = 2; BOTTOM_W[3] = 2; BOTTOM_W[4] = 2; BOTTOM_W[5] = 3;
+KEYS = 45;               # 3 x 13 + 6
 KEY = 116; KEY_GAP = 14;
 
 # ---------------------------------------------------------------- state
@@ -51,7 +54,7 @@ pw_asked = 0; pw_bullets = 0; pw_typed = 0; pw_wrong = 0; pw_answered = 0;
 log_open = 0; log_manual = 0;
 log_count = 0;
 remote = 0;             # a Bluetooth remote can type the passphrase (couchbox-boot-remote runs)
-osk_on = 0; osk_row = 0; osk_col = 0; osk_caps = 0; osk_n = 0; osk_wrong = 0; osk_drawn = "";
+osk_on = 0; osk_row = 0; osk_col = 0; osk_caps = 0; osk_n = 0; osk_wrong = 0; osk_page = 0; osk_drawn = "";
 mode = Plymouth.GetMode();
 booting = (mode == "boot");
 
@@ -155,7 +158,7 @@ fun layout() {
     for (i = 1; i <= 4; i++) { global.img.key[i] = scaled(src.key[i]); global.img.key_on[i] = scaled(src.key_on[i]); }
     global.img.key_lit = scaled(src.key_lit);
     for (d = 0; d < 2; d++) { global.img.icon["shift" + d] = scaled(src.icon["shift" + d]); global.img.icon["del" + d] = scaled(src.icon["del" + d]); }
-    for (i = 0; i < KEYS; i++) { global.kb_text[i] = NULL; global.kb_caps[i] = NULL; }
+    for (i = 0; i < 2 * KEYS; i++) { global.kb_text[i] = NULL; global.kb_caps[i] = NULL; }
     global.osk_drawn = "";
 
     global.status_key = ""; global.title_key = ""; global.sub_key = "";
@@ -293,9 +296,10 @@ fun key_row(i) { if (i >= 39) return 3; return Math.Int(i / 13); }
 fun key_col(i) { if (i >= 39) return i - 39; return i % 13; }
 fun key_w(i) { if (i >= 39) return BOTTOM_W[i - 39]; return 1; }
 fun key_name(i) {
+    if (i == 40 && osk_page) return "abc";
     if (i >= 39) return BOTTOM[i - 39];
-    c = ROWS[key_row(i)].CharAt(key_col(i));
-    if (osk_caps && key_row(i) < 2) c = upper(c);
+    c = ROWS[osk_page * 3 + key_row(i)].CharAt(key_col(i));
+    if (osk_caps && !osk_page && key_row(i) < 2) c = upper(c);
     return c;
 }
 fun upper(c) {
@@ -317,16 +321,17 @@ fun key_label(i, dark) {
     name = key_name(i);
     if (name == "shift" || name == "del") return img.icon[name + dark];
     if (dark) return key_text(name, key_w(i), 1);
-    if (osk_caps && i < 26) {
+    if (osk_caps && !osk_page && i < 26) {
         if (!kb_caps[i]) global.kb_caps[i] = key_text(name, 1, 0);
         return kb_caps[i];
     }
-    if (!kb_text[i]) global.kb_text[i] = key_text(name, key_w(i), 0);
-    return kb_text[i];
+    k = i + osk_page * KEYS;
+    if (!kb_text[k]) global.kb_text[k] = key_text(name, key_w(i), 0);
+    return kb_text[k];
 }
 
 fun draw_keyboard(on) {
-    state = on + ":" + osk_row + ":" + osk_col + ":" + osk_caps + ":" + fieldbox.GetY();
+    state = on + ":" + osk_row + ":" + osk_col + ":" + osk_caps + ":" + osk_page + ":" + fieldbox.GetY();
     if (state == osk_drawn) return;
     global.osk_drawn = state;
     if (!on) {
@@ -422,6 +427,7 @@ fun on_status(s) {
         global.osk_caps = (field(s, 5) == "1");
         global.osk_n = number(field(s, 6));
         global.osk_wrong = (field(s, 7) == "1");
+        global.osk_page = (field(s, 8) == "1");
     }
 }
 Plymouth.SetUpdateStatusFunction(on_status);

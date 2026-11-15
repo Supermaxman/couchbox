@@ -8,8 +8,9 @@
 #                what to draw (plymouth update --status=cb:osk:…), sends the passphrase
 #   read DEVICE  one of the remote's input devices (udev starts one per device): takes it for
 #                itself, so its keys don't also reach the console, and passes them to run
-# The keyboard is CouchKit's (ui/CouchKit/TextEntry.qml): arrows move, OK presses the key, Back
-# deletes, Menu shows or hides the log. The passphrase only ever lives in run's memory.
+# The keyboard is CouchKit's (ui/CouchKit/TextEntry.qml) with a symbols page added, so every
+# character a passphrase can have is there: arrows move, OK presses the key, Back deletes, Menu
+# shows or hides the log. The passphrase only ever lives in run's memory.
 set -u
 RUN=${COUCHBOX_BOOT_RUN:-/run/couchbox-boot}       # couchbox-boot-status's marks and pace
 KEYS=$RUN/remote-keys                               # readers -> run, one key name a line
@@ -52,11 +53,14 @@ asking() {
 }
 
 # ------------------------------------------------------------------ the keyboard
+# Two pages: letters (Shift for capitals), and digits with every other symbol on a keyboard,
+# so any passphrase can be typed. #+= switches to the symbols, abc back.
 ROWS=(abcdefghijklm nopqrstuvwxyz "1234567890@.-")
-BOTTOM=(shift space del clear "done")
-BOTTOM_W=(2 4 2 2 3)
+SYMBOLS=("1234567890!?#" '$%&*()_+=/\:;' "\"',<>[]{}|^\`~")
+BOTTOM=(shift page space del clear "done")
+BOTTOM_W=(2 2 2 2 2 3)
 
-row_len() { if [ "$1" -eq 3 ]; then echo 5; else echo 13; fi; }
+row_len() { if [ "$1" -eq 3 ]; then echo 6; else echo 13; fi; }
 
 # centre of key i in row r, in hundredths of a key (a gap is 0.12 of a key), as in CouchKit
 centre() {
@@ -83,7 +87,7 @@ move_row() {
 press() {
     local k c
     if [ "$row" -lt 3 ]; then
-        c=${ROWS[row]:col:1}
+        if [ "$page" = 1 ]; then c=${SYMBOLS[row]:col:1}; else c=${ROWS[row]:col:1}; fi
         if [ "$caps" = 1 ]; then c=${c^^}; fi
         text+=$c wrong=0
         return
@@ -91,6 +95,7 @@ press() {
     k=${BOTTOM[col]}
     case $k in
     shift) caps=$((1 - caps)) ;;
+    page) page=$((1 - page)) ;;
     space) text+=" " wrong=0 ;;
     del) text=${text%?} ;;
     clear) text='' ;;
@@ -130,7 +135,7 @@ tick() {
     if [ -n "$sent" ]; then
         if [ -e "$sent" ]; then :                       # not taken yet
         elif find_ask; then                             # asked again: it was wrong
-            sent='' text='' wrong=1 row=0 col=0 caps=0
+            sent='' text='' wrong=1 row=0 col=0 caps=0 page=0
         elif [ $(($(uptime_s) - sent_at)) -gt 30 ]; then  # unlocked (the boot moves on)
             sent='' text='' on=0
         fi
@@ -138,7 +143,7 @@ tick() {
     if [ -z "$sent" ]; then
         if find_ask && { [ "$on" = 1 ] || asking; }; then on=1; else on=0 text='' wrong=0; fi
     fi
-    local state="osk:$on:$row:$col:$caps:${#text}:$wrong"
+    local state="osk:$on:$row:$col:$caps:${#text}:$wrong:$page"
     # again now and then: Plymouth drops what it's told before the theme is drawing
     if [ "$state" != "$last" ] || [ $((SECONDS - said)) -ge 2 ]; then
         say remote; say "$state"
@@ -151,7 +156,7 @@ run() {
     rm -f "$KEYS"
     mkfifo -m 600 "$KEYS"
     exec 3<> "$KEYS"
-    row=0 col=0 caps=0 text='' wrong=0 on=0 sent='' sent_at=0 last='' said=0
+    row=0 col=0 caps=0 page=0 text='' wrong=0 on=0 sent='' sent_at=0 last='' said=0
     local k
     while :; do
         if IFS= read -r -t 0.5 k <&3; then key "$k"; fi

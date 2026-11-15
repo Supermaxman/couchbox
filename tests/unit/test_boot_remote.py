@@ -76,24 +76,24 @@ def test_the_remote_types_the_passphrase_and_unlocks(boot):
     boot.pace(net=False)  # no network unlock: the passphrase is wanted at once
     boot.ask(1)
     boot.start()
-    until(lambda: "cb:osk:1:0:0:0:0:0" in boot.said())
+    until(lambda: "cb:osk:1:0:0:0:0:0:0" in boot.said())
     # b, then o one row down, then Shift (the nearest key below 2), then A at the top left
     boot.keys("RIGHT", "SELECT", "DOWN", "SELECT", "DOWN", "DOWN", "SELECT", "UP", "UP", "UP", "SELECT")
-    until(lambda: "cb:osk:1:0:0:1:3:0" in boot.said())
+    until(lambda: "cb:osk:1:0:0:1:3:0:0" in boot.said())
     boot.keys("BACK", "SELECT")  # Back deletes
-    boot.keys("DOWN", "DOWN", "DOWN", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "SELECT")  # Unlock
+    boot.keys("DOWN", "DOWN", "DOWN", *["RIGHT"] * 5, "SELECT")  # Unlock
     until(lambda: (boot.path / "answer").exists())
     assert (boot.path / "answer").read_text() == "boA"
     # asked again: it was wrong; the field empties and says so
     boot.ask(2)
-    until(lambda: "cb:osk:1:0:0:0:0:1" in boot.said())  # and Shift is off again
+    until(lambda: "cb:osk:1:0:0:0:0:1:0" in boot.said())  # and Shift is off again
 
 
 def test_before_the_passphrase_is_wanted_keys_show_the_log(boot):
     boot.pace(net=True)  # network unlock under way: not stuck yet
     boot.ask(1)
     boot.start()
-    until(lambda: "cb:osk:0:0:0:0:0:0" in boot.said())
+    until(lambda: "cb:osk:0:0:0:0:0:0:0" in boot.said())
     boot.keys("DOWN", "r:DOWN", "SELECT")  # a held key's repeats don't toggle it again
     until(lambda: boot.said().count("cb:log") == 2)
     time.sleep(0.6)
@@ -106,6 +106,23 @@ def test_a_network_that_gave_up_wants_the_passphrase(boot):
     (boot.path / "run/net-down").touch()
     boot.ask(1)
     boot.start()
-    until(lambda: "cb:osk:1:0:0:0:0:0" in boot.said())
+    until(lambda: "cb:osk:1:0:0:0:0:0:0" in boot.said())
     boot.keys("MENU")  # Menu shows the log over the keyboard
     until(lambda: "cb:log" in boot.said())
+
+
+def test_the_symbols_page_types_every_other_character(boot):
+    boot.pace(net=False)
+    boot.ask(1)
+    boot.start()
+    until(lambda: "cb:osk:1:0:0:0:0:0:0" in boot.said())
+    boot.keys("DOWN", "DOWN", "DOWN", "RIGHT", "SELECT")  # #+= (next to Shift)
+    until(lambda: "cb:osk:1:3:1:0:0:0:1" in boot.said())
+    boot.keys("UP", "UP", "UP", *["RIGHT"] * 8, "SELECT")  # up to 3, then right to !
+    boot.keys("DOWN", "SELECT")  # \ below it
+    boot.keys("DOWN", *["LEFT"] * 10, "SELECT")  # " at the start of the last row
+    boot.keys("DOWN", "RIGHT", "SELECT")  # abc: back to the letters
+    boot.keys("UP", "UP", "UP", "LEFT", "LEFT", "SELECT")  # a
+    boot.keys("DOWN", "DOWN", "DOWN", *["RIGHT"] * 5, "SELECT")  # Unlock
+    until(lambda: (boot.path / "answer").exists())
+    assert (boot.path / "answer").read_text() == '!\\"a'
