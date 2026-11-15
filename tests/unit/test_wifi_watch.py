@@ -14,7 +14,8 @@ WATCH = REPO / "bin" / "couchbox-wifi-watch"
 NMCLI = """#!/bin/bash
 echo "nmcli $*" >> "$T/calls"
 case "$*" in
-  "-t -f DEVICE,TYPE,STATE device") echo x >> "$T/loops"; echo "wlan0:wifi:connected" ;;
+  "-t -f DEVICE,TYPE,STATE,CONNECTION device") echo x >> "$T/loops"
+    if [ -e "$T/hotspot" ]; then echo "wlan0:wifi:connected:couchbox-setup"; else echo "wlan0:wifi:connected:couchbox-Home"; fi ;;
   "radio wifi") echo enabled ;;
   "-t -f TYPE,STATE device") echo "wifi:connected"; [ -e "$T/ethernet" ] && echo "ethernet:connected" ;;
   "-t -f TYPE connection show") echo 802-11-wireless ;;
@@ -22,7 +23,7 @@ case "$*" in
 esac
 exit 0
 """
-IP = '#!/bin/bash\necho "default via 192.0.2.1 dev wlan0 proto dhcp metric 600"\n'
+IP = '#!/bin/bash\n[ -e "$T/hotspot" ] || echo "default via 192.0.2.1 dev wlan0 proto dhcp metric 600"\n'
 # answers while the loop count is outside [DEAD_FROM, DEAD_TO)
 PING = """#!/bin/bash
 n=$(wc -l < "$T/loops")
@@ -31,7 +32,7 @@ n=$(wc -l < "$T/loops")
 MODPROBE = '#!/bin/bash\necho "modprobe $*" >> "$T/calls"\n'
 
 
-def run(tmp: Path, loops: int, dead=(3, 99), state: str | None = None, ethernet=False):
+def run(tmp: Path, loops: int, dead=(3, 99), state: str | None = None, ethernet=False, hotspot=False):
     sys_ = tmp / "sys"
     (sys_ / "module/brcmfmac/holders/brcmfmac_cyw").mkdir(parents=True)
     (sys_ / "class/net/wlan0/device/driver").mkdir(parents=True)
@@ -53,6 +54,8 @@ def run(tmp: Path, loops: int, dead=(3, 99), state: str | None = None, ethernet=
         (tmp / "router").write_text(state + "\n")
     if ethernet:
         (tmp / "ethernet").touch()
+    if hotspot:
+        (tmp / "hotspot").touch()
     env = {**os.environ, "T": str(tmp), "PATH": f"{bin_}:{os.environ['PATH']}", "DEAD_FROM": str(dead[0]), "DEAD_TO": str(dead[1])}
     p = subprocess.Popen(["bash", str(tmp / "watch")], env=env, stdout=subprocess.PIPE, text=True)
     deadline = time.time() + 20
@@ -99,4 +102,12 @@ def test_a_router_known_from_before_a_reboot_counts(tmp_path):
 
 def test_ethernet_is_left_alone(tmp_path):
     out, calls = run(tmp_path, loops=8, dead=(0, 99), state="192.0.2.1", ethernet=True)
+    assert out == [] and calls == []
+
+
+def test_the_setup_wifi_is_left_alone(tmp_path):
+    """Setup run again with no Ethernet, on a box that knew a router: the setup Wi-Fi (the hotspot
+    phones join) has no router to ping. It used to count as a dead Wi-Fi and be reconnected away
+    after 3 minutes, taking the phone's remote with it."""
+    out, calls = run(tmp_path, loops=8, dead=(0, 99), state="192.0.2.1", hotspot=True)
     assert out == [] and calls == []
