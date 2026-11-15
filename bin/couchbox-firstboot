@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from couchbox import paths, secrets, settings
+from couchbox.daemon import apply
 
 log = logging.getLogger("couchbox-firstboot")
 SECRET_KEYS = {("wifi", "password"), ("tailscale", "auth_key"), ("voice", "llm_api_key"), ("voice", "stt_api_key"), ("seerr", "api_key")}
@@ -98,6 +99,7 @@ def apply_preseed(p: dict) -> list[dict]:
             log.warning("preseed: %s", e)
     if good:
         settings.update(good)
+        apply.preseed(good, settings.load())
     if (p.get("skip") or {}).get("wizard"):
         st = paths.state() / "state/setup.json"
         st.parent.mkdir(parents=True, exist_ok=True)

@@ -23,6 +23,14 @@ for f in brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin.zst brcm/brcmfmac4345
   chroot "$W/root" test -e "/usr/lib/firmware/$f" || { echo "!! missing firmware $f"; exit 1; }   # links resolve inside
 done
 ok "Pi 5 Wi-Fi and Bluetooth firmware present"
+# the TV user's session, written by couchbox-session-setup during the build: without the setup
+# autostart a new box goes straight to Home, with no remote paired and no network
+TVH=$W/root$(chroot "$W/root" getent passwd tv | cut -d: -f6)
+for f in .config/autostart/couchbox-setup.desktop .config/autostart/couchbox-display.desktop .config/bluedevilglobalrc \
+         .config/ksplashrc .config/systemd/user/graphical-session.target.wants/couchbox-mediakeys.service .local/share/couchbox/web-extension; do
+  [[ -e $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; }
+done
+[[ -n ${FAIL:-} ]] || ok "the TV user's session is set up (the setup wizard starts at the first login)"
 # a preseed like a user would write
 cat > "$W/root/boot/firmware/couchbox.toml" <<'X'
 hostname = "testbox"
@@ -57,6 +65,10 @@ echo "system: $st"
 run() { systemd-run -M cbtest --wait --pipe -q "$@"; }
 run /usr/bin/couchbox config get network.hostname | grep -qx testbox && ok "preseed applied (hostname)"
 run /usr/bin/couchbox config get updates.mode | grep -qx manual && ok "preseed applied (updates)"
+if [[ $(cat "$W/root/etc/hostname") == testbox ]]; then ok "preseed host name in effect"
+else echo "!! host name is $(cat "$W/root/etc/hostname"), not the preseed's testbox"; FAIL=1; fi
+if [[ $(readlink "$W/root/etc/localtime") == */Europe/Berlin ]]; then ok "preseed time zone in effect"
+else echo "!! time zone is $(readlink "$W/root/etc/localtime"), not the preseed's Europe/Berlin"; FAIL=1; fi
 ! grep -q 'test-fake-password' "$W/root/boot/firmware/couchbox.toml" && ok "preseed password erased"
 grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/couchbox-TestNet.nmconnection" && ok "Wi-Fi from the preseed"
 if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -c 'ls /run/NetworkManager/system-connections/' | grep -q 'netplan-wlan0-ImagerNet'; then
@@ -72,6 +84,10 @@ done
 if journalctl -M cbtest -u couchbox-input.service --no-pager 2>/dev/null | grep -q -E "input.toml|unknown key|has no match"; then
   echo "!! couchbox-input: key map problem"; journalctl -M cbtest -u couchbox-input.service --no-pager | tail -15; FAIL=1
 else ok "couchbox-input: key map loads (no /dev/uinput in a container)"; fi
+# systemd drops a job to break an ordering cycle (couchbox-cloudinit-off once never ran that way)
+if journalctl -M cbtest -b --no-pager 2>/dev/null | grep -i 'ordering cycle' | grep -q couchbox; then
+  echo "!! ordering cycle with a Couchbox unit:"; journalctl -M cbtest -b --no-pager | grep -i 'ordering cycle'; FAIL=1
+else ok "no ordering cycles with Couchbox units"; fi
 run /usr/bin/couchbox doctor --container || FAIL=1
 echo "failed units:"; systemctl -M cbtest list-units --failed --no-pager --plain | head -20 || true
 [[ -z ${FAIL:-} ]] || { echo "image test: FAILED"; exit 1; }

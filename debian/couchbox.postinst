@@ -65,6 +65,8 @@ X
     fi
     install -d /etc/cloud/cloud.cfg.d
     echo 'network: {config: disabled}' > /etc/cloud/cloud.cfg.d/99-couchbox-no-network.cfg
+    # couchbox-cloudinit-off from multi-user.target was an ordering cycle (older packages enabled it there)
+    rm -f /etc/systemd/system/multi-user.target.wants/couchbox-cloudinit-off.service
     systemctl set-default graphical.target >/dev/null 2>&1 || true
     systemctl enable sddm.service NetworkManager.service >/dev/null 2>&1 || true
     systemctl disable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
@@ -89,7 +91,9 @@ X
         sed -i 's/^dtoverlay=vc4-kms-v3d$/dtoverlay=vc4-kms-v3d,cma-512/' "$cfg"
     fi
     flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1 || true
-    /usr/lib/couchbox/bin/couchbox-session-setup || true
+    # the TV user's own settings (autostarts, the setup wizard among them): a failed step is
+    # reported here and the install carries on
+    /usr/lib/couchbox/bin/couchbox-session-setup || echo "couchbox: some of the TV user's settings weren't written (see above)" >&2
     # the theme (wallpaper, colours, font) and its re-apply at every TV login
     /usr/lib/couchbox/bin/couchbox-theme >/dev/null 2>&1 || true
     /usr/bin/couchbox home rebuild >/dev/null 2>&1 || true

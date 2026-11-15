@@ -94,6 +94,18 @@ def _home(s: dict[str, Any]) -> None:
     home.build()
 
 
+def preseed(changed: dict[str, Any], s: dict[str, Any]) -> None:
+    """The host name, time zone and Wi-Fi country from a preseed, at the first boot
+    (couchbox-firstboot, before couchboxd and the TV session start): everything else a preseed
+    sets is read by its service as it starts."""
+    for key, step in (("network.hostname", _hostname), ("time.timezone", _timezone), ("network.wifi_country", _wifi_country)):
+        if key in changed:
+            try:
+                step(s)
+            except Exception:  # noqa: BLE001
+                log.exception("applying %s", key)
+
+
 # key prefix -> (step, note shown on screen or "")
 STEPS: list[tuple[tuple[str, ...], Callable[[dict[str, Any]], None], str]] = [
     (("network.hostname",), _hostname, ""),
