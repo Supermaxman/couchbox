@@ -6,7 +6,7 @@
 #     the setup opens again in about two minutes. The system, its apps and SSH stay as they are.
 #     --keep-remote keeps the paired remote (no need to pair it again for every rerun).
 #
-#   ci/box-reset.sh HOST --image VERSION|latest [--preseed FILE] [--keys FILE] [--no-ethernet MINUTES]
+#   ci/box-reset.sh HOST --image VERSION|latest [--preseed FILE] [--keys FILE]
 #     A real first start, as on a new box: writes that release's image onto the USB stick in the
 #     box, erases the SSD, and restarts. The box starts from the stick and the setup begins from
 #     Hello (Install to SSD included). Everything on the SSD is lost.
@@ -14,21 +14,19 @@
 #                           over SSH it needs `[ssh] github_user` (SSH is off on a new box), and over
 #                           Tailscale a `[tailscale] auth_key` (the box is a new device there).
 #     --keys FILE           public keys for the admin account on the stick (authorized_keys)
-#     --no-ethernet MINUTES keep Ethernet off from the first start until the setup is done, or for
-#                           MINUTES at most, so the setup has to get online over Wi-Fi. Ethernet then
-#                           comes back by itself: the way back in if the Wi-Fi part fails.
+#     The box keeps its Ethernet: it's the way back in. Test Wi-Fi afterwards with box-wifi-check.sh.
 #
 # HOST is anything `ssh HOST` reaches, logged in as an account with passwordless sudo (admin).
 set -euo pipefail
 usage() {
   echo "usage: $0 HOST --quick [--keep-remote]" >&2
-  echo "       $0 HOST --image VERSION|latest [--preseed FILE] [--keys FILE] [--no-ethernet MINUTES]" >&2
+  echo "       $0 HOST --image VERSION|latest [--preseed FILE] [--keys FILE]" >&2
   exit 2
 }
 [[ $# -ge 2 && $1 != -* ]] || usage
 HOST=$1
 shift
-MODE="" KEEP_REMOTE=0 VERSION="" PRESEED="" KEYS="" NOETH=0
+MODE="" KEEP_REMOTE=0 VERSION="" PRESEED="" KEYS=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --quick) MODE=quick ;;
@@ -36,7 +34,6 @@ while [[ $# -gt 0 ]]; do
     --image) MODE=image VERSION=${2:?}; shift ;;
     --preseed) PRESEED=${2:?}; shift ;;
     --keys) KEYS=${2:?}; shift ;;
-    --no-ethernet) NOETH=${2:?}; shift ;;
     *) usage ;;
   esac
   shift
@@ -77,9 +74,9 @@ ssh "$HOST" "sudo install -d -m 700 /run/couchbox-reset"
 [[ -z $PRESEED ]] || ssh "$HOST" 'sudo sh -c "umask 077; cat > /run/couchbox-reset/couchbox.toml"' <"$PRESEED"
 [[ -z $KEYS ]] || ssh "$HOST" 'sudo sh -c "umask 077; cat > /run/couchbox-reset/authorized_keys"' <"$KEYS"
 # shellcheck disable=SC2016  # expanded on the box
-ssh "$HOST" sudo bash -s -- "$VERSION" "$NOETH" <<'BOX'
+ssh "$HOST" sudo bash -s -- "$VERSION" <<'BOX'
 set -euo pipefail
-v=$1 noeth=$2
+v=$1
 root=$(lsblk -n -o PKNAME "$(findmnt -n -o SOURCE /)")
 stick=$(lsblk -d -n -o NAME,TRAN | awk -v r="$root" '$2 == "usb" && $1 != r {print $1}')
 [ "$(echo "$stick" | grep -c .)" = 1 ] || { echo "need exactly one USB stick in the box (found: ${stick:-none})" >&2; exit 1; }
@@ -111,31 +108,18 @@ if [ -f /run/couchbox-reset/authorized_keys ]; then
   install -d -m 700 -o "$u" -g "$g" "$m$h/.ssh"
   install -m 600 -o "$u" -g "$g" /run/couchbox-reset/authorized_keys "$m$h/.ssh/authorized_keys"
 fi
-if [ "$noeth" -gt 0 ]; then
-  # test only: Ethernet off until the setup is done (or noeth minutes), then on again, once
-  cat >"$m/usr/local/sbin/couchbox-test-noeth" <<SH
-#!/bin/sh
-nmcli device set eth0 managed no 2>/dev/null; ip link set eth0 down
-for i in \$(seq $((noeth * 6))); do
-  grep -qs '"done": true' /var/lib/couchbox/state/setup.json && break
-  sleep 10
-done
-ip link set eth0 up; nmcli device set eth0 managed yes
-systemctl disable couchbox-test-noeth.service
-SH
-  chmod 755 "$m/usr/local/sbin/couchbox-test-noeth"
-  printf '[Unit]\nDescription=Test only: no Ethernet until the setup is done\nAfter=NetworkManager.service\n\n[Service]\nType=simple\nExecStart=/usr/local/sbin/couchbox-test-noeth\n\n[Install]\nWantedBy=multi-user.target\n' \
-    >"$m/etc/systemd/system/couchbox-test-noeth.service"
-  ln -sf /etc/systemd/system/couchbox-test-noeth.service "$m/etc/systemd/system/multi-user.target.wants/couchbox-test-noeth.service"
-fi
 umount "$m"
 rmdir "$m"
 rm -rf /run/couchbox-reset
 sync
-echo "erasing the SSD /dev/$ssd: the next start is from the stick"
-wipefs -a -f -q "/dev/${ssd}p1" "/dev/${ssd}p2" || true
-wipefs -a -f -q "/dev/$ssd"
-systemd-run --on-active=2 --quiet systemctl reboot --force
+echo "erasing the SSD /dev/$ssd's partition table and start-up partition: the next start is from the stick"
+# Blank the first 513 MiB (the partition table and the FAT start-up partition) straight on the disk,
+# then restart at once: a normal shutdown would unmount that partition and write it back, and the
+# Pi (which tries the SSD before USB) would start the old, half-erased system.
+dd if=/dev/zero of="/dev/$ssd" bs=1M count=513 oflag=direct conv=fsync status=none
+sync
+echo 1 >/proc/sys/kernel/sysrq
+(sleep 1; echo b >/proc/sysrq-trigger) >/dev/null 2>&1 &
 BOX
 echo "$HOST is restarting from the stick (v$VERSION). The setup opens on the TV in 3-4 minutes."
-echo "It's a new device on the network and on Tailscale: reach it by the name in the preseed."
+echo "It's a new device on Tailscale: reach it by the name in the preseed, or on the LAN over Ethernet."
