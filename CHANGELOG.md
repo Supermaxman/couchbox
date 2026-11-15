@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.3](https://github.com/Supermaxman/couchbox/compare/v0.29.2...v0.29.3) (2026-11-15)
+
+
+### Fixed
+
+* **network:** the Wi-Fi watch leaves setup's own Wi-Fi alone (it reconnected it away after 3 minutes when setup ran again with no Ethernet) ([#152](https://github.com/Supermaxman/couchbox/issues/152)) ([dce9e80](https://github.com/Supermaxman/couchbox/commit/dce9e802c1a6cc40c080e1076df68d97a16ec971))
+
 ## [0.29.2](https://github.com/Supermaxman/couchbox/compare/v0.29.1...v0.29.2) (2026-11-15)
 
 
