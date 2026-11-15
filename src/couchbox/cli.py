@@ -13,6 +13,7 @@
   couchbox import-mtv [PATH]       settings from the mtv prototype (/etc/mtv)
   couchbox install-to-disk [DEVICE] copy a USB stick / SD card system to the SSD
   couchbox boot-screen apply        the boot screen on; a test boot if its theme changed
+  couchbox downloads-allowed        exit 1 while app/apt downloads wait (setup from a USB stick)
 
 Changes go through couchboxd when it's running (so they take effect), else straight to
 the files (root, e.g. in an image build).
@@ -266,6 +267,7 @@ def main(argv: list[str] | None = None) -> None:
     im.add_argument("--dry-run", action="store_true")
     ins = sub.add_parser("install-to-disk")
     ins.add_argument("device", nargs="?")
+    sub.add_parser("downloads-allowed")
     bs = sub.add_parser("boot-screen")
     bs.add_argument("action", choices=["apply"])
     bs.add_argument("--image", action="store_true", help="in the image build: the splash on the current boot")
@@ -273,6 +275,13 @@ def main(argv: list[str] | None = None) -> None:
 
     if a.cmd == "version":
         print(__version__)
+    elif a.cmd == "downloads-allowed":
+        from couchbox import install_disk
+
+        held = install_disk.downloads_held()
+        if held:
+            print(f"Downloads wait: {held}. They start after Install to the SSD, or when setup is finished.")
+            sys.exit(1)
     elif a.cmd == "config":
         if a.action in ("get", "set", "reset") and not a.key or a.action == "set" and a.value is None:
             p.error("config get/reset need KEY; set needs KEY VALUE")

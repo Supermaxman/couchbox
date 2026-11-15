@@ -5,12 +5,15 @@ Fire TV remote), pairs it (retrying its flaky first attempts), trusts and connec
 It registers its own agent: the Fire remote asks the host to confirm pairing, and no
 answer means AuthenticationCanceled. progress(state, detail) reports each step:
   searching, found, pairing, paired, failed, stopped
+A failure carries `why` (for the screen) and `error` (BlueZ's). Every step goes to the
+journal too (couchboxd), with the remote's address: a failed pairing can be traced.
 
 Don't factory-reset a Fire remote (Menu + Back + Left): that erases the TV infrared codes,
 which its Power button needs (couchbox-cec can store them again for some TVs).
 """
 
 import asyncio
+import logging
 import re
 from collections.abc import Callable
 from typing import Any
@@ -25,6 +28,20 @@ AGENT_PATH = "/couchbox/pair_agent"
 PAIR_TRIES = 4
 
 Progress = Callable[[str, dict[str, Any]], None]
+log = logging.getLogger("couchbox.remote")
+
+
+def why(error: str) -> str:
+    """BlueZ's error, for the screen: what went wrong, in a few words."""
+    if "Authentication" in error:
+        return "The remote turned the pairing down"
+    if "not found" in error:
+        return "No remote in pairing mode showed up"
+    if any(x in error for x in ("ConnectionAttemptFailed", "Page Timeout", "timed out", "Timeout", "NoReply", "Disconnected")):
+        return "The remote stopped answering"
+    if any(x in error for x in ("NotReady", "Not Powered", "ServiceUnknown", "UnknownObject", "No such adapter")):
+        return "Bluetooth isn't working on this box"
+    return "Pairing didn't finish"
 
 
 class Agent(ServiceInterface):
@@ -144,17 +161,30 @@ async def pair(progress: Progress, mac: str = "", seconds: float = 45, stop: asy
         # Start clean: an earlier failed attempt leaves an unpaired record that confuses retries.
         for path, d in await devices(bus):
             if looks_like_remote(d, mac) and not d.get("Paired"):
+                log.info("forgetting the unpaired %s (%s) from an earlier try", d.get("Address"), d.get("Name") or d.get("Alias"))
                 try:
                     await call(bus, ADAPTER, "org.bluez.Adapter1", "RemoveDevice", "o", [path])
                 except RuntimeError:
                     pass
         await call(bus, ADAPTER, "org.bluez.Adapter1", "StartDiscovery")
+        log.info("searching for a remote in pairing mode%s", f" ({mac})" if mac else "")
         progress("searching", {"seconds": seconds})
         loop = asyncio.get_running_loop()
         end = loop.time() + seconds if seconds else None
         path = d = None
+        seen: set[str] = set()
         while not stop.is_set() and (end is None or loop.time() < end):
             for p, dd in await devices(bus):
+                addr = dd.get("Address", "")
+                if addr not in seen and not dd.get("Paired") and (dd.get("Name") or dd.get("Appearance")):  # what was nearby, once
+                    seen.add(addr)
+                    log.info(
+                        "seen %s name=%r appearance=%s remote=%s",
+                        addr,
+                        dd.get("Name", ""),
+                        dd.get("Appearance"),
+                        looks_like_remote(dd, mac),
+                    )
                 if looks_like_remote(dd, mac) and not dd.get("Paired"):
                     path, d = p, dd
                     break
@@ -163,32 +193,38 @@ async def pair(progress: Progress, mac: str = "", seconds: float = 45, stop: asy
             await asyncio.sleep(0.5)
         if not path:
             await _stop_discovery(bus)
-            progress("stopped" if stop.is_set() else "failed", {"reason": "not found"})
+            log.info("pairing: %s", "stopped" if stop.is_set() else f"no remote found in {seconds:.0f} s")
+            progress("stopped" if stop.is_set() else "failed", {"reason": "not found", "why": why("not found")})
             return None
+        log.info("found %s (%s)", d.get("Address"), d.get("Name") or d.get("Alias"))
         progress("found", describe(d))
-        ok = False
+        ok, error = False, ""
         for attempt in range(1, PAIR_TRIES + 1):
             try:
+                log.info("pairing %s: try %d of %d", d.get("Address"), attempt, PAIR_TRIES)
                 progress("pairing", {"attempt": attempt, **describe(d)})
                 await call(bus, path, "org.bluez.Device1", "Pair", timeout=40)
                 ok = True
                 break
             except (TimeoutError, RuntimeError) as err:
-                msg = str(err) or "timed out"
-                if "AlreadyExists" in msg:
+                error = str(err) or "timed out"
+                if "AlreadyExists" in error:
                     ok = True
                     break
-                await asyncio.sleep(4 if "InProgress" in msg else 2)
+                log.warning("pairing %s: try %d failed: %s", d.get("Address"), attempt, error)
+                await asyncio.sleep(4 if "InProgress" in error else 2)
         await _stop_discovery(bus)
         if not ok:
-            progress("failed", {"reason": "pairing refused", **describe(d)})
+            log.warning("pairing %s failed after %d tries: %s", d.get("Address"), PAIR_TRIES, error)
+            progress("failed", {"reason": "pairing refused", "error": error, "why": why(error), **describe(d)})
             return None
         await set_prop(bus, path, "org.bluez.Device1", "Trusted", "b", True)
         try:
             await call(bus, path, "org.bluez.Device1", "Connect", timeout=20)
-        except (TimeoutError, RuntimeError):
-            pass  # it reconnects on the next key press
+        except (TimeoutError, RuntimeError) as err:
+            log.info("connecting %s: %s (it reconnects on the next key press)", d.get("Address"), err or "timed out")
         result = next((describe(x) for p, x in await devices(bus) if p == path), describe(d))
+        log.info("paired %s (%s): connected=%s", result["address"], result["name"], result["connected"])
         progress("paired", result)
         return result
     finally:

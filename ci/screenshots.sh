@@ -247,6 +247,16 @@ shot edge-home-continue-last couchbox-ontv --keys down,$r6,$r6
 shot edge-yt-home-far couchbox-yt --keys $r6,$r6,down,down,down
 shot edge-yt-results-far couchbox-yt --open "search:sky" --keys $r6,$r6
 [ -f bin/couchbox-setup ] && for s in 0 1 2 3 4 5 6 7 8 9 10; do shot "setup-$s" couchbox-setup --step "$s"; done
+# the wizard in states the demo holds (COUCHBOX_DEMO, see couchbox.demo): Hello while the remote
+# is found, pairs, fails and is paired, with the phone codes still to come and then shown;
+# Install to the SSD at each stage
+dshot() { COUCHBOX_DEMO=$1; export COUCHBOX_DEMO; shift; shot "$@"; unset COUCHBOX_DEMO; }
+dshot pair:searching,offline setup-hello-looking couchbox-setup --step 0
+dshot pair:pairing,offline setup-hello-pairing couchbox-setup --step 0
+dshot pair:failed,hotspot setup-hello-failed couchbox-setup --step 0
+dshot hotspot setup-hello-paired couchbox-setup --step 0
+dshot pair:searching setup-remote-looking couchbox-setup --step 1
+for st in prepare copy finish; do dshot "install:$st" "setup-install-$st" couchbox-setup --step 2; done
 # the remote's Back key on every app's pages: it goes back a level or closes the app
 python3 ci/back_check.py "$OUT/back" || fail=1
 exit $fail

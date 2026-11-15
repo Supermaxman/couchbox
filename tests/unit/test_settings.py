@@ -164,3 +164,32 @@ def test_the_youtube_beta_tile_becomes_the_youtube_tile():
         "version": 2,
         "values": {"home.layout": ["youtube"]},
     }
+
+
+# ------------------------------------------------------------------ Wi-Fi region
+ZONE_TAB = "# tzdata\nUS\t+340308-1181434\tAmerica/Los_Angeles\tPacific\nDE\t+5230+01322\tEurope/Berlin\tmost of Germany\n"
+
+
+def test_wifi_region_comes_from_the_time_zone(box, runner):
+    """A preseed (or the wizard) sets the time zone but often no Wi-Fi country: the region then
+    stayed unset ("country 00"), and with it the hotspot's and 5 GHz channels."""
+    from couchbox.daemon import api, apply
+
+    (box / "usr/share/zoneinfo").mkdir(parents=True)
+    (box / "usr/share/zoneinfo/zone.tab").write_text(ZONE_TAB)
+    settings.update({"time.timezone": "America/Los_Angeles"})
+    assert settings.derived()["wifi_country"] == "US"
+    apply.apply({"time.timezone": "America/Los_Angeles"}, settings.load())
+    assert runner.ran("iw", "reg", "set", "US")
+    # a country set by hand wins over the time zone
+    settings.update({"network.wifi_country": "DE"})
+    assert settings.derived()["wifi_country"] == "DE"
+    # set again at every start: the kernel forgets it
+    runner.calls.clear()
+    api.wifi_region()
+    assert runner.ran("iw", "reg", "set", "DE")
+    # no country for UTC: left alone
+    settings.update({"network.wifi_country": "", "time.timezone": "Etc/UTC"})
+    runner.calls.clear()
+    api.wifi_region()
+    assert not runner.ran("iw", "reg", "set")

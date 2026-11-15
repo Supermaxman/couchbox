@@ -18,6 +18,7 @@ HOTSPOT_CON = "couchbox-setup"
 HOTSPOT_IP = "10.42.0.1"  # NetworkManager's shared-mode address
 OFFLINE_GRACE = 25  # seconds offline before the wizard opens the hotspot
 SAVED_WIFI_GRACE = 120  # ... when a saved Wi-Fi (Imager, preseed) may still be connecting
+SCAN_SECONDS = 15  # the Wi-Fi scan before the hotspot opens, about
 
 _hotspot: dict[str, Any] = {}  # ssid, password while it's up
 _creds: dict[str, str] = {}  # the same name and password all session: phones rejoin by themselves
@@ -112,7 +113,11 @@ def hotspot_start() -> dict[str, Any]:
         )
         if r.returncode != 0:
             raise UserError("Couldn't start the setup Wi-Fi.")
-        sh(["nmcli", "connection", "modify", HOTSPOT_CON, "connection.autoconnect", "no"], check=False)
+        # Wi-Fi power save off (the image's NetworkManager default turns it on): with it on, an
+        # iPhone neither listed nor joined the setup Wi-Fi; with it off, it joined at once. iw
+        # turns it off now; the connection's setting keeps it off if NetworkManager restarts it.
+        sh(["nmcli", "connection", "modify", HOTSPOT_CON, "connection.autoconnect", "no", "802-11-wireless.powersave", "2"], check=False)
+        sh(["iw", "dev", dev, "set", "power_save", "off"], check=False)
         _hotspot.update({"ssid": ssid, "password": pw, "device": dev})
     events.publish("setup.hotspot", {"on": True, "ssid": ssid})
     return dict(_hotspot)
@@ -140,7 +145,8 @@ def lan_ip() -> str:
 @method("setup.phone")
 def setup_phone(auto: bool = True) -> dict[str, Any]:
     """What the wizard's "use your phone" card shows. Online: the phone page's address (by IP:
-    not every phone resolves .local names). Offline for a while (auto): a hotspot to join first.
+    not every phone resolves .local names). Offline for a while (auto): a hotspot to join first;
+    until then "waiting", with about how many seconds until its codes show.
     A write method: the address carries the phone token."""
     global _first_offline
     token = secrets.ensure_token()
@@ -157,11 +163,17 @@ def setup_phone(auto: bool = True) -> dict[str, Any]:
     if not _hotspot and auto:
         _first_offline = _first_offline or time.time()
         grace = SAVED_WIFI_GRACE if saved_wifi() else OFFLINE_GRACE
-        if time.time() - _first_offline >= grace and wifi_device():
-            try:
-                hotspot_start()
-            except UserError:
-                return {"mode": "none"}
+        left = grace - (time.time() - _first_offline)
+        if not wifi_device():
+            return {"mode": "none"}
+        if left > 0:
+            # not online yet: the setup Wi-Fi opens if it stays that way. eta: when its codes show
+            # (the grace, plus the scan before the hotspot opens)
+            return {"mode": "waiting", "eta": int(left) + SCAN_SECONDS}
+        try:
+            hotspot_start()
+        except UserError:
+            return {"mode": "none"}
     if _hotspot:
         return {
             "mode": "hotspot",

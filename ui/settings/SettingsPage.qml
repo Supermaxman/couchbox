@@ -1,6 +1,8 @@
 // One Settings page: a title and a list of rows (see T.row). Up/Down move, OK acts,
 // Left (or Back) goes back to the sections. Rows are plain objects:
 //   {kind: toggle | choice | text | action | info | section | qr | app, label, value, help, on, act}
+// and, for something under way: busy (dots that pulse beside the value), progress (a bar under
+// the label: 0..1, or -1 while there's nothing to count)
 import QtQuick
 
 FocusScope {
@@ -124,11 +126,59 @@ FocusScope {
                         wrapMode: Text.WordWrap
                         font.family: T.font; font.pixelSize: 20 * T.u
                     }
+                    Item {                             // progress
+                        visible: d.r.progress !== undefined
+                        width: d.width - 56 * T.u      // the row's full width, past the value
+                        height: visible ? 18 * T.u : 0
+                        Rectangle {
+                            id: track
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                            height: 8 * T.u; radius: height / 2
+                            color: T.line
+                            clip: true
+                            Rectangle {
+                                visible: d.r.progress >= 0
+                                width: parent.width * Math.max(d.r.progress > 0 ? 0.015 : 0, d.r.progress || 0); height: parent.height; radius: parent.radius
+                                color: d.r.progress >= 1 ? T.good : T.accent
+                            }
+                            Rectangle {                // nothing to count yet: a segment sweeps across
+                                visible: d.r.progress < 0
+                                width: parent.width * 0.22; height: parent.height; radius: parent.radius
+                                color: T.accent
+                                NumberAnimation on x {
+                                    running: d.r.progress < 0; loops: Animation.Infinite
+                                    from: -track.width * 0.22; to: track.width; duration: 1600; easing.type: Easing.InOutCubic
+                                }
+                            }
+                        }
+                    }
                 }
                 Row {
                     id: side
                     anchors { right: parent.right; rightMargin: 28 * T.u; verticalCenter: parent.verticalCenter }
                     spacing: 16 * T.u
+                    Row {                              // busy: three dots pulse in turn
+                        visible: !!d.r.busy
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 7 * T.u
+                        Repeater {
+                            model: d.r.busy ? 3 : 0
+                            Rectangle {
+                                required property int index
+                                width: 9 * T.u; height: width; radius: width / 2
+                                color: T.accent
+                                property real glow                 // 0..0.75 over a dim 0.25
+                                opacity: 0.25 + glow
+                                SequentialAnimation on glow {
+                                    loops: Animation.Infinite
+                                    PauseAnimation { duration: index * 200 }
+                                    NumberAnimation { to: 0.75; duration: 300; easing.type: Easing.OutCubic }
+                                    NumberAnimation { to: 0; duration: 500; easing.type: Easing.InCubic }
+                                    PauseAnimation { duration: (2 - index) * 200 }
+                                }
+                            }
+                        }
+                    }
                     Text {
                         visible: d.r.kind !== "toggle" && !!d.r.value
                         anchors.verticalCenter: parent.verticalCenter

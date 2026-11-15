@@ -5,7 +5,9 @@ import "../settings"
 StepPage {
     id: p
     title: "Install to the SSD"
-    intro: "Couchbox is running from " + (st.booted_from === "mmc" ? "the SD card" : "the USB stick") + ". Copy it to the SSD inside the box: it's faster, and "
+    intro: job.state === "running"
+           ? "Copying Couchbox to " + (job.label || "the SSD") + ". It takes about 5 minutes: leave the box on. The TV can stay on this screen."
+           : "Couchbox is running from " + (st.booted_from === "mmc" ? "the SD card" : "the USB stick") + ". Copy it to the SSD inside the box: it's faster, and "
            + (st.booted_from === "mmc" ? "the card" : "the stick") + " is free again afterwards.\n\nIt takes about 5 minutes. Everything on the SSD is erased."
     property var st: ({booted_from: "usb", targets: [], job: {state: "idle"}})
     property var job: st.job || {state: "idle"}
@@ -21,11 +23,21 @@ StepPage {
             T.call("install.start", {device: t.path}, r => p.job = r);
         });
     }
+    // the copy's three stages, each with its bar: done (full), now (moving), next (empty)
+    readonly property var stages: [{id: "prepare", label: "Prepare the SSD"}, {id: "copy", label: "Copy the system"}, {id: "finish", label: "Make it bootable"}]
+    function gb(b) { return (b / 1e9).toFixed(1); }
     rows: {
         const j = job;
         const r = [];
         if (j.state === "running") {
-            r.push(T.info((j.step || "Copying") + "…", (j.percent || 0) + "%", {help: "Leave the box on. The TV can stay on this screen."}));
+            const now = Math.max(0, stages.findIndex(x => x.id === (j.stage || "prepare")));
+            stages.forEach((x, i) => {
+                if (i < now) r.push(T.info(x.label, "Done", {tone: "good", progress: 1}));
+                else if (i > now) r.push(T.info(x.label, "", {progress: 0}));
+                else if (x.id === "copy" && j.total)
+                    r.push(T.info(x.label, j.detail || gb(j.copied || 0) + " of " + gb(j.total) + " GB", {progress: Math.min(1, (j.copied || 0) / j.total)}));
+                else r.push(T.info(x.label, j.detail || "", {progress: -1}));
+            });
         } else if (j.state === "done") {
             if (j.next === "restart") {
                 r.push(T.info("Copied to " + j.label, "", {tone: "good", help: "Restart, and the box runs from the SSD. Unplug the USB stick any time after."}));
