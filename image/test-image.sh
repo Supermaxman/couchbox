@@ -23,14 +23,17 @@ for f in brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin.zst brcm/brcmfmac4345
   chroot "$W/root" test -e "/usr/lib/firmware/$f" || { echo "!! missing firmware $f"; exit 1; }   # links resolve inside
 done
 ok "Pi 5 Wi-Fi and Bluetooth firmware present"
+if grep -qw splash "$W/root/boot/firmware/current/cmdline.txt" && grep -qw quiet "$W/root/boot/firmware/current/cmdline.txt"; then
+  ok "boot screen on (quiet splash)"
+else echo "!! no boot screen: cmdline.txt is $(cat "$W/root/boot/firmware/current/cmdline.txt")"; FAIL=1; fi
 # the TV user's session, written by couchbox-session-setup during the build: without the setup
 # autostart a new box goes straight to Home, with no remote paired and no network
 TVH=$W/root$(chroot "$W/root" getent passwd tv | cut -d: -f6)
 for f in .config/autostart/couchbox-setup.desktop .config/autostart/couchbox-display.desktop .config/bluedevilglobalrc \
          .config/ksplashrc .config/systemd/user/graphical-session.target.wants/couchbox-mediakeys.service .local/share/couchbox/web-extension; do
-  [[ -e $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; }
+  [[ -e $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; MISSING=1; }
 done
-[[ -n ${FAIL:-} ]] || ok "the TV user's session is set up (the setup wizard starts at the first login)"
+[[ -n ${MISSING:-} ]] || ok "the TV user's session is set up (the setup wizard starts at the first login)"
 # a preseed like a user would write
 cat > "$W/root/boot/firmware/couchbox.toml" <<'X'
 hostname = "testbox"

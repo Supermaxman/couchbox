@@ -79,5 +79,10 @@ test boot: flash-kernel writes `/boot/firmware/new`, the box tries it once at it
 (`piboot-try`), and keeps it only if that boot gets to the real system; otherwise it falls back
 to the current boot. The splash arguments go on the test boot's command line only.
 
+The image build can't make a test boot (flash-kernel does nothing in a chroot), so it runs
+`couchbox boot-screen apply --image`: the theme on, and the splash arguments straight on the
+current boot's command line, so a new box's first start shows no kernel text. The initrd with
+the theme then comes with the box's first update, as a test boot.
+
 The pace in the initrd is the one from when it was last built (a kernel update or a change
 here rebuilds it); the system's copy is updated at every boot.

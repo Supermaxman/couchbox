@@ -268,6 +268,7 @@ def main(argv: list[str] | None = None) -> None:
     ins.add_argument("device", nargs="?")
     bs = sub.add_parser("boot-screen")
     bs.add_argument("action", choices=["apply"])
+    bs.add_argument("--image", action="store_true", help="in the image build: the splash on the current boot")
     a = p.parse_args(argv)
 
     if a.cmd == "version":
@@ -315,7 +316,7 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "boot-screen":
         from couchbox import bootscreen
 
-        print(bootscreen.apply())
+        print(bootscreen.apply(image=a.image))
 
 
 if __name__ == "__main__":
