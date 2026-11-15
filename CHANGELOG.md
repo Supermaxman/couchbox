@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.2](https://github.com/Supermaxman/couchbox/compare/v0.29.1...v0.29.2) (2026-11-15)
+
+
+### Fixed
+
+* **setup:** first setup on fresh hardware works with only a Fire TV remote or a phone: pairing on Hello, install progress, no downloads on the stick, lists that hold still, keyboard fixes ([#150](https://github.com/Supermaxman/couchbox/issues/150)) ([cb5a785](https://github.com/Supermaxman/couchbox/commit/cb5a785bcdc9aa088a9e11a0a7130302beb2d5a9))
+
 ## [0.29.1](https://github.com/Supermaxman/couchbox/compare/v0.29.0...v0.29.1) (2026-11-15)
 
 
