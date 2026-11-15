@@ -11,11 +11,14 @@ StepPage {
            + (st.booted_from === "mmc" ? "the card" : "the stick") + " is free again afterwards.\n\nIt takes about 5 minutes. Everything on the SSD is erased."
     property var st: ({booted_from: "usb", targets: [], job: {state: "idle"}})
     property var job: st.job || {state: "idle"}
-    Component.onCompleted: T.call("install.status", {}, r => { p.st = r; p.job = r.job; })
+    function refresh() { T.call("install.status", {}, r => { p.st = r; p.job = r.job; }, () => {}); }
+    Component.onCompleted: refresh()
     Connections {
         target: T
         function onEvent(topic, d) { if (topic === "install.progress") p.job = d; }
     }
+    // events bring the progress; this makes sure it, Done and Restart now show even if one is missed
+    Timer { interval: 3000; repeat: true; running: p.job.state === "running"; onTriggered: p.refresh() }
     function install(t) {
         T.confirm("Install to " + t.label + "?", "Everything on it is erased, and Couchbox is copied onto it.", "Install", () => {
             // after the restart, the wizard carries on from the next step, on the SSD

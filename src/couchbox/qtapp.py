@@ -3,6 +3,7 @@ events, QR codes) and Shooter (--shot screenshots and --keys for tests)."""
 
 import base64
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -15,7 +16,11 @@ from PySide6.QtQuick import QQuickWindow  # noqa: F401  (grabWindow on the root 
 
 from couchbox import ipc, paths
 
-TOPICS = ["settings", "secrets", "network", "remote", "updates", "encryption", "tailscale", "phone", "setup"]
+log = logging.getLogger("couchbox.qtapp")
+
+# every event prefix the apps' QML listens for (test_qtapp_topics checks): couchboxd sends only these.
+# "install" was missing, so setup's Install to the SSD never saw its progress or its end.
+TOPICS = ["settings", "secrets", "network", "remote", "updates", "encryption", "tailscale", "phone", "setup", "install"]
 
 
 class Backend(QObject):
@@ -44,6 +49,9 @@ class Backend(QObject):
                     for ev in ipc.subscribe(topics):
                         self.event.emit(ev["topic"], json.dumps(ev["data"]))
                 except (ipc.IpcError, OSError):
+                    time.sleep(3)
+                except Exception:  # noqa: BLE001 - never stop listening: the screens follow these
+                    log.exception("events")
                     time.sleep(3)
 
         threading.Thread(target=run, daemon=True).start()

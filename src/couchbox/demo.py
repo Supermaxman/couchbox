@@ -6,6 +6,7 @@ For the setup wizard's screenshots, COUCHBOX_DEMO picks a state (comma-separated
   pair:searching | pair:found | pair:pairing | pair:failed   remote pairing stops there
   offline | hotspot      no network: the phone card waits for the setup Wi-Fi / it's open
   install:prepare | install:format | install:copy | install:finish   Install to the SSD under way
+  install:ends           copying, then done a second later (an event only)
 
     from couchbox import demo
     demo.start()        # sets COUCHBOX_ROOT / COUCHBOX_SOCKET, starts the daemon thread
@@ -210,6 +211,19 @@ def start(share: str | None = None) -> Path:
         if "hotspot" in want:
             api_setup.OFFLINE_GRACE = 0
             api_setup._creds.update({"ssid": "Couchbox-6G8P", "password": "k7mq2xr9tp"})
+    if "install:ends" in want:  # copying, then done a second later: told by an event only
+        from couchbox import install_disk
+        from couchbox.daemon import events
+
+        install_disk._job.update(
+            {"state": "running", "stage": "copy", "label": "SSD PM9C1a (256 GB)", "percent": 90, "copied": 9e9, "total": 9.8e9}
+        )
+
+        def ends():
+            install_disk._job.update({"state": "done", "percent": 100, "step": "Done", "next": "restart"})
+            events.publish("install.progress", dict(install_disk._job))
+
+        threading.Timer(1.0, ends).start()
     for stage in ("prepare", "format", "copy", "finish"):
         if f"install:{stage}" in want:
             from couchbox import install_disk
