@@ -31,7 +31,7 @@ else echo "!! no boot screen: cmdline.txt is $(cat "$W/root/boot/firmware/curren
 TVH=$W/root$(chroot "$W/root" getent passwd tv | cut -d: -f6)
 for f in .config/autostart/couchbox-setup.desktop .config/autostart/couchbox-display.desktop .config/bluedevilglobalrc \
          .config/ksplashrc .config/systemd/user/graphical-session.target.wants/couchbox-mediakeys.service .local/share/couchbox/web-extension; do
-  [[ -e $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; MISSING=1; }
+  [[ -e $TVH/$f || -L $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; MISSING=1; }
 done
 [[ -n ${MISSING:-} ]] || ok "the TV user's session is set up (the setup wizard starts at the first login)"
 # a preseed like a user would write
@@ -69,9 +69,10 @@ run() { systemd-run -M cbtest --wait --pipe -q "$@"; }
 run /usr/bin/couchbox config get network.hostname | grep -qx testbox && ok "preseed applied (hostname)"
 run /usr/bin/couchbox config get updates.mode | grep -qx manual && ok "preseed applied (updates)"
 if [[ $(cat "$W/root/etc/hostname") == testbox ]]; then ok "preseed host name in effect"
-else echo "!! host name is $(cat "$W/root/etc/hostname"), not the preseed's testbox"; FAIL=1; fi
+else echo "!! host name is $(cat "$W/root/etc/hostname"), not the preseed's testbox"; FAIL=1; FB=1; fi
 if [[ $(readlink "$W/root/etc/localtime") == */Europe/Berlin ]]; then ok "preseed time zone in effect"
-else echo "!! time zone is $(readlink "$W/root/etc/localtime"), not the preseed's Europe/Berlin"; FAIL=1; fi
+else echo "!! time zone is $(readlink "$W/root/etc/localtime"), not the preseed's Europe/Berlin"; FAIL=1; FB=1; fi
+[[ -z ${FB:-} ]] || journalctl -M cbtest -b --no-pager -u couchbox-firstboot.service -u systemd-timedated.service -u systemd-hostnamed.service | tail -30 || true
 ! grep -q 'test-fake-password' "$W/root/boot/firmware/couchbox.toml" && ok "preseed password erased"
 grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/couchbox-TestNet.nmconnection" && ok "Wi-Fi from the preseed"
 if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -c 'ls /run/NetworkManager/system-connections/' | grep -q 'netplan-wlan0-ImagerNet'; then
