@@ -150,6 +150,8 @@ shot yt-results couchbox-yt --open "search:sky"
 shot yt-results-chips couchbox-yt --open "search:sky" --keys down
 shot yt-channel couchbox-yt --open channel:UCdemo0000000000000orbit
 shot yt-player couchbox-yt --open video:demo0000003
+# a new box still getting yt-dlp: it waits with a spinner and asks again
+shot yt-player-getting-ready couchbox-yt --open video:demowait001
 shot yt-player-related couchbox-yt --open video:demo0000003 --keys down
 shot yt-player-bar couchbox-yt --open video:demo0000003 --keys up,right,right
 shot yt-settings couchbox-yt --open settings

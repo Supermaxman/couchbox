@@ -333,7 +333,8 @@ class Worker:
                 return self.answer(n, result={"ok": True, "rss": round(rss_mb())})
             return self.answer(n, error=f"unknown op {op}")
         except ytstream.Unavailable as err:
-            return self.answer(n, error=str(err), unavailable=True)
+            extra = {"not_ready": True} if isinstance(err, ytstream.NotReady) else {}  # yt-dlp still coming: the app waits
+            return self.answer(n, error=str(err), unavailable=True, **extra)
         except Exception as err:  # noqa: BLE001 - the app shows it
             return self.answer(n, error=str(err) or err.__class__.__name__)
 
@@ -439,6 +440,8 @@ class Client:
         if msg.get("gone"):  # it left (grown, or crashed): once more, with a fresh one
             msg = self._send(op, args, True, timeout)
         if "error" in msg:
+            if msg.get("not_ready"):
+                raise ytstream.NotReady(msg["error"])
             raise ytstream.Unavailable(msg["error"]) if msg.get("unavailable") else RuntimeError(msg["error"])
         return msg["result"]
 

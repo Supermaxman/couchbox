@@ -192,6 +192,7 @@ Window {
     Spinner {
         id: stepSpinner
         anchors.centerIn: page
+        color: T.accent
         implicitWidth: 56 * T.u
         visible: win.loading
         opacity: 0

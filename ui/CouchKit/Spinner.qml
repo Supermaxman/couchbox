@@ -1,13 +1,13 @@
-// Something is under way: an arc that turns. It turns on Qt's render thread (an Animator), so
-// it keeps moving while the app waits on a slow disk or a busy daemon: the screen never looks
-// frozen.
+// Something is under way: an arc that turns (setup, Settings, the YouTube app). It turns on Qt's
+// render thread (an Animator), so it keeps moving while the app waits on a slow disk or a busy
+// daemon: the screen never looks frozen. Each app passes its colour and size.
 import QtQuick
 
 Item {
     id: s
-    property color color: T.accent
+    property color color: "#7aa2ff"
     property bool running: visible
-    implicitWidth: 34 * T.u
+    implicitWidth: 34
     implicitHeight: implicitWidth
     Canvas {
         id: arc

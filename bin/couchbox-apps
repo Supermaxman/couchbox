@@ -1,5 +1,5 @@
 #!/bin/sh
-# couchbox-apps: install the Flatpak apps Couchbox uses, when they're missing (the image
+# couchbox-apps: install yt-dlp and the Flatpak apps Couchbox uses, when they're missing (the image
 # leaves them out to stay small; couchbox-apps.service runs this once the network is up).
 # Progress is in the journal and in /run/couchbox/apps.json for the setup wizard.
 set -eu
@@ -8,6 +8,10 @@ APPS="rocks.shy.VacuumTube org.chromium.Chromium org.fcast.Receiver"
 [ "${COUCHBOX_MEDIA_JELLYFIN_CLIENT:-native}" = web ] || [ -x /opt/couchbox/jellyfin-desktop/bin/jellyfin-desktop ] \
   || APPS="$APPS org.jellyfin.JellyfinDesktop"
 status() { mkdir -p /run/couchbox; printf '{"state": "%s", "app": "%s", "done": %s, "total": %s}\n' "$1" "$2" "$3" "$4" > /run/couchbox/apps.json; }
+# yt-dlp first (a few MB): YouTube is the first tile, and without it the YouTube app can't play
+# anything. Its own timer runs up to 35 min after boot, too late for a box just set up.
+[ -f /opt/couchbox/yt-dlp/yt-dlp ] || /usr/lib/couchbox/bin/couchbox-yt-dlp \
+  || echo "couchbox-apps: yt-dlp didn't download yet; its timer tries again"
 flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 total=$(echo $APPS | wc -w); n=0
 for app in $APPS; do

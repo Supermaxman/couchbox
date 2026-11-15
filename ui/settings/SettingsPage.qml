@@ -6,6 +6,7 @@
 // for something under way: busy (a spinner beside the value), progress (a bar under
 // the label: 0..1, or -1 while there's nothing to count)
 import QtQuick
+import CouchKit
 
 FocusScope {
     id: page
@@ -194,6 +195,8 @@ FocusScope {
                     spacing: 16 * T.u
                     Spinner {                          // busy: something under way
                         visible: !!d.r.busy
+                        color: T.accent
+                        implicitWidth: 34 * T.u
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {

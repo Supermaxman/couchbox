@@ -2533,7 +2533,12 @@ class Demo(YouTube):
 
 def demo_stream(video_id: str) -> dict[str, Any]:
     """The demo's "stream": nothing to play (the stand-in video), with chapters to draw. A "demobot..."
-    video gets YouTube's bot check, as a guest's can (screenshots)."""
+    video gets YouTube's bot check, as a guest's can; a "demowait..." one, a new box still getting
+    yt-dlp (screenshots)."""
+    if video_id.startswith("demowait"):
+        from couchbox.services import ytstream
+
+        raise ytstream.NotReady("Getting YouTube ready…")
     if video_id.startswith("demobot"):
         from couchbox.services import ytstream
 

@@ -282,7 +282,20 @@ def test_units_ask_before_downloading():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    for unit in ("system/systemd/couchbox-apps.service", "system/systemd/couchbox-flatpak-update.service", "system/apt/couchbox-hold.conf"):
+    for unit in (
+        "system/systemd/couchbox-apps.service",
+        "system/systemd/couchbox-flatpak-update.service",
+        "system/systemd/couchbox-yt-dlp.service",
+        "system/apt/couchbox-hold.conf",
+    ):
         assert "ExecCondition=/usr/bin/couchbox downloads-allowed" in (root / unit).read_text()
     mk = (root / "Makefile").read_text()
     assert "apt-daily.service.d/couchbox-hold.conf" in mk and "apt-daily-upgrade.service.d/couchbox-hold.conf" in mk
+
+
+def test_the_apps_bring_yt_dlp_first():
+    """A new box: YouTube (the first tile) played nothing for ~25 min, until yt-dlp's timer ran."""
+    from pathlib import Path
+
+    apps = (Path(__file__).resolve().parents[2] / "bin/couchbox-apps").read_text()
+    assert apps.index("couchbox-yt-dlp") < apps.index("flatpak install")
