@@ -133,8 +133,8 @@ rmdir "$m"
 rm -rf /run/couchbox-reset
 sync
 echo "erasing the SSD /dev/$ssd: the next start is from the stick"
-wipefs -a -q "/dev/${ssd}p1" "/dev/${ssd}p2" || true
-wipefs -a -q "/dev/$ssd"
+wipefs -a -f -q "/dev/${ssd}p1" "/dev/${ssd}p2" || true
+wipefs -a -f -q "/dev/$ssd"
 systemd-run --on-active=2 --quiet systemctl reboot --force
 BOX
 echo "$HOST is restarting from the stick (v$VERSION). The setup opens on the TV in 3-4 minutes."
