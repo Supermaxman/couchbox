@@ -81,13 +81,13 @@ Window {
         if (completed.indexOf(steps[step]) < 0) completed = completed.concat([steps[step]]);
         let n = Math.min(step + 1, steps.length - 1);
         while (skip.indexOf(steps[n]) >= 0 && n < steps.length - 1) n++;
-        step = n;
-        T.call("setup.save", {step: step, completed: completed}, () => {});
+        goTo(n);
+        T.call("setup.save", {step: n, completed: completed}, () => {});
     }
     function prev() {
         let n = step - 1;
         while (n > 0 && skip.indexOf(steps[n]) >= 0) n--;
-        if (n >= 0) step = n;
+        if (n >= 0) goTo(n);
     }
     function finish() {
         finishing = true;
@@ -173,11 +173,33 @@ Window {
         anchors { left: left.right; right: parent.right; top: parent.top; bottom: parent.bottom }
         source: "Step" + win.steps[win.step] + ".qml"
         focus: true
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { item.forceActiveFocus(); win.loading = false; }
         Connections {
             target: page.item
             ignoreUnknownSignals: true
             function onBack() { win.prev(); }
+        }
+    }
+
+    // A step's page can take seconds to load the first time from a USB stick, with nothing
+    // moving: the press looked lost. The step changes a frame after this spinner starts; it turns
+    // on the render thread, so it keeps moving while the page loads, and only shows if that takes
+    // a while (a quick step change shows nothing).
+    property bool loading: false
+    property int pending: 0
+    function goTo(n) { pending = n; loading = true; stepTimer.restart(); }
+    Timer { id: stepTimer; interval: 20; onTriggered: { if (win.step === win.pending) win.loading = false; else win.step = win.pending; } }
+    Spinner {
+        id: stepSpinner
+        anchors.centerIn: page
+        implicitWidth: 56 * T.u
+        visible: win.loading
+        opacity: 0
+        onVisibleChanged: if (visible) appear.restart(); else { appear.stop(); opacity = 0; }
+        SequentialAnimation {
+            id: appear
+            PauseAnimation { duration: 250 }
+            OpacityAnimator { target: stepSpinner; from: 0; to: 1; duration: 200 }
         }
     }
 

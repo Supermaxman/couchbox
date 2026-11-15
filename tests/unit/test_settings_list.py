@@ -24,6 +24,14 @@ Window {
     width: 1280; height: 1080; visible: true
     property string result: ""
     property int choiceIndex: choice.list.currentIndex
+    property string firstLabel: ""
+    // before the user moves, rows that arrive later don't leave the cursor on an early "Skip"
+    SettingsPage { id: late; objectName: "late"; showHeading: false
+        rows: [T.info("No SSD found", ""), {kind: "action", label: "Skip", act: () => {}}] }
+    function arrive() {
+        late.rows = [{kind: "action", label: "Install to SSD", primary: true, act: () => {}}, {kind: "action", label: "Skip", act: () => {}}];
+        firstLabel = late.rows[late.list.currentIndex].label;
+    }
     SettingsPage { id: page; anchors.fill: parent; focus: true; showHeading: false }
     function net(n, v) { return {kind: "action", label: n, value: v || "", act: () => {}}; }
     function check(tag) {
@@ -33,7 +41,8 @@ Window {
     function trial() {
         const out = [];
         page.rows = [T.info("You're online", "", {key: "status"}), net("Home"), net("Neighbours"), net("Cafe")];
-        page.list.currentIndex = 2;                                   // on Neighbours
+        page.moved = true;                                            // the user moved the cursor...
+        page.list.currentIndex = 2;                                   // ...to Neighbours
         const before = check("start");
         page.rows = [T.info("You're online", "", {key: "status"}), net("NETGEAR"), net("Cafe", "35%"), net("Home"), net("Neighbours", "61%")];
         const after = check("reordered");
@@ -64,4 +73,7 @@ def test_refresh_keeps_rows_and_the_cursor():
     assert reordered == {"cur": 4, "label": "Neighbours", "same": True}  # moved with its row, the same item
     assert gone["label"] in ("Cafe", "Home") and gone["cur"] in (1, 2)  # its row went: the nearest one
     assert win.property("choiceIndex") == 1  # starts on Manual
+    QMetaObject.invokeMethod(win, "arrive")
+    app.processEvents()
+    assert win.property("firstLabel") == "Install to SSD"
     win.close()
