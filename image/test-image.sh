@@ -84,10 +84,12 @@ done
 if journalctl -M cbtest -u couchbox-input.service --no-pager 2>/dev/null | grep -q -E "input.toml|unknown key|has no match"; then
   echo "!! couchbox-input: key map problem"; journalctl -M cbtest -u couchbox-input.service --no-pager | tail -15; FAIL=1
 else ok "couchbox-input: key map loads (no /dev/uinput in a container)"; fi
-# systemd drops a job to break an ordering cycle (couchbox-cloudinit-off once never ran that way)
-if journalctl -M cbtest -b --no-pager 2>/dev/null | grep -i 'ordering cycle' | grep -q couchbox; then
-  echo "!! ordering cycle with a Couchbox unit:"; journalctl -M cbtest -b --no-pager | grep -i 'ordering cycle'; FAIL=1
-else ok "no ordering cycles with Couchbox units"; fi
+# systemd drops a job to break an ordering cycle (couchbox-cloudinit-off once never ran that way).
+# A container boots without cloud-init, so the boot as on a Pi (with cloud-init.target) is verified too.
+cyc=$({ journalctl -M cbtest -b --no-pager; run /bin/sh -c 'systemd-analyze verify --man=no graphical.target cloud-init.target 2>&1'; } 2>/dev/null \
+  | grep -i 'ordering cycle' | grep -i couchbox || true)
+if [[ -n $cyc ]]; then echo "!! ordering cycle with a Couchbox unit:"; echo "$cyc"; FAIL=1
+else ok "no ordering cycles with Couchbox units (as booted, and with cloud-init as on a Pi)"; fi
 run /usr/bin/couchbox doctor --container || FAIL=1
 echo "failed units:"; systemctl -M cbtest list-units --failed --no-pager --plain | head -20 || true
 [[ -z ${FAIL:-} ]] || { echo "image test: FAILED"; exit 1; }
