@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/Supermaxman/couchbox/compare/v0.29.0...v0.29.1) (2026-11-15)
+
+
+### Fixed
+
+* **image:** new boxes show the setup wizard again; the preseed's host name and time zone, cloud-init off after the first boot, and the boot screen from the first start ([#148](https://github.com/Supermaxman/couchbox/issues/148)) ([3427af4](https://github.com/Supermaxman/couchbox/commit/3427af489e77e021e587553ebf7e1b7c83da49b0))
+
 ## [0.29.0](https://github.com/Supermaxman/couchbox/compare/v0.28.0...v0.29.0) (2026-11-15)
 
 
