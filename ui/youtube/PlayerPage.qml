@@ -19,6 +19,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
+import CouchKit
 
 FocusScope {
     id: player
@@ -125,6 +126,28 @@ FocusScope {
     signal finished()
     signal openChannel(string id)
 
+    // the video's stream. A new box may not have yt-dlp yet (it comes with the apps once the box
+    // is online): then "Getting YouTube ready" with a spinner, and it asks again every few seconds
+    property bool preparing: false
+    Timer { id: retryStream; interval: 4000; onTriggered: if (player.preparing && !player.s) player.requestStream(player.videoId) }
+    function requestStream(id) {
+        Y.call("stream", {id: id}, r => {
+            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
+            preparing = false;
+            s = r;
+            // where this profile left off: the card's (a part-watched card's red bar) unless told
+            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(Y.progressOf(player.seed), r.duration || player.seed.duration);
+            waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
+            if (waitLeft <= 0) beginSoon();
+            showControls();
+        }, (e, r) => {
+            if (!player || player.videoId !== id) return;
+            if (r && r.notReady) { preparing = true; retryStream.restart(); return; }
+            preparing = false;
+            message = e || "This video can't be played.";
+        });
+    }
+
     function start(id, at) {
         if (s && reported) report(video.ended ? "end" : "pause");     // the one before
         // the one before stops now (not its sound on under the next one's picture while it comes)
@@ -144,15 +167,8 @@ FocusScope {
         if (player.activeFocus && !ctl.activeFocus) ctl.forceActiveFocus();
         if (speed !== 1) video.setSpeed(speed);
         showControls();
-        Y.call("stream", {id: id}, r => {
-            if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
-            s = r;
-            // where this profile left off: the card's (a part-watched card's red bar) unless told
-            if (!player.startAt && !r.live) player.startAt = Y.resumeAt(Y.progressOf(player.seed), r.duration || player.seed.duration);
-            waitLeft = r.wait || 0;            // YouTube holds some streams back for as long as their ads
-            if (waitLeft <= 0) beginSoon();
-            showControls();
-        }, e => { if (player && player.videoId === id) message = e || "This video can't be played."; });
+        preparing = false;
+        requestStream(id);
         segments = []; skippedOnce = ({}); skipNotice = null; brandTitle = ""; dislikes = -1;
         Y.call("segments", {id: id}, r => { if (player && player.videoId === id) player.segments = r.segments || []; }, () => {});
         if (Y.settings.dearrow) Y.call("branding", {id: id}, r => { if (player && player.videoId === id) player.brandTitle = r.title || ""; }, () => {});
@@ -1120,10 +1136,17 @@ FocusScope {
             wrapMode: Text.WordWrap
             text: player.signInOffer ? "YouTube wants you signed in to play this.\nOK: sign in or choose an account · Back to go back."
                 : player.message ? player.message + "\nBack to go back."
+                : player.preparing ? "Getting YouTube ready. On a new box this takes a minute or two."
                 : player.waitLeft > 0 ? "Starting in " + player.waitLeft + " s (YouTube holds it back as long as its ads would play)" : "Loading…"
             color: Y.text
             font.family: Y.font; font.pixelSize: 32 * Y.u
             style: Text.Raised; styleColor: "#80000000"
+        }
+        Spinner {                              // getting YouTube ready (a new box): it's moving, not stuck
+            visible: player.preparing && !player.message
+            anchors { horizontalCenter: whyText.horizontalCenter; bottom: whyText.top; bottomMargin: 36 * Y.u }
+            color: Y.text
+            implicitWidth: 64 * Y.u
         }
     }
     Rectangle {                                // "Video paused. Continue watching?"

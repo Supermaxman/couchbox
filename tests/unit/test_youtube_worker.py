@@ -67,6 +67,18 @@ def test_an_unplayable_video_says_why(monkeypatch):
     assert json.loads(out.getvalue()) == {"n": 9, "error": "This video is private.", "unavailable": True}
 
 
+def test_no_yt_dlp_yet_is_not_ready(monkeypatch):
+    """A new box before yt-dlp arrives: "not ready", so the app waits instead of showing an error."""
+
+    def extract(vid, phases=None, visitor=""):
+        raise ytstream.NotReady("Getting YouTube ready…")
+
+    monkeypatch.setattr(ytstream, "extract", extract)
+    out = io.StringIO()
+    ytworker.Worker(out).run_one({"n": 9, "op": "resolve", "args": {"id": "x"}}, time.monotonic())
+    assert json.loads(out.getvalue()) == {"n": 9, "error": "Getting YouTube ready…", "unavailable": True, "not_ready": True}
+
+
 def test_a_kept_video_is_answered_at_once_not_behind_a_prefetch(monkeypatch):
     out = io.StringIO()
     w = ytworker.Worker(out)

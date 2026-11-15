@@ -3,3 +3,4 @@ TextEntry 1.0 TextEntry.qml
 PlayerControls 1.0 PlayerControls.qml
 PlayerButton 1.0 PlayerButton.qml
 PlayerIcon 1.0 PlayerIcon.qml
+Spinner 1.0 Spinner.qml

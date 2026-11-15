@@ -3,9 +3,10 @@
 //   {kind: toggle | choice | text | action | info | section | qr | app, label, value, help, on, act}
 // and key (what keeps a row the same row while its label changes: by default kind + label),
 // current (the cursor starts on it: the choice already made);
-// for something under way: busy (dots that pulse beside the value), progress (a bar under
+// for something under way: busy (a spinner beside the value), progress (a bar under
 // the label: 0..1, or -1 while there's nothing to count)
 import QtQuick
+import CouchKit
 
 FocusScope {
     id: page
@@ -23,6 +24,7 @@ FocusScope {
     // cursor stays on the same row (by key) while rows above it come, go or move.
     ListModel { id: keyed }
     property var byKey: ({})
+    property bool moved: false             // the user has moved the cursor on this page
     onRowsChanged: sync()
     Component.onCompleted: sync()
     function rowKey(r) { return r.key || ((r.kind || "") + ":" + (r.label || "")); }
@@ -47,9 +49,11 @@ FocusScope {
             for (let x = i + 1; x < keyed.count; x++) if (keyed.get(x).key === want[i]) { j = x; break; }
             if (j >= 0) keyed.move(j, i, 1); else keyed.insert(i, {key: want[i]});
         }
-        const at = cur ? want.indexOf(cur) : rows.findIndex(r => r.current);
+        // until the user moves, the cursor goes where the page wants it (its current row, else the
+        // first one): rows arrive in pieces, and an early "Skip" mustn't keep the cursor
+        const at = cur && moved ? want.indexOf(cur) : rows.findIndex(r => r.current);
         if (at >= 0 && focusable(rows[at])) list.currentIndex = at;
-        else list.settle(was);
+        else list.settle(moved ? was : 0);
     }
 
     Text {
@@ -101,8 +105,8 @@ FocusScope {
             for (let i = from; i < n; i++) if (page.focusable(page.rows[i])) { currentIndex = i; return; }
             for (let i = from - 1; i >= 0; i--) if (page.focusable(page.rows[i])) { currentIndex = i; return; }
         }
-        Keys.onUpPressed: if (!page.moving || !page.move(-1)) step(-1)
-        Keys.onDownPressed: if (!page.moving || !page.move(1)) step(1)
+        Keys.onUpPressed: { page.moved = true; if (!page.moving || !page.move(-1)) step(-1); }
+        Keys.onDownPressed: { page.moved = true; if (!page.moving || !page.move(1)) step(1); }
         Keys.onLeftPressed: page.back()
         Keys.onReturnPressed: activate()
         Keys.onEnterPressed: activate()
@@ -117,7 +121,7 @@ FocusScope {
             required property string key
             required property int index
             readonly property var r: page.byKey[key] || ({})
-            readonly property bool cur: ListView.isCurrentItem && list.activeFocus
+            readonly property bool cur: ListView.isCurrentItem && list.activeFocus && page.focusable(r)
             width: list.width
             height: r.kind === "section" ? 74 * T.u : r.kind === "qr" ? qr.height + 40 * T.u
                   : Math.max(84 * T.u, col.implicitHeight + 34 * T.u)
@@ -177,7 +181,7 @@ FocusScope {
                                 visible: d.r.progress < 0
                                 width: parent.width * 0.22; height: parent.height; radius: parent.radius
                                 color: T.accent
-                                NumberAnimation on x {
+                                XAnimator on x {                // on the render thread: it moves even while the app waits
                                     running: d.r.progress < 0; loops: Animation.Infinite
                                     from: -track.width * 0.22; to: track.width; duration: 1600; easing.type: Easing.InOutCubic
                                 }
@@ -189,27 +193,11 @@ FocusScope {
                     id: side
                     anchors { right: parent.right; rightMargin: 28 * T.u; verticalCenter: parent.verticalCenter }
                     spacing: 16 * T.u
-                    Row {                              // busy: three dots pulse in turn
+                    Spinner {                          // busy: something under way
                         visible: !!d.r.busy
+                        color: T.accent
+                        implicitWidth: 34 * T.u
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 7 * T.u
-                        Repeater {
-                            model: d.r.busy ? 3 : 0
-                            Rectangle {
-                                required property int index
-                                width: 9 * T.u; height: width; radius: width / 2
-                                color: T.accent
-                                property real glow                 // 0..0.75 over a dim 0.25
-                                opacity: 0.25 + glow
-                                SequentialAnimation on glow {
-                                    loops: Animation.Infinite
-                                    PauseAnimation { duration: index * 200 }
-                                    NumberAnimation { to: 0.75; duration: 300; easing.type: Easing.OutCubic }
-                                    NumberAnimation { to: 0; duration: 500; easing.type: Easing.InCubic }
-                                    PauseAnimation { duration: (2 - index) * 200 }
-                                }
-                            }
-                        }
                     }
                     Text {
                         visible: d.r.kind !== "toggle" && !!d.r.value

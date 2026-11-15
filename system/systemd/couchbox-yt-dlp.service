@@ -5,5 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# not while setup runs from a USB stick or SD card: couchbox-apps fetches it once that's over
+ExecCondition=/usr/bin/couchbox downloads-allowed
 ExecStart=/usr/lib/couchbox/bin/couchbox-yt-dlp
 Nice=10

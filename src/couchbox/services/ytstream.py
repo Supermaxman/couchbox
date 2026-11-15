@@ -48,6 +48,11 @@ class Unavailable(RuntimeError):
     """The video can't be played (private, removed, members only, yt-dlp missing...)."""
 
 
+class NotReady(Unavailable):
+    """yt-dlp isn't on the box yet: a new box fetches it with its apps once it's online. The app
+    says so with a spinner and asks again, rather than showing an error."""
+
+
 # ------------------------------------------------------------------ yt-dlp
 def add_path() -> None:
     """yt-dlp's release on Python's path (without importing it: its EJS scripts are enough for
@@ -60,11 +65,19 @@ def add_path() -> None:
 
 
 def module():
-    """The yt_dlp module (imported once), or None when there isn't one."""
+    """The yt_dlp module (imported once), or None when there isn't one yet. Missing is checked
+    again once its release turns up (a new box fetches it after the app has started)."""
     global _module
-    if _module is not None:
-        return _module or None
+    if _module:
+        return _module
+    if _module is False and not any(p and os.path.exists(p) for p in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP)):
+        return None
     add_path()
+    import importlib
+
+    importlib.invalidate_caches()
+    for p in (os.environ.get("COUCHBOX_YTDLP"), YTDLP_ZIP):
+        sys.path_importer_cache.pop(p, None)  # a path that wasn't there yet is remembered as no-importer
     try:
         import yt_dlp
 
@@ -118,7 +131,7 @@ def _downloader(visitor: str = ""):
     global _ydl
     m = module()
     if not m:
-        raise Unavailable("YouTube needs yt-dlp: run  sudo couchbox-yt-dlp  on the box.")
+        raise NotReady("Getting YouTube ready…")
     from couchbox.services import ytjs
 
     ytjs.register()

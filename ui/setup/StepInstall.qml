@@ -41,10 +41,10 @@ StepPage {
                 if (i < now) r.push(T.info(x.label, "Done", {tone: "good", progress: 1}));
                 else if (i > now) r.push(T.info(x.label, "", {progress: 0}));
                 else if (x.id === "copy" && j.total)
-                    r.push(T.info(x.label, j.detail || gb(j.copied || 0) + " of " + gb(j.total) + " GB", {progress: Math.min(1, (j.copied || 0) / j.total)}));
+                    r.push(T.info(x.label, j.detail || gb(j.copied || 0) + " of " + gb(j.total) + " GB", {progress: Math.min(1, (j.copied || 0) / j.total), busy: true}));
                 else if (x.id === "format")
-                    r.push(T.info(x.label, Math.round(100 * (j.fraction || 0)) + "%", {progress: j.fraction || 0}));
-                else r.push(T.info(x.label, j.detail || "", {progress: -1}));
+                    r.push(T.info(x.label, Math.round(100 * (j.fraction || 0)) + "%", {progress: j.fraction || 0, busy: true}));
+                else r.push(T.info(x.label, j.detail || "", {progress: -1, busy: true}));
             });
         } else if (j.state === "done") {
             if (j.next === "restart") {
