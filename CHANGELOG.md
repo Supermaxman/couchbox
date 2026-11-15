@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/Supermaxman/couchbox/compare/v0.28.0...v0.29.0) (2026-11-15)
+
+
+### New
+
+* **boot:** the remote on the boot screen: show the log, and type the disk passphrase on an on-screen keyboard ([#146](https://github.com/Supermaxman/couchbox/issues/146)) ([f850f34](https://github.com/Supermaxman/couchbox/commit/f850f349bbb213597e76a96dfcb4d74ae6ebb22b))
+
 ## [0.28.0](https://github.com/Supermaxman/couchbox/compare/v0.27.1...v0.28.0) (2026-11-13)
 
 
