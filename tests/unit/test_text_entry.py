@@ -107,3 +107,25 @@ def test_closing_after_the_row_went_away_gives_the_remote_back(scene):
     assert not kb.property("visible")
     assert win.findChild(QObject, "page").property("activeFocus")
     assert problems == []
+
+
+def test_symbols_and_a_password_you_can_check(scene):
+    """Wi-Fi passwords often have symbols: the remote alone has to reach them. The last
+    character typed shows for a moment, so a slip on the remote can be seen."""
+    app, win, kb, press, problems = scene
+    kb.setProperty("password", True)
+    kb.open("", win.back)
+    app.processEvents()
+    kb.setProperty("row", 3)
+    kb.setProperty("col", 1)
+    press("ok")  # #+=
+    assert kb.property("symbols")
+    kb.setProperty("row", 0)
+    kb.setProperty("col", 10)
+    press("ok")  # !
+    kb.setProperty("row", 1)
+    kb.setProperty("col", 0)
+    press("ok")  # $
+    assert kb.property("text") == "!$"
+    assert kb.property("reveal")
+    assert problems == []

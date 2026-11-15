@@ -122,4 +122,14 @@ def run(name: str, title: str, qml: str) -> int:
         sys.exit(f"{qml} didn't load")
     shooter.window = engine.rootObjects()[0]
     backend.listen(TOPICS)
+    # SIGTERM (systemctl stop, a restart) quits cleanly: Python only runs signal handlers between
+    # bytecodes, so a timer lets it look while Qt's loop runs
+    import signal
+
+    from PySide6.QtCore import QTimer
+
+    signal.signal(signal.SIGTERM, lambda *_: app.quit())
+    tick = QTimer()
+    tick.timeout.connect(lambda: None)
+    tick.start(500)
     return app.exec()

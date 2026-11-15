@@ -153,6 +153,14 @@ QtObject {
                               act: () => askText(s.label || name, "", true, x => setSecret(name, x))}, extra || {});
     }
     function section(title) { return {kind: "section", label: title}; }
+    // items in the order they had last time (by key), new ones after: a list that refreshes
+    // (Wi-Fi networks, by signal) doesn't reshuffle under the cursor
+    function keepOrder(prev, items, key) {
+        const pos = {};
+        (prev || []).forEach((x, i) => pos[key(x)] = i);
+        return items.filter(x => key(x) in pos).sort((a, b) => pos[key(a)] - pos[key(b)])
+                    .concat(items.filter(x => !(key(x) in pos)));
+    }
     function info(label, value, extra) { return Object.assign({kind: "info", label: label, value: value}, extra || {}); }
     function action(label, act, extra) { return Object.assign({kind: "action", label: label, act: act}, extra || {}); }
 }

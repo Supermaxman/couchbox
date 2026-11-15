@@ -11,7 +11,7 @@ SettingsPage {
     function refresh(rescan) {
         T.call("network.status", {}, r => p.status = r);
         p.scanning = true;
-        T.call("network.wifi_scan", {rescan: rescan}, r => { p.nets = r; p.scanning = false; }, () => p.scanning = false);
+        T.call("network.wifi_scan", {rescan: rescan}, r => { p.nets = T.keepOrder(p.nets, r, n => n.ssid); p.scanning = false; }, () => p.scanning = false);
     }
     Component.onCompleted: refresh(true)
     Timer { interval: 15000; running: true; repeat: true; onTriggered: p.refresh(false) }
@@ -36,8 +36,8 @@ SettingsPage {
         const r = [T.section("Connection"),
             T.info(wired ? "Ethernet" : wifi ? "Wi-Fi: " + wifi.connection.replace(/^couchbox-/, "") : "Not connected",
                    Object.values(status.ips).join(", ") || "", {tone: wired || wifi ? "good" : "bad",
-                   help: status.connectivity === "full" ? "Online" : status.connectivity === "none" ? "No internet" : ""}),
-            T.section(scanning && !nets.length ? "Wi-Fi networks (looking…)" : "Wi-Fi networks")];
+                   help: status.connectivity === "full" ? "Online" : status.connectivity === "none" ? "No internet" : "", key: "connection"}),
+            Object.assign(T.section(scanning && !nets.length ? "Wi-Fi networks (looking…)" : "Wi-Fi networks"), {key: "wifi"})];
         for (const n of nets)
             r.push({kind: "action", label: (n.secure ? "🔒 " : "") + n.ssid, value: (n.connected ? "Connected · " : "") + n.band + " · " + n.signal + "%",
                     tone: n.connected ? "good" : "", help: n.connected ? "OK to forget this network" : "OK to join", act: () => p.join(n)});

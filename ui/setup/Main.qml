@@ -38,9 +38,13 @@ Window {
             if (ist.can_install || (ist.job && ist.job.state === "running")) skip = [];
             T.call("setup.state", {}, st => {
                 if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1);
+                if (!st.done && st.completed) completed = st.completed;          // a restart keeps what's done
                 while (skip.indexOf(steps[step]) >= 0 && step < steps.length - 1) step++;
             });
-        }, () => T.call("setup.state", {}, st => { if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1); }));
+        }, () => T.call("setup.state", {}, st => {
+            if (!st.done && st.step > 0) step = Math.min(st.step, steps.length - 1);
+            if (!st.done && st.completed) completed = st.completed;
+        }));
     }
 
     // Remote pairing, from the first screen on (Hello and Remote show it): the remote's light

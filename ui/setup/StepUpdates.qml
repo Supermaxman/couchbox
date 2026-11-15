@@ -7,9 +7,9 @@ StepPage {
     rows: {
         T.rev;
         const m = T.settings["updates.mode"];
-        return [{kind: "action", label: "Automatic (recommended)", value: m === "automatic" ? "✓" : "", tone: "good",
+        return [{kind: "action", label: "Automatic (recommended)", value: m === "automatic" ? "✓" : "", tone: "good", current: m === "automatic",
                  act: () => T.set("updates.mode", "automatic", () => win.next())},
-                {kind: "action", label: "Manual: I'll install them from Settings", value: m === "manual" ? "✓" : "",
+                {kind: "action", label: "Manual: I'll install them from Settings", value: m === "manual" ? "✓" : "", current: m === "manual",
                  act: () => T.set("updates.mode", "manual", () => win.next())}];
     }
 }

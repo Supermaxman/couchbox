@@ -12,7 +12,17 @@ Item {
     visible: phone.mode === "lan" || twoCodes
     height: visible ? col.height : 0
 
-    function refresh() { T.call("setup.phone", {}, r => card.phone = r, () => {}); }
+    // the codes, rebuilt only when they change: it asks every 5 s, and new images each time flash
+    property var codes: []
+    function refresh() {
+        T.call("setup.phone", {}, r => {
+            card.phone = r;
+            const c = r.mode === "hotspot" || r.mode === "waiting"
+                    ? [{qr: r.wifi || "", cap: "1. Join its Wi-Fi"}, {qr: r.url || "", cap: "2. Open the remote"}]
+                    : r.mode === "lan" ? [{qr: r.url, cap: "Scan with the camera"}] : [];
+            if (JSON.stringify(c) !== JSON.stringify(card.codes)) card.codes = c;
+        }, () => {});
+    }
     Component.onCompleted: refresh()
     Timer { interval: 5000; running: true; repeat: true; onTriggered: card.refresh() }
     Connections {
@@ -39,9 +49,7 @@ Item {
         Row {
             spacing: 22 * T.u
             Repeater {
-                model: card.twoCodes
-                       ? [{qr: card.phone.wifi, cap: "1. Join its Wi-Fi"}, {qr: card.phone.url, cap: "2. Open the remote"}]
-                       : card.phone.mode === "lan" ? [{qr: card.phone.url, cap: "Scan with the camera"}] : []
+                model: card.codes
                 Column {
                     required property var modelData
                     spacing: 8 * T.u

@@ -17,6 +17,6 @@ StepPage {
     Timer { interval: 3000; running: p.st.state !== "held"; repeat: true; onTriggered: p.poll() }
     rows: st.state === "held" ? [cont()]
           : [T.info(st.state === "installing" ? "Installing " + st.app : st.state === "done" ? "Done" : "Waiting for the internet…",
-                    st.total ? st.done + " of " + st.total : "", {tone: st.state === "done" ? "good" : ""}),
+                    st.total ? st.done + " of " + st.total : "", {tone: st.state === "done" ? "good" : "", key: "apps"}),
              cont("Continue (they finish in the background)")]
 }

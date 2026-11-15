@@ -35,7 +35,7 @@ StepPage {
         const r = [];
         if (j.state === "running") {
             const now = Math.max(0, stages.findIndex(x => x.id === (j.stage || "prepare")));
-            r.push(T.info("Step " + (now + 1) + " of " + stages.length, (j.percent || 0) + "%", {progress: (j.percent || 0) / 100}));
+            r.push(T.info("Step " + (now + 1) + " of " + stages.length, (j.percent || 0) + "%", {progress: (j.percent || 0) / 100, key: "overall"}));
             r.push(T.section("Steps"));
             stages.forEach((x, i) => {
                 if (i < now) r.push(T.info(x.label, "Done", {tone: "good", progress: 1}));

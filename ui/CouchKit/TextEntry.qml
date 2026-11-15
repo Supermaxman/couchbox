@@ -51,6 +51,8 @@ FocusScope {
     property int row: 0
     property int col: 0
     property bool caps: false
+    property bool symbols: false           // the second page: the symbols a password can have (as the boot screen's keyboard)
+    property bool reveal: false            // a password's last character shows for a moment, so a slip can be seen
     property bool allSelected: false       // after Ctrl+A: the next Backspace clears
     // the key under the cursor. Moving between rows changes row and col one after the other, so
     // for a moment they can point past a shorter row's end: never read the key without a guard
@@ -60,9 +62,10 @@ FocusScope {
 
     readonly property var layout: {
         const ch = s => s.split("").map(k => ({k: k, label: k, w: 1}));
-        return [ch("abcdefghijklm"), ch("nopqrstuvwxyz"), ch("1234567890@.-"),
-                [{k: "shift", label: "⇧", w: 2}, {k: "space", label: "Space", w: 4}, {k: "del", label: "⌫", w: 2},
-                 {k: "clear", label: "Clear", w: 2}, {k: "done", label: doneLabel, w: 3}]];
+        const top = symbols ? [ch("1234567890!?#"), ch("$%&*()_+=/\\:;"), ch("\"',<>[]{}|^`~")]
+                            : [ch("abcdefghijklm"), ch("nopqrstuvwxyz"), ch("1234567890@.-")];
+        return top.concat([[{k: "shift", label: "⇧", w: 2}, {k: "page", label: symbols ? "abc" : "#+=", w: 2}, {k: "space", label: "Space", w: 3},
+                            {k: "del", label: "⌫", w: 2}, {k: "clear", label: "Clear", w: 2}, {k: "done", label: doneLabel, w: 2}]]);
     }
 
     // tell couchbox-voice the pop-up is open (it expires after 2 minutes, so keep saying it)
@@ -80,7 +83,7 @@ FocusScope {
     function open(initial, focusAfter) {
         text = initial || "";
         returnFocus = focusAfter || null;
-        row = 0; col = 0; caps = false; allSelected = false;
+        row = 0; col = 0; caps = false; symbols = false; reveal = false; allSelected = false;
         qr.source = "";
         if (phoneLink) {
             phoneUrl = phoneLink;
@@ -114,7 +117,9 @@ FocusScope {
     function type(s) {
         if (allSelected) { text = ""; allSelected = false; }
         text += s;
+        if (password) { reveal = true; revealTimer.restart(); }
     }
+    Timer { id: revealTimer; interval: 1500; onTriggered: entry.reveal = false }
 
     function backspace() {
         text = allSelected ? "" : text.slice(0, -1);
@@ -129,6 +134,7 @@ FocusScope {
 
     function press(k) {
         if (k === "shift") caps = !caps;
+        else if (k === "page") symbols = !symbols;
         else if (k === "space") type(" ");
         else if (k === "del") backspace();
         else if (k === "clear") { text = ""; allSelected = false; }
@@ -218,7 +224,8 @@ FocusScope {
                         spacing: 2 * u
                         Text {
                             id: shown
-                            text: entry.text ? (entry.password ? "•".repeat(entry.text.length) : entry.text) : ""
+                            text: !entry.text ? "" : !entry.password ? entry.text
+                                  : "•".repeat(entry.text.length - (entry.reveal ? 1 : 0)) + (entry.reveal ? entry.text.slice(-1) : "")
                             color: entry.allSelected ? entry.bg : entry.ink
                             font.pixelSize: 36 * u
                             Rectangle {        // Ctrl+A from the phone: show it as selected
