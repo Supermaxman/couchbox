@@ -26,11 +26,26 @@ done
 RUN=$(date +%Y%m%d-%H%M%S)
 B64SSID=$(printf %s "$SSID" | base64 -w0)
 
+# the scanner looks for any Couchbox-XXXX network every few seconds from the start, on its own:
+# with Ethernet off and the radio busy as the setup Wi-Fi, the box can't be asked anything
+SCANLOG=""
+if [[ -n $SCANNER && $HOTSPOT == 1 ]]; then
+  SCANLOG=$(mktemp)
+  # shellcheck disable=SC2016  # expanded on the scanner
+  ssh "$SCANNER" 'dev=$(iw dev | awk "/Interface/ {print \$2; exit}"); end=$(( $(date +%s) + '"$((LIFE * 60))"' ));
+    while [ "$(date +%s)" -lt "$end" ]; do
+      r=$(sudo iw dev "$dev" scan 2>/dev/null | awk "/^BSS/ {s=\"\"} /signal:/ {g=\$2} /SSID: Couchbox-/ {print \$2, g}" | sort -u | xargs)
+      echo "$(date +%T) ${r:-none}"; sleep 4
+    done' >"$SCANLOG" 2>/dev/null &
+  SCANPID=$!
+  trap 'kill $SCANPID 2>/dev/null || true' EXIT
+fi
+
 # the password, to a root-only file on the box
 ssh "$HOST" 'sudo install -d -m 700 /run/couchbox-test && sudo sh -c "umask 077; cat > /run/couchbox-test/psk"' <"$PWFILE"
 
 # the test runs on the box as a service of its own: taking Ethernet down may drop this SSH session
-ssh "$HOST" sudo bash -s -- "$B64SSID" "$LIFE" "$RUN" "$HOTSPOT" "$APPS" <<'BOX'
+ssh "$HOST" sudo bash -s -- "$B64SSID" "$LIFE" "$RUN" "$HOTSPOT" "${APPS:--}" <<'BOX'
 set -euo pipefail
 install -d -m 755 /var/lib/couchbox-test
 cat >/run/couchbox-test/wifi-check.py <<'PY'
@@ -38,7 +53,8 @@ import base64, json, subprocess, sys, time
 from couchbox import ipc
 
 ssid = base64.b64decode(sys.argv[1]).decode()
-life, run, hotspot, apps = int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1", sys.argv[5]
+life, run, hotspot = int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
+apps = "" if len(sys.argv) < 6 or sys.argv[5] == "-" else sys.argv[5]
 out = f"/var/lib/couchbox-test/wifi-{run}.json"
 rep = {"run": run, "ssid": ssid, "ok": False, "steps": []}
 
@@ -114,26 +130,13 @@ echo "started on the box: couchbox-wifi-check-$3"
 BOX
 
 R=/var/lib/couchbox-test/wifi-$RUN.json
-if [[ -n $SCANNER && $HOTSPOT == 1 ]]; then
-  for _ in $(seq 60); do
-    h=$(ssh -o ConnectTimeout=10 "$HOST" "jq -r '.hotspot_ssid // empty' $R 2>/dev/null" 2>/dev/null || true)
-    [[ -n $h ]] && break
-    sleep 5
-  done
-  if [[ -n ${h:-} ]]; then
-    sleep 5
-    echo "looking for $h from $SCANNER:"
-    for i in 1 2 3; do
-      # shellcheck disable=SC2029  # expanded here on purpose
-      r=$(ssh "$SCANNER" "dev=\$(iw dev | awk '/Interface/ {print \$2; exit}'); sudo iw dev \$dev scan 2>/dev/null | grep -B12 'SSID: $h\$' | grep -E 'signal' || echo 'not found'")
-      echo "  scan $i: $(echo "$r" | xargs)"
-      sleep 6
-    done
-  fi
-fi
 for _ in $(seq $((LIFE * 6 + 12))); do
   if ssh -o ConnectTimeout=10 "$HOST" "jq -e .done $R >/dev/null 2>&1" 2>/dev/null; then
     ssh "$HOST" cat "$R"
+    if [[ -n $SCANLOG ]]; then
+      echo "Couchbox-XXXX networks seen from $SCANNER (time, name, signal dBm):"
+      grep -v ' none$' "$SCANLOG" || echo "  none"
+    fi
     ssh "$HOST" "jq -e .ok $R >/dev/null"
     exit
   fi
