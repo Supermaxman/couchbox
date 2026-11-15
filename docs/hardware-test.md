@@ -19,7 +19,7 @@ Record each run in `tests/hardware/RESULTS.md`: date, release, board RAM, bootlo
 | A3 | First power-on, stick in a blue port, HDMI 0 | Picture within 3 minutes. CEC wakes the TV and switches input |
 | A4 | Setup, Hello | Says how to pair a Fire TV remote, with its status (Looking). Phone QR in the corner: it opens the phone remote, and its arrows and OK move the setup. No downloads yet (`systemctl status couchbox-apps` over SSH: skipped, "ExecCondition" failed) |
 | A5 | On Hello: hold Home 10 s on the Fire TV remote (Fire TV Stick unplugged, fresh batteries) | Found, Pairing, then Paired within about 20 s; Start works with the remote. A failure says why on screen, and `journalctl -u couchboxd \| grep couchbox.remote` shows each step |
-| A6 | Install to the SSD | Offered with the SSD's name. Each stage shows as it runs (Prepare, Copy with GB copied, Make it bootable), something always moving; done in under about 10 minutes |
+| A6 | Install to the SSD | Offered with the SSD's name. An overall bar, and each step's own as it runs (Prepare, Format with its %, Copy with GB copied, Make it bootable), something always moving; done in under about 10 minutes |
 | A7 | Restart now | Boots from the SSD, with the stick still in. Setup carries on at Internet. The remote and Wi-Fi still work |
 | A8 | Unplug the stick, restart from Settings → System | Still boots, from the SSD |
 | A9 | Rest of the setup, TV remote only (CEC) | Time zone, name, TV buttons (the Fire remote's power and volume work the TV), updates, extras, apps download |

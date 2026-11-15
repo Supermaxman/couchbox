@@ -176,23 +176,71 @@ def test_no_wifi_no_phone_card(setup_api, runner):
 
 # ------------------------------------------------------------------ install progress
 def test_install_reports_each_stage(runner, tmp_path, monkeypatch):
-    """Preparing the drive, then bytes copied out of the total, then making it bootable: the
-    screen always has something moving (it sat at 0% for minutes before)."""
+    """Preparing, formatting (mkfs's own counters), copying (GB copied out of the total), making
+    it bootable, and the whole install's percent across them: the screen always has something
+    moving (it sat at 0% for minutes before)."""
     src = tmp_path / "src"
     (src / "etc").mkdir(parents=True)
     (src / "etc/fstab").write_text("LABEL=writable / ext4 defaults 0 1\n")
     monkeypatch.setattr(install_disk, "MOUNT", tmp_path / "mnt")
     monkeypatch.setattr(install_disk, "_used", lambda p: 4 * 10**9 if p == str(src) else 10**8)
+    ran = []
+
+    def mkfs(cmd, on_line, timeout):
+        ran.append(cmd)
+        for line in (
+            "mke2fs 1.47.4",
+            "Discarding device blocks:       0/62514774",
+            "Discarding device blocks: 31257387/62514774",
+            "Writing inode tables: 100/1908",
+            "Writing inode tables: done                            ",
+        ):
+            on_line(line)
+
+    monkeypatch.setattr(install_disk, "_run_progress", mkfs)
+    monkeypatch.setattr(install_disk.time, "monotonic", iter(range(0, 10**6, 5)).__next__)
     runner.answers = {("lsblk", "-n", "-b", "-d", "-o", "SIZE"): (0, str(256 * 10**9))}
     seen = []
     install_disk.copy("/dev/nvme0n1", lambda st: seen.append(dict(st)), source=str(src))
     stages = [s["stage"] for s in seen]
-    assert stages[0] == "prepare" and seen[0]["detail"] == "Erasing"
-    assert any(s["stage"] == "prepare" and s["detail"] == "Formatting" for s in seen)
+    assert stages == sorted(stages, key=["prepare", "format", "copy", "finish"].index)
+    assert stages[0] == "prepare" and stages[-1] == "finish"
+    assert ran and ran[0][0] == "mkfs.ext4" and "-q" not in ran[0]
+    fmt = [s["fraction"] for s in seen if s["stage"] == "format"]
+    assert fmt[0] == 0 and 0.15 < fmt[2] < 0.25 and fmt[-1] == pytest.approx(0.9)
     copy = [s for s in seen if s["stage"] == "copy"]
     assert copy[0]["total"] == 4 * 10**9 and copy[0]["copied"] == 0 and copy[-1]["copied"] == 4 * 10**9
-    assert stages[-1] == "finish"
-    assert stages == sorted(stages, key=["prepare", "copy", "finish"].index)
+    percents = [s["percent"] for s in seen]
+    assert percents == sorted(percents) and percents[-1] == 97
+
+
+def test_mkfs_lines_to_fraction():
+    f = install_disk.mkfs_fraction
+    assert f("Discarding device blocks:       0/15728640") == 0
+    assert f("Discarding device blocks: done                            ") == pytest.approx(0.4)
+    assert f("Writing inode tables: 240/480") == pytest.approx(0.7)
+    assert f("Creating journal (65536 blocks): done") == pytest.approx(0.97)
+    assert f("Writing superblocks and filesystem accounting information: done") == pytest.approx(1.0)
+    assert f("Creating filesystem with 15728640 4k blocks") is None
+    assert install_disk.overall("copy", 0.5) == 54 and install_disk.overall("format", 0) == 2
+
+
+def test_progress_follows_a_terminal_line(tmp_path):
+    """mkfs rewrites its counter with backspaces: the line is what a terminal would show."""
+    script = tmp_path / "fake-mkfs"
+    script.write_text(
+        "#!/bin/sh\nprintf 'mke2fs\\nWriting inode tables:   0/480\\b\\b\\b\\b\\b\\b\\b240/480\\b\\b\\b\\b\\b\\b\\bdone   \\n'\n"
+    )
+    script.chmod(0o755)
+    lines = []
+    install_disk._run_progress([str(script)], lines.append, timeout=10)
+    assert any(x.endswith("240/480") for x in lines)
+    assert install_disk.mkfs_fraction("Writing inode tables:   240/480") == pytest.approx(0.7)
+    bad = tmp_path / "bad"
+    bad.write_text("#!/bin/sh\necho 'mkfs: no such device'; exit 1\n")
+    bad.chmod(0o755)
+    with pytest.raises(install_disk.CommandError, match="no such device"):
+        install_disk._run_progress([str(bad)], lines.append, timeout=10)
 
 
 # ------------------------------------------------------------------ downloads wait on a stick

@@ -23,19 +23,24 @@ StepPage {
             T.call("install.start", {device: t.path}, r => p.job = r);
         });
     }
-    // the copy's three stages, each with its bar: done (full), now (moving), next (empty)
-    readonly property var stages: [{id: "prepare", label: "Prepare the SSD"}, {id: "copy", label: "Copy the system"}, {id: "finish", label: "Make it bootable"}]
+    // the whole install's bar, then each phase with its own: done (full), now (moving), next (empty)
+    readonly property var stages: [{id: "prepare", label: "Prepare the SSD"}, {id: "format", label: "Format it"},
+                                   {id: "copy", label: "Copy the system"}, {id: "finish", label: "Make it bootable"}]
     function gb(b) { return (b / 1e9).toFixed(1); }
     rows: {
         const j = job;
         const r = [];
         if (j.state === "running") {
             const now = Math.max(0, stages.findIndex(x => x.id === (j.stage || "prepare")));
+            r.push(T.info("Step " + (now + 1) + " of " + stages.length, (j.percent || 0) + "%", {progress: (j.percent || 0) / 100}));
+            r.push(T.section("Steps"));
             stages.forEach((x, i) => {
                 if (i < now) r.push(T.info(x.label, "Done", {tone: "good", progress: 1}));
                 else if (i > now) r.push(T.info(x.label, "", {progress: 0}));
                 else if (x.id === "copy" && j.total)
                     r.push(T.info(x.label, j.detail || gb(j.copied || 0) + " of " + gb(j.total) + " GB", {progress: Math.min(1, (j.copied || 0) / j.total)}));
+                else if (x.id === "format")
+                    r.push(T.info(x.label, Math.round(100 * (j.fraction || 0)) + "%", {progress: j.fraction || 0}));
                 else r.push(T.info(x.label, j.detail || "", {progress: -1}));
             });
         } else if (j.state === "done") {

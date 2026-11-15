@@ -5,7 +5,7 @@ commands answer with plausible output. Nothing on the machine is touched.
 For the setup wizard's screenshots, COUCHBOX_DEMO picks a state (comma-separated):
   pair:searching | pair:found | pair:pairing | pair:failed   remote pairing stops there
   offline | hotspot      no network: the phone card waits for the setup Wi-Fi / it's open
-  install:prepare | install:copy | install:finish            Install to the SSD under way
+  install:prepare | install:format | install:copy | install:finish   Install to the SSD under way
 
     from couchbox import demo
     demo.start()        # sets COUCHBOX_ROOT / COUCHBOX_SOCKET, starts the daemon thread
@@ -210,7 +210,7 @@ def start(share: str | None = None) -> Path:
         if "hotspot" in want:
             api_setup.OFFLINE_GRACE = 0
             api_setup._creds.update({"ssid": "Couchbox-6G8P", "password": "k7mq2xr9tp"})
-    for stage in ("prepare", "copy", "finish"):
+    for stage in ("prepare", "format", "copy", "finish"):
         if f"install:{stage}" in want:
             from couchbox import install_disk
 
@@ -220,8 +220,9 @@ def start(share: str | None = None) -> Path:
                     "stage": stage,
                     "label": "SSD PM9C1a (256 GB)",
                     "device": "/dev/nvme0n1",
-                    "percent": 37,
-                    "detail": {"prepare": "Formatting", "copy": "", "finish": ""}[stage],
+                    "detail": {"prepare": "Erasing"}.get(stage, ""),
+                    "fraction": {"format": 0.62, "copy": 0.37}.get(stage, 0),
+                    "percent": install_disk.overall(stage, {"format": 0.62, "copy": 0.37}.get(stage, 0)),
                     "copied": 3.6e9,
                     "total": 9.8e9,
                 }

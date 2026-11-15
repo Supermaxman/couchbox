@@ -98,7 +98,7 @@ You can use any of these, and switch between them whenever you like.
 Right after the remote, the setup offers **Install to the SSD**. It copies Couchbox from the stick onto the SSD inside the box. The SSD is faster, and the stick is free again afterwards.
 
 1. Choose **Install to SSD …**, then confirm. Everything on the SSD is erased.
-2. Wait about 5 minutes. Leave the box on. The screen shows each stage as it goes: preparing the SSD, copying the system (so many GB of the total), and making it bootable.
+2. Wait about 5 minutes. Leave the box on. A bar shows the whole install, and one more for each step: preparing the SSD, formatting it, copying the system (so many GB of the total), and making it bootable.
 3. Choose **Restart now**. The box starts from the SSD and carries on with the setup where you left it. Your Wi-Fi and the paired remote come along.
 4. **Pull out the USB stick** whenever you like. You can use it for something else.
 
