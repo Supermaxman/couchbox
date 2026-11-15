@@ -58,6 +58,10 @@ network:
           password: "test-fake-imager"
 X
 chmod 600 "$W/root/etc/netplan/50-imager-test.yaml"
+# systemd's network for a container takes the host's time zone over DHCP (UseTimezone=yes), which
+# would undo the preseed's: a Pi has no such network
+mkdir -p "$W/root/etc/systemd/network/80-container-host0.network.d"
+printf '[DHCPv4]\nUseTimezone=no\n' > "$W/root/etc/systemd/network/80-container-host0.network.d/50-test-no-timezone.conf"
 systemd-nspawn -q -D "$W/root" --boot --machine=cbtest --network-veth -E COUCHBOX_IMAGE_TEST=1 >"$W/boot.log" 2>&1 &
 for _ in $(seq 1 90); do
   sleep 2
@@ -72,7 +76,7 @@ if [[ $(cat "$W/root/etc/hostname") == testbox ]]; then ok "preseed host name in
 else echo "!! host name is $(cat "$W/root/etc/hostname"), not the preseed's testbox"; FAIL=1; FB=1; fi
 if [[ $(readlink "$W/root/etc/localtime") == */Europe/Berlin ]]; then ok "preseed time zone in effect"
 else echo "!! time zone is $(readlink "$W/root/etc/localtime"), not the preseed's Europe/Berlin"; FAIL=1; FB=1; fi
-[[ -z ${FB:-} ]] || journalctl -M cbtest -b --no-pager | sed -n '/Starting couchbox-firstboot/,/Changed time zone to .Etc/p' | tail -80 || true
+[[ -z ${FB:-} ]] || journalctl -M cbtest -b --no-pager -u couchbox-firstboot.service -u systemd-timedated.service -u systemd-hostnamed.service | tail -30 || true
 ! grep -q 'test-fake-password' "$W/root/boot/firmware/couchbox.toml" && ok "preseed password erased"
 grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/couchbox-TestNet.nmconnection" && ok "Wi-Fi from the preseed"
 if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -c 'ls /run/NetworkManager/system-connections/' | grep -q 'netplan-wlan0-ImagerNet'; then
