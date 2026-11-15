@@ -88,7 +88,9 @@ On the runner VM: create the image's LUKS2 layout, write data while re-encryptin
 - **`image`:** build the full image (nightly and on release). Check its size against the 2 GB limit, check partitions, and check that no private values or secrets appear anywhere in the image.
 - **`image-boot`:**
   - Boot the image's root filesystem with `systemd-nspawn --boot`.
-  - First-boot services complete and the preseed is applied (fixture `couchbox.toml`).
+  - The TV user's session is set up in the image (the setup wizard's autostart, Bluetooth on at login, the session services).
+  - First-boot services complete and the preseed is applied (fixture `couchbox.toml`), the host name and time zone in effect.
+  - No ordering cycle involves a Couchbox unit (systemd would drop one of its jobs).
   - Every Couchbox system unit is active, and couchboxd answers.
   - The updater updates from a **fake release server** (local HTTP serving a test-signed release) and rolls back from a deliberately broken one.
   - Checks run with no network services configured, as G3 requires.

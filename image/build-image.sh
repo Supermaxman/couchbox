@@ -87,6 +87,9 @@ curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$tsc.tailscale-keyring.list
 in_root apt-get -qq update
 in_root sh -c 'apt-get install -y -qq --no-install-recommends /tmp/debs/*.deb tailscale openssh-server rpi-eeprom raspi-utils-core >/dev/null'
 in_root systemctl disable tailscaled.service ssh.service ssh.socket 2>/dev/null || true
+# The boot screen from the first start (the package's postinst leaves it for a real boot, as
+# flash-kernel's test boot can't be made in a chroot)
+in_root couchbox boot-screen apply --image
 # Not needed on a Pi 5 TV box: firmware for other hardware (the Pi's Wi-Fi/Bluetooth firmware
 # is in linux-firmware-raspi, plus the Broadcom files it points at in -broadcom-wireless),
 # every locale prebuilt, cloud SDKs. Each removal is simulated

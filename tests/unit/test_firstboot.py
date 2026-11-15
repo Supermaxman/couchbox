@@ -43,7 +43,7 @@ wizard = true
 """
 
 
-def test_apply_preseed(box):
+def test_apply_preseed(box, runner):
     fb = load()
     pending = fb.apply_preseed(tomllib.loads(PRESEED))
     s = settings.load()
@@ -57,12 +57,17 @@ def test_apply_preseed(box):
     assert "ssid=Home Net" in kf.read_text() and "psk=test-fake-wifi-pw" in kf.read_text()
     assert {j["job"] for j in pending} == {"geocode", "ssh_github", "tailscale_up"}
     assert json.loads((paths.state() / "state/setup.json").read_text())["done"] is True
+    # the host name, time zone and Wi-Fi country take effect at once (nothing else applies them)
+    assert runner.ran("hostnamectl", "set-hostname", "livingroom")
+    assert runner.ran("timedatectl", "set-timezone", "Europe/Berlin")
+    assert runner.ran("iw", "reg", "set", "DE")
 
 
-def test_bad_values_dont_lose_the_rest(box):
+def test_bad_values_dont_lose_the_rest(box, runner):
     fb = load()
     fb.apply_preseed({"hostname": "Not Valid!", "timezone": "Asia/Tokyo"})
     assert settings.get("time.timezone") == "Asia/Tokyo" and settings.get("network.hostname") == "couchbox"
+    assert runner.ran("timedatectl", "set-timezone", "Asia/Tokyo") and not runner.ran("hostnamectl")
 
 
 def test_scrub_erases_only_secrets():

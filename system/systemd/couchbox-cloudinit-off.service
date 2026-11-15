@@ -1,5 +1,7 @@
 [Unit]
 Description=Couchbox image: cloud-init only on the first boot (Raspberry Pi Imager's settings)
+# cloud-final runs after multi-user.target, so only cloud-init.target (which comes after it) may
+# pull this in: from multi-user.target it was an ordering cycle and systemd dropped this job
 After=cloud-final.service
 ConditionPathExists=/etc/couchbox/image-version
 ConditionPathExists=!/etc/cloud/cloud-init.disabled
@@ -9,4 +11,4 @@ Type=oneshot
 ExecStart=/usr/bin/touch /etc/cloud/cloud-init.disabled
 
 [Install]
-WantedBy=cloud-init.target multi-user.target
+WantedBy=cloud-init.target

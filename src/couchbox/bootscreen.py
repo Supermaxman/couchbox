@@ -136,8 +136,13 @@ def needs_rebuild() -> bool:
     return not all(w in words for w in (*SPLASH_ARGS, *video_args())) or not stamp.exists() or stamp.read_text().strip() != fingerprint()
 
 
-def apply() -> str:
-    """Theme on; a new test boot if needed. Returns what it did, for the log."""
+def apply(image: bool = False) -> str:
+    """Theme on; a new test boot if needed. Returns what it did, for the log.
+
+    image: the image build, a chroot where flash-kernel does nothing and there's no boot to fall
+    back to: the splash goes straight on the current boot's command line, so a new box's first
+    start shows no kernel text. Its initrd gets the theme with the box's first update (no stamp
+    yet, so that makes the test boot as usual)."""
     root = paths.root()
     if not (root / THEME / "couchbox.plymouth").exists():
         return "no theme"
@@ -155,6 +160,10 @@ def apply() -> str:
     fw = paths.boot_firmware()
     if not (fw / "current/cmdline.txt").exists():
         return "no piboot layout"  # not a Pi with flash-kernel's try-once boot: leave it alone
+    if image:
+        cur = fw / "current/cmdline.txt"
+        cur.write_text(with_splash(cur.read_text()))
+        return "splash on the boot command line"
     if not needs_rebuild():
         return "up to date"
     kver = _kernel()

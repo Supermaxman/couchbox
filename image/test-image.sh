@@ -23,6 +23,17 @@ for f in brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin.zst brcm/brcmfmac4345
   chroot "$W/root" test -e "/usr/lib/firmware/$f" || { echo "!! missing firmware $f"; exit 1; }   # links resolve inside
 done
 ok "Pi 5 Wi-Fi and Bluetooth firmware present"
+if grep -qw splash "$W/root/boot/firmware/current/cmdline.txt" && grep -qw quiet "$W/root/boot/firmware/current/cmdline.txt"; then
+  ok "boot screen on (quiet splash)"
+else echo "!! no boot screen: cmdline.txt is $(cat "$W/root/boot/firmware/current/cmdline.txt")"; FAIL=1; fi
+# the TV user's session, written by couchbox-session-setup during the build: without the setup
+# autostart a new box goes straight to Home, with no remote paired and no network
+TVH=$W/root$(chroot "$W/root" getent passwd tv | cut -d: -f6)
+for f in .config/autostart/couchbox-setup.desktop .config/autostart/couchbox-display.desktop .config/bluedevilglobalrc \
+         .config/ksplashrc .config/systemd/user/graphical-session.target.wants/couchbox-mediakeys.service .local/share/couchbox/web-extension; do
+  [[ -e $TVH/$f || -L $TVH/$f ]] || { echo "!! the TV user has no ~/$f (couchbox-session-setup stopped early?)"; FAIL=1; MISSING=1; }
+done
+[[ -n ${MISSING:-} ]] || ok "the TV user's session is set up (the setup wizard starts at the first login)"
 # a preseed like a user would write
 cat > "$W/root/boot/firmware/couchbox.toml" <<'X'
 hostname = "testbox"
@@ -47,6 +58,10 @@ network:
           password: "test-fake-imager"
 X
 chmod 600 "$W/root/etc/netplan/50-imager-test.yaml"
+# systemd's network for a container takes the host's time zone over DHCP (UseTimezone=yes), which
+# would undo the preseed's: a Pi has no such network
+mkdir -p "$W/root/etc/systemd/network/80-container-host0.network.d"
+printf '[DHCPv4]\nUseTimezone=no\n' > "$W/root/etc/systemd/network/80-container-host0.network.d/50-test-no-timezone.conf"
 systemd-nspawn -q -D "$W/root" --boot --machine=cbtest --network-veth -E COUCHBOX_IMAGE_TEST=1 >"$W/boot.log" 2>&1 &
 for _ in $(seq 1 90); do
   sleep 2
@@ -57,6 +72,11 @@ echo "system: $st"
 run() { systemd-run -M cbtest --wait --pipe -q "$@"; }
 run /usr/bin/couchbox config get network.hostname | grep -qx testbox && ok "preseed applied (hostname)"
 run /usr/bin/couchbox config get updates.mode | grep -qx manual && ok "preseed applied (updates)"
+if [[ $(cat "$W/root/etc/hostname") == testbox ]]; then ok "preseed host name in effect"
+else echo "!! host name is $(cat "$W/root/etc/hostname"), not the preseed's testbox"; FAIL=1; FB=1; fi
+if [[ $(readlink "$W/root/etc/localtime") == */Europe/Berlin ]]; then ok "preseed time zone in effect"
+else echo "!! time zone is $(readlink "$W/root/etc/localtime"), not the preseed's Europe/Berlin"; FAIL=1; FB=1; fi
+[[ -z ${FB:-} ]] || journalctl -M cbtest -b --no-pager -u couchbox-firstboot.service -u systemd-timedated.service -u systemd-hostnamed.service | tail -30 || true
 ! grep -q 'test-fake-password' "$W/root/boot/firmware/couchbox.toml" && ok "preseed password erased"
 grep -q 'psk=test-fake-password' "$W/root/etc/NetworkManager/system-connections/couchbox-TestNet.nmconnection" && ok "Wi-Fi from the preseed"
 if ! grep -q networkd "$W/root/etc/netplan/50-imager-test.yaml" && run /bin/sh -c 'ls /run/NetworkManager/system-connections/' | grep -q 'netplan-wlan0-ImagerNet'; then
@@ -72,6 +92,12 @@ done
 if journalctl -M cbtest -u couchbox-input.service --no-pager 2>/dev/null | grep -q -E "input.toml|unknown key|has no match"; then
   echo "!! couchbox-input: key map problem"; journalctl -M cbtest -u couchbox-input.service --no-pager | tail -15; FAIL=1
 else ok "couchbox-input: key map loads (no /dev/uinput in a container)"; fi
+# systemd drops a job to break an ordering cycle (couchbox-cloudinit-off once never ran that way).
+# A container boots without cloud-init, so the boot as on a Pi (with cloud-init.target) is verified too.
+cyc=$({ journalctl -M cbtest -b --no-pager; run /bin/sh -c 'systemd-analyze verify --man=no graphical.target cloud-init.target 2>&1'; } 2>/dev/null \
+  | grep -i 'ordering cycle' | grep -i couchbox || true)
+if [[ -n $cyc ]]; then echo "!! ordering cycle with a Couchbox unit:"; echo "$cyc"; FAIL=1
+else ok "no ordering cycles with Couchbox units (as booted, and with cloud-init as on a Pi)"; fi
 run /usr/bin/couchbox doctor --container || FAIL=1
 echo "failed units:"; systemctl -M cbtest list-units --failed --no-pager --plain | head -20 || true
 [[ -z ${FAIL:-} ]] || { echo "image test: FAILED"; exit 1; }

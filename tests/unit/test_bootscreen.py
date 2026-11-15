@@ -126,3 +126,12 @@ def test_encrypted_means_crypttab_names_a_disk(box):
     assert not bootscreen.encrypted()
     tab.write_text("root UUID=8087 none luks,discard\n")
     assert bootscreen.encrypted()
+
+
+def test_image_build_puts_the_splash_on_the_current_boot(box, runner):
+    fw = setup_box(box, runner)
+    assert bootscreen.apply(image=True) == "splash on the boot command line"
+    assert (fw / "current/cmdline.txt").read_text().startswith(CMDLINE.strip() + " quiet splash")
+    assert runner.ran("update-alternatives", "--quiet", "--set", "default.plymouth")
+    assert not runner.ran("dracut") and not (fw / "new").exists()
+    assert bootscreen.needs_rebuild()  # the box's first update brings the themed initrd as a test boot
