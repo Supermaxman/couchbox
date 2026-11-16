@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.5](https://github.com/Supermaxman/couchbox/compare/v0.29.4...v0.29.5) (2026-11-16)
+
+
+### Docs
+
+* a dev box guide and tools to drive a test box (push, check, reset, Wi-Fi), install guide fixes ([#156](https://github.com/Supermaxman/couchbox/issues/156)) ([3b9ff0a](https://github.com/Supermaxman/couchbox/commit/3b9ff0aa38ce6ecc9aa4eaf9dbc0afbe7a0074c2))
+
 ## [0.29.4](https://github.com/Supermaxman/couchbox/compare/v0.29.3...v0.29.4) (2026-11-15)
 
 
