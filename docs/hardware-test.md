@@ -8,7 +8,7 @@ Record each run in `tests/hardware/RESULTS.md`: date, release, board RAM, bootlo
 
 - [ ] A Raspberry Pi 5 that has never run Couchbox, with the SSD on the M.2 HAT+ and **no SD card**.
 - [ ] A USB stick (16 GB+), Raspberry Pi Imager on a computer, the Fire TV remote, a phone.
-- [ ] For debugging only: add your SSH public key in Imager's customisation. You don't need it for the test itself. If something fails, you can then run `ssh <user>@<hostname>.local` and `couchbox doctor`.
+- [ ] For debugging only: once the setup is done, turn on SSH in Settings → Remote access and add your key there. You don't need it for the test itself. If something fails, you can then run `ssh admin@<hostname>.local` and `couchbox doctor`.
 
 ## A. Install
 

@@ -119,7 +119,7 @@ Run on the reference hardware before every minor release and 1.0. It's recorded 
 
 ### On the box: the remote, screenshots and recordings
 
-Over SSH, without anyone at the TV:
+Over SSH, without anyone at the TV (setting up a box for this, and pushing a checkout onto it: [dev-box.md](../dev-box.md)):
 
 - `couchbox-remote down ok wait:2 back` presses the remote's buttons (through couchbox-input's key map).
 - `couchbox-screenshot [--width 960] FILE` saves the screen as a PNG.
