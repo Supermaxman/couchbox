@@ -3,15 +3,16 @@
 camera groups in a sidebar, the live dashboard (recent alerts across the top, then every
 camera's picture, refreshing), a camera full screen (live, Left/Right for the next camera,
 Down for its recent activity and timeline), Review (alerts and detections, played from the
-recordings), Timeline (the last day of a camera or a group, played from any point) and Pop-ups
-(which cameras, and what they see, pop up over whatever is on the TV: couchbox-frigate-popup).
+recordings), Timeline (the last day of a camera or a group, played from any point), Timelapse
+(a camera sped up, 2x to 1200x: couchbox.timelapse) and Pop-ups (which cameras, and what they
+see, pop up over whatever is on the TV: couchbox-frigate-popup).
 
 Sign-in: Frigate's user name and password, typed with the remote's keyboard pop-up or a phone.
 The server is Settings → Apps → Frigate server (media.frigate.url). The Python side
 (couchbox.services.frigate) keeps the sign-in and runs a relay on 127.0.0.1 that adds it, for
 the pictures and mpv; the QML is in /usr/share/couchbox/ui/frigate.
 
-  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | popups | reel
+  couchbox-frigate [--open camera:NAME | review | alerts | timeline[:CAMERA] | timelapse[:CAMERA] | popups | reel
                           | recording:CAMERA@START-END]
                                      (reel: the home screen's While you were out, couchbox-away;
                                      recording: a camera from a time, Back leaves: the morning show)
@@ -60,6 +61,36 @@ class Backend(QObject):
         self.f = frigate.Frigate(settings.get("media.frigate.url"), demo=demo)
         self.pool = ThreadPoolExecutor(max_workers=6)
         self.demo_popup = {}                          # --demo: the Pop-ups page's changes, kept here
+        self.job = None                               # the timelapse being made (couchbox.timelapse.Job)
+        self.job_n = 0
+
+    # ------------------------------------------------------------------ Timelapse
+    def timelapse_make(self, camera, span, speed):
+        """Start making one over a span (timelapse.spans()' key, its times as of now); the one
+        before, if still going, is dropped. Its number, and the times it covers."""
+        from couchbox import timelapse
+
+        sp = next((s for s in timelapse.spans() if s["key"] == span), None)
+        if not sp:
+            raise RuntimeError("That time isn't offered now.")
+        start, end = sp["start"], sp["end"]
+        if self.job:
+            self.job.cancel()
+        self.job_n += 1
+        make = timelapse.Demo if self.demo else timelapse.Job
+        self.job = make(self.f, camera, start, end, speed).begin()
+        return {"job": self.job_n, "start": start, "end": end}
+
+    def timelapse_state(self, n):
+        if not self.job or n != self.job_n:
+            return {"state": "failed", "percent": 0, "file": "", "error": "That one was dropped."}
+        return self.job.state()
+
+    def timelapse_cancel(self):
+        if self.job:
+            self.job.cancel()
+            self.job = None
+        return {"ok": True}
 
     # ------------------------------------------------------------------ the Pop-ups page
     def popup(self):
@@ -121,6 +152,8 @@ class Backend(QObject):
         return {"ok": True}
 
     def run(self, op, a):
+        from couchbox import timelapse
+
         f = self.f
         ops = {
             "popup": lambda: self.popup(),
@@ -139,6 +172,10 @@ class Backend(QObject):
             "timeline": lambda: f.timeline(a["cameras"], a.get("hours", 24)),
             "reel": lambda: self.reel(),
             "reelSeen": lambda: self.reel_seen(),
+            "timelapseChoices": lambda: {"spans": timelapse.spans()},
+            "timelapseMake": lambda: self.timelapse_make(a["camera"], a["span"], a["speed"]),
+            "timelapseState": lambda: self.timelapse_state(a["job"]),
+            "timelapseCancel": lambda: self.timelapse_cancel(),
         }
         return ops[op]()
 

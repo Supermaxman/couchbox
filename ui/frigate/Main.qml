@@ -1,6 +1,6 @@
 // couchbox-frigate: Frigate as a TV app (started by /usr/lib/couchbox/bin/couchbox-frigate),
 // laid out like Frigate's web UI: the sidebar (Live with the camera groups, Review, Timeline,
-// Pop-ups), the live dashboard, a camera full screen, the review grid and recordings. Remote: arrows move, OK
+// Timelapse, Pop-ups), the live dashboard, a camera full screen, the review grid and recordings. Remote: arrows move, OK
 // opens, Back goes back (and, on the dashboard, leaves the app). Frigate is reached through
 // frigate.py's relay on 127.0.0.1, which holds the sign-in.
 import QtQuick
@@ -26,7 +26,7 @@ ApplicationWindow {
     onUChanged: F.u = u
 
     property string mode: "starting"         // starting | signin | app
-    property int section: 0                  // 0 live, 1 review, 2 timeline, 3 pop-ups
+    property int section: 0                  // 0 live, 1 review, 2 timeline, 3 pop-ups, 4 timelapse
     property int group: 0
     property var alerts: []
     property string overlay: ""              // "" | camera | player | reel
@@ -72,12 +72,13 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------ navigation
-    function focusPage() { [live, review, timeline, popups][section].forceActiveFocus(); }
+    function focusPage() { [live, review, timeline, popups, timelapse][section].forceActiveFocus(); }
     function choose(e) {
         if (e.kind === "group") { group = e.index; section = 0; focusPage(); }
         else if (e.kind === "review") { section = 1; focusPage(); }
         else if (e.kind === "timeline") { section = 2; focusPage(); }
         else if (e.kind === "popups") { section = 3; focusPage(); }
+        else if (e.kind === "timelapse") { section = 4; focusPage(); }
         else if (e.kind === "signout") F.call("signout", {}, s => { F.status = s; mode = "signin"; signin.user = ""; signin.forceActiveFocus(); });
     }
     function openCamera(cams, i) {
@@ -104,6 +105,7 @@ ApplicationWindow {
         else if (playerFrom === "target") { Qt.quit(); return; }             // opened from elsewhere: back there
         else if (playerFrom === "camera") { overlay = "camera"; camera.forceActiveFocus(); camera.start(); }
         else if (playerFrom === "timeline") { overlay = ""; timeline.forceActiveFocus(); }
+        else if (playerFrom === "timelapse") { overlay = ""; timelapse.forceActiveFocus(); }
         else { overlay = ""; focusPage(); refresh(); if (section === 1) review.load(); }
         updateState();
     }
@@ -158,6 +160,10 @@ ApplicationWindow {
             stopVideo(); overlay = ""; section = 1; review.tab = o === "detections" ? 1 : 0; focusPage();
         } else if (o === "live") { stopVideo(); overlay = ""; section = 0; focusPage(); }
         else if (o === "popups") { stopVideo(); overlay = ""; section = 3; focusPage(); }
+        else if (o === "timelapse" || o.startsWith("timelapse:")) {
+            stopVideo(); overlay = ""; section = 4;
+            timelapse.show(o.slice(10)); focusPage();
+        }
         else if (o === "reel") openReel();
         else if (o.startsWith("recording:")) {               // a camera's recording then (the morning show's moments)
             const m = o.slice(10).match(/^(.+)@([\d.]+)-([\d.]+)$/);
@@ -177,7 +183,7 @@ ApplicationWindow {
     }
     function updateState() {
         const st = {page: overlay === "camera" ? "camera" : overlay === "player" ? "recording" : overlay === "reel" ? "while you were out"
-                          : ["live", "review", "timeline", "popups"][section],
+                          : ["live", "review", "timeline", "popups", "timelapse"][section],
                     group: (F.groups[group] || {}).name || ""};
         if (overlay === "camera") st.camera = camera.cam.label;
         if (overlay === "player") st.recording = (player.r.cameraLabel || "") + ": " + F.seen(player.r);
@@ -276,6 +282,15 @@ ApplicationWindow {
             onPlay: item => win.openReview(item, [item], "timeline")
             onToRail: rail.forceActiveFocus()
             onLeave: { win.section = 0; win.focusPage(); }
+        }
+        TimelapsePage {
+            id: timelapse
+            anchors { left: rail.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+            visible: win.section === 4
+            onPlay: item => win.openReview(item, [item], "timelapse")
+            onToRail: rail.forceActiveFocus()
+            Keys.onEscapePressed: rail.forceActiveFocus()
+            Keys.onBackPressed: rail.forceActiveFocus()
         }
         PopupsPage {
             id: popups

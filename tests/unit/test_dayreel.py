@@ -57,6 +57,51 @@ def test_people_and_pets_at_home_not_deliveries():
     assert "r1" not in {c["id"] for c in away.candidates(rows, SIDE, start - H, end + H)}
 
 
+def test_sounds_count_even_off_camera():
+    start, end = at(THU, 7), at(THU, 15)
+    rows = [
+        dict(row(1, "lounge", [], at(THU, 9)), data={"objects": [], "audio": ["bark"]}),  # the dog barks off camera
+        dict(row(2, "kitchen", [], at(THU, 10)), data={"objects": [], "audio": ["laughter"]}),
+        dict(row(3, "yard", [], at(THU, 11)), data={"objects": [], "audio": ["bark"]}),
+        dict(row(4, "yard", [], at(THU, 12)), data={"objects": [], "audio": ["laughter"]}),  # passers-by outside: out
+        dict(row(5, "lounge", ["dog"], at(THU, 13)), data={"objects": ["dog"], "audio": ["bark"]}),
+        row(6, "lounge", ["dog"], at(THU, 14)),
+    ]
+    got = {c["id"]: c for c in dayreel.candidates(rows, SIDE, start, end)}
+    assert set(got) == {"r1", "r2", "r3", "r5", "r6"}
+    assert got["r5"]["sounds"] == ["bark"] and got["r5"]["score"] > got["r6"]["score"]  # heard too: looked at sooner
+    assert "heard: bark" in dayreel.look_prompt(got["r1"], "Lounge", False)
+    assert away.fallback_caption(got["r1"]["objects"] or got["r1"]["sounds"]) == "Bark"
+
+
+def test_the_looks_go_round_every_hour():
+    start, end = at(THU, 7), at(THU, 15)
+    # a busy afternoon of people with the dog, and a quiet morning of the cat alone
+    rows = [row(i, "lounge", ["person", "dog"], at(THU, 13) + i * 150) for i in range(40)]
+    rows += [row(100 + i, "kitchen", ["cat"], at(THU, 8) + i * 900) for i in range(4)]
+    cands = dayreel.candidates(rows, SIDE, start, end)
+    looks = dayreel.to_look(cands, 10)
+    assert len(looks) == 10
+    assert {c["id"] for c in looks} >= {"r100", "r101", "r102", "r103"}  # the cat's morning gets its looks
+    assert len(dayreel.to_look(cands, 500)) == len(cands)
+
+
+def test_the_reel_covers_the_day():
+    start, end = at(THU, 7), at(THU, 15)
+    rows = [row(i, "lounge", ["person", "dog"], at(THU, 14) + i * 150) for i in range(20)]
+    rows += [row(100, "kitchen", ["cat"], at(THU, 8)), row(101, "yard", ["dog"], at(THU, 10))]
+    cands = dayreel.candidates(rows, SIDE, start, end)
+    for c in cands:
+        c["lively"] = 9.0 if c["camera"] == "lounge" else 6.0
+    picked = dayreel.choose(cands, 5)
+    ids = [c["id"] for c in picked]
+    assert ids[:2] == ["r100", "r101"]  # each hour's best, though the afternoon scored higher
+    assert len(picked) == 5 and [c["start"] for c in picked] == sorted(c["start"] for c in picked)
+    assert sum(1 for c in dayreel.choose(cands) if c["camera"] == "lounge") == dayreel.PER_CAMERA
+    next(c for c in cands if c["id"] == "r101")["lively"] = 0.0  # nobody there: never
+    assert "r101" not in [c["id"] for c in dayreel.choose(cands)]
+
+
 def test_the_question_asks_for_sweet_moments():
     c = {"objects": ["dog", "person"], "section": "home"}
     q = dayreel.look_prompt(c, "Living room", False)
