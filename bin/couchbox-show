@@ -120,7 +120,7 @@ class Backend(QObject):
         if not r:
             return {"parts": []}
         x = reels.listing(r, settings.derived()["clock24"])
-        part = {"kind": "clips", "title": f"{x['title']}  ·  {x['day']}", "clips": r["clips"], "seconds": away.CLIP * len(r["clips"])}
+        part = {"kind": "clips", "title": f"{x['title']}  ·  {x['day']}", "clips": r["clips"], "seconds": sum(c.get("seconds") or away.CLIP for c in r["clips"])}
         return self.ready({"parts": [part]})
 
     def reel_seen(self, rid):

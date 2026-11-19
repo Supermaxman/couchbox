@@ -24,6 +24,7 @@ FocusScope {
         controls.reset();                        // the one before stops now; its picture is covered until this one's
         if (keepFocus) controls.focused = on;
         const n = ++asked;
+        if (r.file) { loading = false; video.load(r.file, 0); return; }     // a timelapse, on the TV's disk
         if (!r.camera) return;                   // the timeline plays from a point: no review id
         F.call("recording", {camera: r.camera, start: r.start, end: r.end},
                x => { if (view.visible && n === view.asked) { view.loading = false; video.load(x.url, 0); } },
@@ -79,7 +80,7 @@ FocusScope {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, parent.width - 300 * F.u); elide: Text.ElideRight
-                    text: (view.r.cameraLabel || "") + (view.r.fromTimeline ? "" : "  ·  " + F.seen(view.r))
+                    text: (view.r.cameraLabel || "") + (view.r.timelapse ? "  ·  " + view.r.timelapse : view.r.fromTimeline ? "" : "  ·  " + F.seen(view.r))
                     color: "white"; font.family: F.font; font.pixelSize: 34 * F.u; font.weight: Font.DemiBold
                 }
                 Rectangle {
@@ -91,7 +92,7 @@ FocusScope {
                 }
             }
             Text {
-                text: (view.r.fromTimeline ? "From " : "") + (view.r.start ? F.when(view.r.start) : "")
+                text: view.r.when ? view.r.when : (view.r.fromTimeline ? "From " : "") + (view.r.start ? F.when(view.r.start) : "")
                       + (view.list.length > 1 ? "     " + (view.index + 1) + " of " + view.list.length : "")
                 color: F.text2; font.family: F.font; font.pixelSize: F.tMeta + 2 * F.u
             }

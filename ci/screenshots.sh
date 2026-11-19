@@ -36,6 +36,10 @@ shot frigate-recording-paused couchbox-frigate --open review --keys right,ok,wai
 shot frigate-timeline couchbox-frigate --open timeline
 shot frigate-timeline-camera couchbox-frigate --open timeline:driveway
 shot frigate-signin couchbox-frigate --signin
+# Timelapse: what's offered, yesterday's choices, being made
+shot frigate-timelapse couchbox-frigate --open timelapse
+shot frigate-timelapse-yesterday couchbox-frigate --open timelapse --keys down,right,right,down
+shot frigate-timelapse-making couchbox-frigate --open timelapse --keys down,down,down,ok,wait:3
 # While you were out: the reel (made-up clips: their stills), a few clips in
 shot frigate-reel couchbox-frigate --open reel
 shot frigate-reel-pets couchbox-frigate --open reel --keys right,right,right,right

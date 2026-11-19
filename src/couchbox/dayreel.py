@@ -4,11 +4,14 @@ day ends until the next morning. OK on the card plays it in the Reels app; nothi
 itself, and the card goes once it's been watched to the end.
 
 What goes in: the inside cameras' people and pets, and animals on the outside ones (a dog in the
-yard); deliveries, cars and passers-by are While you were out's. couchbox-morning makes it once
-the day is over (DONE after it): Frigate's review items of the day, the most promising looked at
-by the assistant's model (couchbox-voice's /look, as couchbox.away does), which scores how sweet
-or fun each is and writes its caption; the best CLIPS are cut by Frigate and kept in the reels
-archive (couchbox.reels), where the Reels app finds it later too.
+yard), and what Frigate's sound detection heard (a bark, a meow, laughter: audio.listen in its
+config) even off camera; deliveries, cars and passers-by are While you were out's.
+couchbox-morning makes it once the day is over (DONE after it): Frigate's review items of the
+day, LOOKS of them looked at by the assistant's model (couchbox-voice's /look, as couchbox.away
+does), the most promising of every hour and every camera, so a quiet morning gets its look too;
+the model scores how sweet or fun each is and writes its caption. The best CLIPS (the best of
+each hour first, then the best of the rest) are cut by Frigate, CLIP seconds each, and kept in
+the reels archive (couchbox.reels), where the Reels app finds it later too.
 
 While you were out gives way: on a weekday with Today at home on, its reel leaves out the pets
 during those hours.
@@ -20,13 +23,17 @@ Files (the TV user's):
 
 import datetime
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from couchbox import away, reels
 
-CLIPS = 8  # 40 seconds
-LOOKS = 30  # the model's looks, the most promising first
+CLIPS = 24  # about three minutes
+CLIP = 8.0  # seconds of each clip
+LOOKS = 90  # the model's looks (5-6 s each), spread over the hours and the cameras
+PER_CAMERA = 6
+GOOD = 5  # the model's score an hour's best needs to get a place of its own
 DONE = away.EDGE  # made this long after the day ends (the last review items close)
 MORNING = 4  # o'clock: the card goes the next morning (when the morning show is made)
 
@@ -73,12 +80,14 @@ def made_today(home: Path | None = None, now: float | None = None) -> bool:
 
 
 # ------------------------------------------------------------------ what goes in
-def section(objects: list[str], outside: bool) -> str | None:
-    """ "home" for the people and pets inside and animals outside; None for the rest."""
+def section(objects: list[str], outside: bool, sounds: list[str] = ()) -> str | None:
+    """ "home" for the people and pets inside (seen, or heard: a bark, laughter) and animals
+    outside (a bark in the yard too); None for the rest."""
     objs = {o.split("-verified")[0] for o in objects}
+    heard = set(sounds)
     if outside:
-        return "home" if objs & away.ANIMALS else None
-    return "home" if objs & (away.PEOPLE | away.PETS) else None
+        return "home" if objs & away.ANIMALS or heard & away.PET_SOUNDS else None
+    return "home" if objs & (away.PEOPLE | away.PETS) or heard & (away.PET_SOUNDS | away.FUN_SOUNDS) else None
 
 
 def candidates(rows: list[dict[str, Any]], side: dict[str, bool], start: float, end: float) -> list[dict[str, Any]]:
@@ -87,10 +96,67 @@ def candidates(rows: list[dict[str, Any]], side: dict[str, bool], start: float, 
 
 
 def look_prompt(c: dict[str, Any], camera_label: str, outside: bool) -> str:
-    from couchbox.services.frigate import label
+    return LOOK.format(camera=camera_label, where="outside" if outside else "inside the house", labels=away.guesses(c))
 
-    labels = ", ".join(label(o).lower() for o in c["objects"]) or "motion"
-    return LOOK.format(camera=camera_label, where="outside" if outside else "inside the house", labels=labels)
+
+def hour_of(c: dict[str, Any]) -> int:
+    return datetime.datetime.fromtimestamp(c["start"]).hour
+
+
+def to_look(cands: list[dict[str, Any]], n: int = LOOKS) -> list[dict[str, Any]]:
+    """The n candidates the model looks at, in turn from every hour: each hour's most promising
+    (a bark or laughter first, then Frigate's labels, then the longer), a camera looked at less
+    and a moment not already looked at on that camera ahead of the rest."""
+    slots: dict[int, list[dict[str, Any]]] = {}
+    for c in cands:
+        slots.setdefault(hour_of(c), []).append(c)
+    out: list[dict[str, Any]] = []
+    used: Counter[str] = Counter()
+
+    def promise(c: dict[str, Any]) -> tuple[float, float]:
+        near = any(o["camera"] == c["camera"] and abs(o["start"] - c["start"]) < away.APART for o in out)
+        return (c["score"] - 0.75 * used[c["camera"]] - (3 if near else 0), min(c["end"] - c["start"], 300))
+
+    while len(out) < n and any(slots.values()):
+        for h in sorted(slots):
+            if not slots[h] or len(out) >= n:
+                continue
+            best = max(slots[h], key=promise)
+            slots[h].remove(best)
+            out.append(best)
+            used[best["camera"]] += 1
+    return out
+
+
+def choose(cands: list[dict[str, Any]], n: int = CLIPS) -> list[dict[str, Any]]:
+    """The reel, in time order: each hour's best (when the model liked it, GOOD or more), then
+    the best of the rest; at most PER_CAMERA a camera, picks on one camera away.APART. Once the
+    model has looked, only what it looked at; nothing it saw nobody in, and dull moments only to
+    make up a reel of three."""
+    if any(c.get("lively") is not None for c in cands):
+        cands = [c for c in cands if c.get("lively") is not None]
+    ranked = sorted(cands, key=lambda c: (-away.score(c), c["start"]))
+    picked: list[dict[str, Any]] = []
+
+    def fits(c: dict[str, Any]) -> bool:
+        same = [p for p in picked if p["camera"] == c["camera"]]
+        return len(same) < PER_CAMERA and all(abs(p["start"] - c["start"]) >= away.APART for p in same)
+
+    def lively(c: dict[str, Any]) -> float:
+        return c["lively"] if c.get("lively") is not None else c["score"]
+
+    for h in sorted({hour_of(c) for c in ranked}):
+        for c in ranked:
+            if len(picked) < n and hour_of(c) == h and lively(c) >= GOOD and fits(c):
+                picked.append(c)
+                break
+    for c in ranked:
+        if len(picked) >= n:
+            break
+        if c in picked or not fits(c) or lively(c) < 1 or (lively(c) < away.DULL and len(picked) >= 3):
+            continue
+        picked.append(c)
+    return sorted(picked, key=lambda c: c["start"])
 
 
 # ------------------------------------------------------------------ the card

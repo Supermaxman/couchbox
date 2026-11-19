@@ -223,7 +223,7 @@ def part_seconds(p: dict[str, Any]) -> float:
     if k == "yard":
         return YARD_SECONDS
     if k in ("night", "pets"):
-        return away.CLIP * len(p.get("clips") or [])
+        return sum(c.get("seconds") or away.CLIP for c in p.get("clips") or [])
     return WEATHER_SECONDS if k == "weather" else VIDEOS_SECONDS
 
 

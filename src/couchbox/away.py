@@ -54,6 +54,9 @@ PEOPLE = {"person", "face"}
 VEHICLES = {"car", "truck", "bus", "van", "motorcycle", "bicycle", "boat", "license_plate", "plate"}
 PACKAGES = {"package", "amazon", "ups", "fedex", "usps", "dhl", "dpd", "gls", "an_post", "purolator", "postnl", "nzpost", "postnord"}
 PETS = {"dog", "cat"}
+# Frigate's sound detection (audio.listen): what a pet or someone having fun sounds like
+PET_SOUNDS = {"bark", "howl", "growling", "whimper_dog", "meow", "purr", "hiss", "caterwaul"}
+FUN_SOUNDS = {"laughter", "yell", "singing", "children_playing", "cheering", "giggle"}
 ANIMALS = PETS | {"bird", "horse", "bear", "deer", "fox", "raccoon", "squirrel", "rabbit", "goat", "cow", "sheep"}
 OUTSIDE_WORDS = r"outside|outdoors?|exterior|yard|garden|patio|porch|driveway|street|perimeter|grounds"
 INSIDE_WORDS = r"inside|indoors?|interior|house|home|downstairs|upstairs|rooms?|living"
@@ -175,14 +178,15 @@ def sides(config: dict[str, Any]) -> dict[str, bool]:
     return result
 
 
-def section(objects: list[str], outside: bool) -> str | None:
-    """Where a review item goes in the reel: "outside" (people, packages, cars), "pets", or None."""
+def section(objects: list[str], outside: bool, sounds: list[str] = ()) -> str | None:
+    """Where a review item goes in the reel: "outside" (people, packages, cars), "pets" (a pet
+    seen, or heard: a bark, a meow), or None."""
     objs = {o.split("-verified")[0] for o in objects}
     if outside:
         if objs & (PEOPLE | VEHICLES | PACKAGES):
             return "outside"
-        return "pets" if objs & ANIMALS else None
-    return "pets" if objs & PETS else None
+        return "pets" if objs & ANIMALS or set(sounds) & PET_SOUNDS else None
+    return "pets" if objs & PETS or set(sounds) & PET_SOUNDS else None
 
 
 def base_score(c: dict[str, Any]) -> float:
@@ -199,6 +203,8 @@ def base_score(c: dict[str, Any]) -> float:
         s += 1
     if c["severity"] == "alert":
         s += 1
+    if set(c.get("sounds") or ()) & (PET_SOUNDS | FUN_SOUNDS):
+        s += 2  # a bark, a laugh: something's happening
     dur = c["end"] - c["start"]
     if dur < 2:
         s -= 2  # a blip
@@ -211,7 +217,8 @@ def candidates(
     reviews: list[dict[str, Any]], side: dict[str, bool], since: float, until: float, section_of: Any = section
 ) -> list[dict[str, Any]]:
     """Frigate's review items (/api/review rows) of an absence, as reel candidates, oldest first
-    (section_of: which part of the reel an item goes in, None to leave it out)."""
+    (section_of(objects, outside, sounds): which part of the reel an item goes in, None to leave
+    it out; sounds: what Frigate's sound detection heard, a bark, laughter)."""
     out = []
     for r in reviews:
         start, end = r.get("start_time") or 0, r.get("end_time")
@@ -226,7 +233,8 @@ def candidates(
                 o.split("-verified")[0] for o in (data.get("objects") or []) + (data.get("sub_labels") or []) if isinstance(o, str)
             )
         )
-        sec = section_of(objects, side[cam])
+        sounds = list(dict.fromkeys(a for a in data.get("audio") or [] if isinstance(a, str)))
+        sec = section_of(objects, side[cam], sounds)
         if not sec:
             continue
         c = {
@@ -237,6 +245,7 @@ def candidates(
             "start": float(start),
             "end": float(end),
             "objects": objects,
+            "sounds": sounds,
             "thumb": float(data.get("thumb_time") or 0),
         }
         c["score"] = base_score(c)
@@ -253,11 +262,19 @@ def frame_times(c: dict[str, Any]) -> list[float]:
     return [round(s + (e - s) * f, 1) for f in (0.2, 0.5, 0.8)]
 
 
-def look_prompt(c: dict[str, Any], camera_label: str) -> str:
+def guesses(c: dict[str, Any]) -> str:
+    """What Frigate saw and heard, for the model: "dog, person; heard: bark"."""
     from couchbox.services.frigate import label
 
-    labels = ", ".join(label(o).lower() for o in c["objects"]) or "motion"
-    return LOOK.format(camera=camera_label, where="outside" if c["section"] == "outside" else "inside the house", labels=labels)
+    seen = ", ".join(label(o).lower() for o in c["objects"])
+    heard = ", ".join(label(a).lower() for a in c.get("sounds") or ())
+    if heard:
+        return f"{seen}; heard: {heard}" if seen else f"nothing seen; heard: {heard}"
+    return seen or "motion"
+
+
+def look_prompt(c: dict[str, Any], camera_label: str) -> str:
+    return LOOK.format(camera=camera_label, where="outside" if c["section"] == "outside" else "inside the house", labels=guesses(c))
 
 
 def parse_look(text: str) -> dict[str, Any] | None:
@@ -329,21 +346,21 @@ def look(f: Any, c: dict[str, Any], camera_label: str, log: Any = print, prompt:
     return "ok"
 
 
-def fetch(f: Any, picks: list[dict[str, Any]], d: Path, log: Any = print) -> list[dict[str, Any]]:
-    """Download each pick's clip (CLIP seconds, Frigate cuts it) and a still of it into d (kept
+def fetch(f: Any, picks: list[dict[str, Any]], d: Path, log: Any = print, seconds: float = CLIP) -> list[dict[str, Any]]:
+    """Download each pick's clip (seconds long, Frigate cuts it) and a still of it into d (kept
     when already there); the picks with file, poster and clipStart, those that failed left out."""
     import requests
 
     d.mkdir(parents=True, exist_ok=True)
 
     def one(c: dict[str, Any]) -> dict[str, Any] | None:
-        s, e = clip_window(c)
+        s, e = clip_window(c, seconds)
         key = f"{c['id']}-{s:.0f}".replace("/", "_")
         clip, still = d / f"{key}.mp4", d / f"{key}.jpg"
         try:
             if not clip.exists():
                 f.save_clip(c["camera"], s, e, str(clip))
-            for t in (s + CLIP * 0.4, c["start"] + 1, c["thumb"]):  # (a second Frigate didn't keep: the next)
+            for t in (s + seconds * 0.4, c["start"] + 1, c["thumb"]):  # (a second Frigate didn't keep: the next)
                 if still.exists() or not t:
                     break
                 try:
@@ -353,7 +370,7 @@ def fetch(f: Any, picks: list[dict[str, Any]], d: Path, log: Any = print) -> lis
         except Exception as err:  # noqa: BLE001 - left out of the reel
             log(f"clip of {c['id']}: {err}")
             return None
-        return dict(c, file=str(clip), poster=str(still) if still.exists() else "", clipStart=s)
+        return dict(c, file=str(clip), poster=str(still) if still.exists() else "", clipStart=s, clipSeconds=seconds)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         return [x for x in pool.map(one, picks) if x]
@@ -370,8 +387,9 @@ def reel_clip(c: dict[str, Any], label: str, clock24: bool) -> dict[str, Any]:
         "at": c["start"],
         "when": clock(c["start"], clock24),
         "caption": caption(c, label, clock24),
-        "what": c.get("caption") or fallback_caption(c["objects"]),
+        "what": c.get("caption") or fallback_caption(c["objects"] or c.get("sounds") or []),
         "lively": c.get("lively"),
+        "seconds": c.get("clipSeconds") or CLIP,
         "review": {k: c[k] for k in ("id", "camera", "start", "end", "severity", "objects")},
     }
 
@@ -413,8 +431,8 @@ def choose(cands: list[dict[str, Any]], n: int = MAX_CLIPS) -> list[dict[str, An
     return sorted(picked, key=lambda c: (c["section"] != "outside", c["start"]))
 
 
-def clip_window(c: dict[str, Any]) -> tuple[float, float]:
-    """The CLIP seconds of an item shown in the reel: around its liveliest frame (the model's
+def clip_window(c: dict[str, Any], clip: float = CLIP) -> tuple[float, float]:
+    """The clip seconds of an item shown in the reel: around its liveliest frame (the model's
     pick, else Frigate's thumbnail), inside the item where it can be."""
     if c.get("best_t"):
         mid = c["best_t"]
@@ -422,9 +440,9 @@ def clip_window(c: dict[str, Any]) -> tuple[float, float]:
         mid = c["thumb"]
     else:
         mid = frame_times(c)[1]
-    start = mid - CLIP * 0.4
-    start = max(c["start"] - 1, min(start, c["end"] + 1 - CLIP))
-    return round(start, 1), round(start + CLIP, 1)
+    start = mid - clip * 0.4
+    start = max(c["start"] - 1, min(start, c["end"] + 1 - clip))
+    return round(start, 1), round(start + clip, 1)
 
 
 def fallback_caption(objects: list[str]) -> str:
@@ -460,7 +478,7 @@ def clock(t: float, clock24: bool) -> str:
 
 def caption(c: dict[str, Any], camera_label: str, clock24: bool) -> str:
     """ "2:14 pm · Front door · A delivery driver leaves a box"."""
-    what = c.get("caption") or fallback_caption(c["objects"])
+    what = c.get("caption") or fallback_caption(c["objects"] or c.get("sounds") or [])
     return f"{clock(c['start'], clock24)} · {camera_label} · {what}"
 
 
