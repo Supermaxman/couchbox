@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/Supermaxman/couchbox/compare/v0.29.5...v0.30.0) (2026-11-19)
+
+
+### New
+
+* **frigate:** a fuller three-minute Today at home spread over the day, sounds help pick moments, and a Timelapse page ([#158](https://github.com/Supermaxman/couchbox/issues/158)) ([cb9cc31](https://github.com/Supermaxman/couchbox/commit/cb9cc317c94ec7b8950115d5ea571cf966cefee0))
+
 ## [0.29.5](https://github.com/Supermaxman/couchbox/compare/v0.29.4...v0.29.5) (2026-11-16)
 
 
