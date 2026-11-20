@@ -136,6 +136,14 @@ QtObject {
     // ------------------------------------------------------------------ back end (threads)
     property int nextId: 1
     property var waiting: ({})
+    // the TV's connection (couchbox-yt's "network" event): offline, YouTube's "No internet
+    // connection" panel (Main); back online, pictures that didn't come are asked for again (retry)
+    property bool online: true
+    property int retry: 0
+    onOnlineChanged: if (online) retry++
+    signal offline()                          // something the viewer asked for failed for want of a connection
+    readonly property var asked: ({home: 1, browse: 1, more: 1, channel: 1, search: 1, subscriptions: 1, library: 1,
+                                   stream: 1, shorts: 1, short: 1, mix: 1, comments: 1})
     function call(op, args, done, fail) {
         const id = nextId++;
         waiting[id] = [done, fail, op];
@@ -149,6 +157,7 @@ QtObject {
             if (!cb) return;
             let r = null;
             try { r = JSON.parse(json); } catch (e) { r = {error: "Something unexpected came back."}; }
+            if (r && r.offline) { y.online = false; if (y.asked[cb[2]]) y.offline(); }
             try {
                 if (r && r.error) { if (cb[1]) cb[1](r.error, r); else y.toast(r.error); }
                 else if (cb[0]) cb[0](r);

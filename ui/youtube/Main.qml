@@ -224,6 +224,7 @@ ApplicationWindow {
         function onSignIn() { win.push(signInC, {}); }
         function onOpenList(title, id) { win.push(listC, {title: title, browseId: id}); }
         function onCardMenu(it, back) { cardMenu.open(it, back); }
+        function onOffline() { network.show(win.activeFocusItem); }
         function onSearch(q) {
             win.choose("search");
             if (q) pg(searchL).search(q);
@@ -259,6 +260,18 @@ ApplicationWindow {
         else if (k === "shorts") { stack.clear(StackView.Immediate); push(shortsC, {startId: rest}); }
         else if (k === "signin") push(signInC, {});
     }
+    // online again (or Refresh on the panel): what failed for want of a connection, asked for again.
+    // The page in front now (Home over its copy from last time: YouTube's new one), the others when
+    // they're next shown; a video that couldn't start, started.
+    function reconnected() {
+        const cur = picking ? null : stack.depth ? stack.currentItem : page(section);
+        for (const p of [home, tabL.item, subscriptionsL.item, libraryL.item, cur])
+            if (p && p.problem) { p.problem = ""; p.loaded = false; }
+        if (home.fromCopy) home.loaded = false;
+        if (!cur) return;
+        if (cur.videoId !== undefined) { if (cur.message && !cur.s && cur.start) cur.start(cur.videoId, cur.startAt); return; }
+        if (cur.loaded === false && cur.load) cur.load();
+    }
     function updateState() {
         const cur = stack.depth ? stack.currentItem : null;
         const st = {page: picking ? "profiles" : cur ? (cur.videoId !== undefined ? "player" : cur.browseId !== undefined ? "list" : "channel") : section,
@@ -286,6 +299,10 @@ ApplicationWindow {
                 // nothing to say unless the sign-in page is up (it shows it)
             } else if (name === "signedOut") {
                 toast.show((d.name || "An account") + " was signed out of YouTube. Sign in again from Who's watching.");
+            } else if (name === "network") {
+                Y.online = !!d.online;
+                if (!d.online) network.show(win.activeFocusItem);
+                else { network.close(); win.reconnected(); }
             }
         }
     }
@@ -428,6 +445,12 @@ ApplicationWindow {
             onFinished: win.pop()
             onOpenChannel: id => win.push(channelC, {channelId: id})
         }
+    }
+
+    NetworkPanel {
+        id: network
+        anchors.fill: parent
+        onRefresh: { network.close(); win.reconnected(); }
     }
 
     Text {

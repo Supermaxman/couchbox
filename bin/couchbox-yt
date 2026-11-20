@@ -76,7 +76,7 @@ from PySide6.QtQml import QQmlApplicationEngine, QQmlNetworkAccessManagerFactory
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface  # noqa: E402
 
 from couchbox import keyguard  # noqa: E402
-from couchbox.services import youtube, ytauth, ytextras, ytstream, yttiming, ytworker  # noqa: E402
+from couchbox.services import youtube, ytauth, ytextras, ytnet, ytstream, yttiming, ytworker  # noqa: E402
 
 
 def started(step):
@@ -87,6 +87,12 @@ def started(step):
 started("imports")
 
 SHOWN = ("home", "browse", "channel", "search", "subscriptions", "library")  # pages (for "screen")
+# answered here, from what the TV keeps: no internet needed (any other call that fails asks ytnet)
+LOCAL = {"status", "settings", "setting", "profiles", "use", "signInCancel", "mark", "homeCached", "searches", "castCode", "share", "about"}
+OFFLINE = {"error": "No internet connection", "offline": True}
+SLOW = 8  # s: a call still out by then: is the TV offline? (then said at once)
+# the demo without internet while this file is there (off-screen tests of the offline panel)
+DEMO_OFFLINE = os.path.join(os.environ.get("TMPDIR") or "/tmp", "couchbox-yt-demo-offline")
 
 
 class Backend(QObject):
@@ -116,6 +122,11 @@ class Backend(QObject):
         Backend.current = self
         self.home_lock = threading.Lock()
         self.shown = {}  # the last page the app asked for (the control socket's "screen")
+        # the TV's connection: offline is the app's "No internet connection" panel, until it's back
+        self.net = ytnet.Net(
+            lambda on: self.event.emit("network", json.dumps({"online": on})),
+            reach=(lambda: not os.path.exists(DEMO_OFFLINE)) if demo else None,
+        )
         if not demo and self.settings.get()["cast"]:
             start_cast()  # phones can cast to the TV (and launch the app) from now on
         if not demo:
@@ -593,6 +604,8 @@ class Backend(QObject):
 
     def run(self, op, a):
         y = self.yt
+        if self.demo and op not in LOCAL and os.path.exists(DEMO_OFFLINE):
+            raise ConnectionError("the demo is offline")
         ops = {
             "status": lambda: dict(
                 y.profiles(),
@@ -668,8 +681,30 @@ class Backend(QObject):
         if op == "stream" and '"max_height"' not in (args or ""):  # a video starting: until its first frame
             watch.play = {"id": json.loads(args or "{}").get("id", ""), "t0": watch.last_ok if asked - watch.last_ok < 2 else asked}
 
+        replied = []  # (once: an early "no internet", or the answer)
+        lock = threading.Lock()
+
+        def answer(out):
+            with lock:
+                if replied:
+                    return
+                replied.append(1)
+            self.reply.emit(rid, json.dumps(out))
+
+        def slow():  # still out: offline? Then say so now, not after its timeout
+            if not self.net.check():
+                answer(OFFLINE)
+
         def work():
             started = yttiming.now()
+            net = op not in LOCAL
+            if net and not self.net.online:  # no internet: no waiting on a call that can't go out
+                answer(OFFLINE)
+                return
+            timer = threading.Timer(SLOW, slow) if net else None
+            if timer:
+                timer.daemon = True
+                timer.start()
             try:
                 a = json.loads(args or "{}")
                 out = self.run(op, a)
@@ -684,10 +719,14 @@ class Backend(QObject):
             except Exception as err:
                 traceback.print_exc()
                 out = {"error": "Couldn't reach YouTube." if "Connection" in type(err).__name__ else str(err) or err.__class__.__name__}
+            if timer:
+                timer.cancel()
+            if net and isinstance(out, dict) and out.get("error") and not out.get("signedOut") and not self.net.check():
+                out = OFFLINE  # it failed for want of a connection: the app says so
             yttiming.note("call", op=op, ms=yttiming.ms(asked), queued=round((started - asked) * 1000))
             if op == "stream" and watch.play and isinstance(out, dict):
                 watch.play["stream"] = yttiming.ms(watch.play["t0"])
-            self.reply.emit(rid, json.dumps(out))
+            answer(out)
 
         self.pool.submit(work)
 

@@ -51,11 +51,12 @@ Item {
         Rectangle {                          // its picture on its way: a quiet grey
             anchors.fill: parent
             radius: card.round ? width / 2 : card.corner
-            color: card.topic ? "#212121" : Y.raised
+            // (one that didn't come, no internet: YouTube's TV app's grey, #212121, measured)
+            color: card.topic || img.status === Image.Error ? "#212121" : Y.raised
         }
-        Loader {                             // no picture at all (the demo, one that didn't come): the title's colours
+        Loader {                             // no picture at all (the demo): the title's colours
             anchors.fill: parent
-            active: !card.thumb || img.status === Image.Error
+            active: !card.thumb
             sourceComponent: Rectangle {
                 radius: card.round ? width / 2 : card.corner
                 gradient: Gradient {
@@ -101,6 +102,9 @@ Item {
             onStatusChanged: { if (status === Image.Ready) had = true; else if (status !== Image.Loading) had = false; }
             visible: had && !card.overVideo
             opacity: had ? 1 : 0                      // (fading in as it comes, not popping)
+            // online again: one that didn't come, asked for again
+            property int retry: Y.retry
+            onRetryChanged: if (status === Image.Error) { source = ""; source = Qt.binding(() => card.thumb); }
             Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         }
         Loader {
