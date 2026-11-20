@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.2](https://github.com/Supermaxman/couchbox/compare/v0.30.1...v0.30.2) (2026-11-20)
+
+
+### Fixed
+
+* **youtube:** Back closes the "No internet connection" panel for good: a background load failing offline no longer reopens it ([#163](https://github.com/Supermaxman/couchbox/issues/163)) ([780926a](https://github.com/Supermaxman/couchbox/commit/780926ad673dcae3cd77aa2399decd8338125d2f))
+
 ## [0.30.1](https://github.com/Supermaxman/couchbox/compare/v0.30.0...v0.30.1) (2026-11-20)
 
 
