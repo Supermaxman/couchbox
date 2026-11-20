@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.1](https://github.com/Supermaxman/couchbox/compare/v0.30.0...v0.30.1) (2026-11-20)
+
+
+### Fixed
+
+* **youtube:** no internet: YouTube's TV app's "No internet connection" panel, and back by itself once online ([#160](https://github.com/Supermaxman/couchbox/issues/160)) ([b091d71](https://github.com/Supermaxman/couchbox/commit/b091d71199e4f671d8d90c14a2bfde9a88249e4a))
+
+
+### Docs
+
+* AGENTS.md: test on the dev box, drive it with the box tools, credentials may be copied from the household box ([#161](https://github.com/Supermaxman/couchbox/issues/161)) ([e8abe47](https://github.com/Supermaxman/couchbox/commit/e8abe47b3ebce1a34b7a7c73c736a00d2ded0bd9))
+
 ## [0.30.0](https://github.com/Supermaxman/couchbox/compare/v0.29.5...v0.30.0) (2026-11-19)
 
 
