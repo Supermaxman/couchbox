@@ -8,6 +8,7 @@ FocusScope {
     id: panel
     objectName: "network"
     property var returnFocus: null
+    property real closedAt: 0                 // (when it was last closed: Main)
     readonly property bool shown: sheet.open
     signal refresh()
     visible: sheet.open || scrim.opacity > 0 || sheet.opacity > 0
@@ -22,6 +23,7 @@ FocusScope {
     function close() {
         if (!sheet.open) return;
         sheet.open = false;
+        closedAt = Date.now();
         if (returnFocus) returnFocus.forceActiveFocus();
         returnFocus = null;
     }

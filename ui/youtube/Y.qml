@@ -141,12 +141,14 @@ QtObject {
     property bool online: true
     property int retry: 0
     onOnlineChanged: if (online) retry++
-    signal offline()                          // something the viewer asked for failed for want of a connection
-    readonly property var asked: ({home: 1, browse: 1, more: 1, channel: 1, search: 1, subscriptions: 1, library: 1,
+    signal offline(real asked)                // something the viewer asked for failed for want of a connection (asked: when)
+    // (not "more": a page's next rows load by themselves, and one of those failing reopened the
+    // panel right after Back had closed it)
+    readonly property var asked: ({home: 1, browse: 1, channel: 1, search: 1, subscriptions: 1, library: 1,
                                    stream: 1, shorts: 1, short: 1, mix: 1, comments: 1})
     function call(op, args, done, fail) {
         const id = nextId++;
-        waiting[id] = [done, fail, op];
+        waiting[id] = [done, fail, op, Date.now(), !!(args && args.quiet)];
         backend.call(id, op, JSON.stringify(args || {}));
     }
     property Connections replies: Connections {
@@ -157,7 +159,7 @@ QtObject {
             if (!cb) return;
             let r = null;
             try { r = JSON.parse(json); } catch (e) { r = {error: "Something unexpected came back."}; }
-            if (r && r.offline) { y.online = false; if (y.asked[cb[2]]) y.offline(); }
+            if (r && r.offline) { y.online = false; if (y.asked[cb[2]] && !cb[4]) y.offline(cb[3]); }
             try {
                 if (r && r.error) { if (cb[1]) cb[1](r.error, r); else y.toast(r.error); }
                 else if (cb[0]) cb[0](r);
