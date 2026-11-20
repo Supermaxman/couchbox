@@ -224,7 +224,8 @@ ApplicationWindow {
         function onSignIn() { win.push(signInC, {}); }
         function onOpenList(title, id) { win.push(listC, {title: title, browseId: id}); }
         function onCardMenu(it, back) { cardMenu.open(it, back); }
-        function onOffline() { network.show(win.activeFocusItem); }
+        // (closed with Back: only what's asked for after that opens it again, not an answer that was on its way)
+        function onOffline(asked) { if (asked > network.closedAt) network.show(win.activeFocusItem); }
         function onSearch(q) {
             win.choose("search");
             if (q) pg(searchL).search(q);
@@ -538,7 +539,7 @@ ApplicationWindow {
     function preloadFocused() {
         const id = win.focusedVideo, c = win.focusedCardInfo;
         if (!id || win.playing || playerUnder() || !c || c.type !== "video") return;   // (a preload would replace its video)
-        Y.call("stream", {id: id}, r => {
+        Y.call("stream", {id: id, quiet: true}, r => {   // (quiet: failing offline, it doesn't open the panel)
             if (win.focusedVideo !== id || win.playing || win.playerUnder() || !r.url || r.live || r.wait > 0 || r.url.indexOf("demo://") === 0) return;
             video.preload(r.url, Y.resumeAt(Y.progressOf(c), r.duration || c.duration), r.opts || "");
         }, () => {});
