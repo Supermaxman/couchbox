@@ -548,6 +548,18 @@ def connect_main():
                 print(f"soloist: can't install Spotify's player: {err}", flush=True)
                 time.sleep(600)
                 continue
+            err = soloist.store_key()
+            if err:  # a build older than 1.4.0 can't save the key: get the current one
+                print(f"soloist: can't save the API key ({err}); updating the player", flush=True)
+                try:
+                    soloist.ensure(force=True, log=lambda m: print(m, flush=True))
+                except Exception as e:  # noqa: BLE001
+                    print(f"soloist: update failed: {e}", flush=True)
+                err = soloist.store_key()
+            if err:
+                print(f"soloist: can't save the API key: {err}", flush=True)
+                time.sleep(600)
+                continue
             for f in ("ws.port", "ws.addr"):
                 (soloist.state_dir() / f).unlink(missing_ok=True)
             started = time.time()

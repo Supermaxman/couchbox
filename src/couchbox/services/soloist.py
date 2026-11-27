@@ -216,13 +216,32 @@ def ensure(force=False, log=print) -> dict:
     return info or {}
 
 
+def store_key() -> str:
+    """Hand the API key to the player on its stdin (`soloist setup-api-key`, Soloist 1.4.0+), which
+    saves it in its data directory and uses it when --api-key is absent: a key on the command line
+    is in `ps` for anyone signed in to the box. "" when saved, else why not (never the key)."""
+    try:
+        r = subprocess.run(
+            [str(binary()), "setup-api-key", "--data-dir", str(state_dir())],
+            input=api_key() + "\n",
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return str(err)
+    if r.returncode == 0:
+        return ""
+    errors = [ln.strip() for ln in (r.stdout + r.stderr).splitlines() if ln.strip().startswith("Error")]
+    return errors[0] if errors else f"exit {r.returncode}"
+
+
 def command(device_name: str, ws_port: int = 0) -> list[str]:
+    """The player's command line; the key is saved beforehand (store_key), never on it."""
     return [
         str(binary()),
         "--device-name",
         device_name,
-        "--api-key",
-        api_key(),
         "--data-dir",
         str(state_dir()),
         "--cache-dir",
