@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 180
     container: ubuntu:26.10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: FFmpeg (Raspberry Pi fork)
         run: mkdir -p /out && bash media/build-ffmpeg.sh
       - name: Jellyfin Desktop
