@@ -58,6 +58,29 @@ def test_a_paused_app_in_the_background_is_idle_and_a_playing_one_is_not(mem, mo
     assert apps["app:" + TWITCH]["focus"] and apps["app:" + TWITCH]["playing"]
 
 
+def test_youtube_without_devtools_is_still_watched(mem, monkeypatch):
+    """VacuumTube from its own Flatpak tile ("YouTube (old)") has no DevTools port: it was never
+    listed, so never closed (10 days in the background on mtv, a third of a core)."""
+    scopes = {
+        10: "app-flatpak-rocks.shy.VacuumTube-1.scope",
+        11: "app-flatpak-rocks.shy.VacuumTube-1.scope",
+        12: "app-flatpak-rocks.shy.VacuumTube-2.scope",
+    }
+    monkeypatch.setattr(mem, "probe", lambda: {})
+    monkeypatch.setattr(mem, "unit_of", lambda pid: scopes.get(pid, ""))
+    plist = [(9, 1, "bwrap", TV), (10, 9, "vacuumtube", TV), (11, 10, "vacuumtube", TV), (12, 9, "vacuumtube", TV)]
+    monkeypatch.setattr(mem, "front_and_players", lambda uid: ("plasma-plasmashell.service", {scopes[10]: False}))
+    apps, groups = mem.open_apps(TV, plist)
+    assert apps == {"YouTube": {"name": "YouTube", "focus": False, "playing": False}}  # one app, idle
+    assert groups["YouTube"] == (10, [10, 11, 12])
+    monkeypatch.setattr(mem, "front_and_players", lambda uid: ("plasma-plasmashell.service", {scopes[10]: True}))
+    assert mem.open_apps(TV, plist)[0]["YouTube"]["playing"]
+    monkeypatch.setattr(mem, "front_and_players", lambda uid: (scopes[10], {}))
+    assert mem.open_apps(TV, plist)[0]["YouTube"]["focus"]
+    monkeypatch.setattr(mem, "front_and_players", lambda uid: None)
+    assert mem.open_apps(TV, plist)[0]["YouTube"]["playing"]  # mediakeys can't be asked: not closed blind
+
+
 def test_nothing_is_closed_blind_when_mediakeys_cannot_be_asked(mem, monkeypatch):
     monkeypatch.setattr(mem, "probe", lambda: {})
     monkeypatch.setattr(mem, "unit_of", lambda pid: TWITCH)

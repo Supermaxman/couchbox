@@ -2,7 +2,7 @@
 """couchbox-memory: keep the box's 8 GB for what's being watched.
 
 Idle apps. Every app is closed after COUCHBOX_APPS_IDLE_MINUTES (couchbox.env, default 60)
-without activity: YouTube (couchbox-yt, or VacuumTube when it's the tile's choice), Jellyfin,
+without activity: YouTube (couchbox-yt, or VacuumTube from either tile), Jellyfin,
 each web app such as Dropout, and any other app started from the home screen (Twitch, Spotify,
 Settings, ...: each runs in its own app-*.service or app-*.scope). An app counts as active while something plays in it, or while it's in front and
 the remote is being pressed (couchbox-input touches /run/couchbox/last-key). Closing: web apps
@@ -307,8 +307,15 @@ def open_apps(uid, plist):
     apps = probe()
     covered = {p for _, pids in groups.values() for p in pids}
     others = launched_apps(uid, plist, covered)
-    seen = front_and_players(uid) if others else None
+    # YouTube or Jellyfin open without DevTools (VacuumTube from its own tile, "YouTube (old)",
+    # not the YouTube tile) can't be probed: judge it by its units, like the other apps
+    blind = [k for k in ("YouTube", "Jellyfin") if k in groups and k not in apps]
+    seen = front_and_players(uid) if others or blind else None
     front, playing = seen or ("", {})
+    for k in blind:
+        units = {unit_of(p) for p in groups[k][1]}
+        apps[k] = {"name": k, "focus": front in units,
+                   "playing": seen is None or any(playing.get(u, False) for u in units)}
     for unit, (app_id, main, pids) in others.items():
         k = "app:" + unit
         # couchbox-mediakeys not answering: count it as playing, so nothing is closed blind
