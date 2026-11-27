@@ -277,7 +277,9 @@ def pick(
             codec.startswith("mp4a") or (_hls(f) and not codec),  # HLS audio renditions don't say (AAC)
             0 < (f.get("audio_channels") or 2) <= 2,
             "drc" not in (f.get("format_id") or ""),  # dynamic range compressed: the quiet copy
-            "high" in note,  # HLS: "Default, high" over "Default, low"
+            # HLS: "Default, high" over "Default, low" (a live stream's), a video's itag 234 (AAC
+            # 128k) over 233 (48k): yt-dlp gives those no bitrate, so the first listed won (233)
+            "high" in note or str(f.get("format_id") or "").split("-")[0] == "234",
             f.get("abr") or f.get("tbr") or 0,
         )
 

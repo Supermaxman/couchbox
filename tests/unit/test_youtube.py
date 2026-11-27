@@ -574,6 +574,9 @@ def test_pick_plays_the_original_language_never_an_auto_dub():
         )
     v, a = S.pick(hls)
     assert (v["format_id"], a["format_id"], a["language"]) == ("312", "234", "en-US")
+    # 234 (AAC 128k) over 233 (48k), though yt-dlp gives neither a bitrate and lists 233 first
+    hls = [dict(f, tbr=None) for f in hls]
+    assert S.pick(hls)[1]["format_id"] == "234"
     # DASH: the original over a dub marked default, and over the other dubs
     dash = [fmt("299", "avc1.64002A", height=1080, fps=60, tbr=6000)] + [
         fmt("140", acodec="mp4a.40.2", ch=2, abr=129, language=lang, language_preference=p)
