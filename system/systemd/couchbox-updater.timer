@@ -1,10 +1,14 @@
 [Unit]
-Description=Couchbox updates: every 6 hours (and soon after boot)
+Description=Couchbox updates: every hour (and soon after boot)
 
 [Timer]
+# Hourly, so every night gets several tries inside the install hours (updates.window,
+# 02:00-06:00 by default): a 6 h interval drifted across the window and skipped whole nights.
+# The updater itself decides whether it's time to install; outside the window it only checks.
 OnBootSec=10min
-OnUnitActiveSec=6h
-RandomizedDelaySec=1h
+OnCalendar=hourly
+RandomizedDelaySec=15min
+FixedRandomDelay=true
 Persistent=true
 
 [Install]

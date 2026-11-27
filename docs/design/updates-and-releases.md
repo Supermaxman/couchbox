@@ -76,7 +76,7 @@ PRs merged to main ──► release-please keeps a "Release vX.Y.Z" PR updated 
 
 ## The updater (`couchbox-updater`)
 
-A `couchbox-updater.timer` fires every 6 h with a 1 h random delay, plus 10 min after boot.
+A `couchbox-updater.timer` fires every hour (at a fixed per-box offset of up to 15 min), plus 10 min after boot, so each night gets several tries inside `updates.window`.
 
 ```
 check ──► newer release for my channel? ──no──► done
@@ -92,7 +92,7 @@ download (resumable, to /var/lib/couchbox/updates/X.Y.Z/) ─► verify signatur
 
 **Finding releases:**
 - **stable:** `https://github.com/<source>/releases/latest/download/release.json`. This is a redirect, so it isn't subject to API rate limits.
-- **beta:** `GET /repos/<source>/releases?per_page=10`, newest version wins. That's 4 calls a day, well under the anonymous limit of 60 an hour.
+- **beta:** `GET /repos/<source>/releases?per_page=10`, newest version wins. That's 24 calls a day, well under the anonymous limit of 60 an hour.
 - **Errors:** a network error just means trying again later, with backoff. A signature error is logged loudly and shown in Settings → Updates ("Update couldn't be verified").
 
 **When to install ("idle")**, in automatic mode, means all of these are true:
