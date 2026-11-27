@@ -265,13 +265,19 @@ def pick(
 
     def akey(f):
         codec = f.get("acodec") or ""
+        note = (f.get("format_note") or "").lower()
+        pref = f.get("language_preference")
         return (
+            # the video's own language, never a dub (YouTube's auto-dubs: Arabic, Korean, ...):
+            # yt-dlp marks the original 10 (the default 5, others -1) in DASH, but leaves its HLS
+            # dubs unmarked (None), and these come before the original in its list
+            "dubbed" not in note and (pref is None or pref >= 0),
+            pref or 0,
             ready(f, now),
             codec.startswith("mp4a") or (_hls(f) and not codec),  # HLS audio renditions don't say (AAC)
             0 < (f.get("audio_channels") or 2) <= 2,
             "drc" not in (f.get("format_id") or ""),  # dynamic range compressed: the quiet copy
-            (f.get("language_preference") or 0) >= 0,  # not a dubbed track
-            "high" in (f.get("format_note") or "").lower(),  # HLS: "Default, high" over "Default, low"
+            "high" in note,  # HLS: "Default, high" over "Default, low"
             f.get("abr") or f.get("tbr") or 0,
         )
 
