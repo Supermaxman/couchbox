@@ -553,6 +553,38 @@ def test_formats_that_play_now_beat_ones_waiting_out_ads():
     assert (v["format_id"], a["format_id"]) == ("299", "140")
 
 
+def test_pick_plays_the_original_language_never_an_auto_dub():
+    # a video YouTube auto-dubs (8eLUOaH7f6A): yt-dlp lists the dubs first, and leaves the HLS
+    # ones unmarked; the original is the last
+    hls = [fmt("312", "avc1.64002A", height=1080, fps=60, proto="m3u8_native", tbr=7400)]
+    for fid, tbr in (("233", 50), ("234", 130)):
+        hls += [
+            fmt(fid, acodec=None, proto="m3u8_native", tbr=tbr, language=lang, format_note=f"{lang} - dubbed-auto") for lang in ("ar", "ko")
+        ]
+        hls.append(
+            fmt(
+                fid,
+                acodec=None,
+                proto="m3u8_native",
+                tbr=tbr,
+                language="en-US",
+                language_preference=10,
+                format_note="American English - original (original)",
+            )
+        )
+    v, a = S.pick(hls)
+    assert (v["format_id"], a["format_id"], a["language"]) == ("312", "234", "en-US")
+    # 234 (AAC 128k) over 233 (48k), though yt-dlp gives neither a bitrate and lists 233 first
+    hls = [dict(f, tbr=None) for f in hls]
+    assert S.pick(hls)[1]["format_id"] == "234"
+    # DASH: the original over a dub marked default, and over the other dubs
+    dash = [fmt("299", "avc1.64002A", height=1080, fps=60, tbr=6000)] + [
+        fmt("140", acodec="mp4a.40.2", ch=2, abr=129, language=lang, language_preference=p)
+        for lang, p in (("ar", -1), ("es", 5), ("en", 10))
+    ]
+    assert S.pick(dash)[1]["language"] == "en"
+
+
 def test_playable_with_nothing_playable():
     with pytest.raises(S.Unavailable):
         S.playable({"formats": [fmt("sb0", proto="mhtml")]})
