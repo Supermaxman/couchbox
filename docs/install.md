@@ -151,7 +151,7 @@ Then you're on the home screen.
 
 ## Updates
 
-Couchbox checks GitHub Releases every 6 hours. Releases are signed, and the box checks the signature before it installs anything.
+Couchbox checks GitHub Releases every hour. Releases are signed, and the box checks the signature before it installs anything.
 - **Automatic** (the default) installs updates when nobody's watching, during the install hours (02:00–06:00 by default). After each update the box runs its checks, and rolls back by itself if anything fails.
 - **Manual** shows "Update available" in Settings → Updates.
 
