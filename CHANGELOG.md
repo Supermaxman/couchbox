@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.1](https://github.com/Supermaxman/couchbox/compare/v0.31.0...v0.31.1) (2026-11-27)
+
+
+### Fixed
+
+* **updates:** after an update, the TV's services and interface restart onto the new version (Spotify kept running the old code until a reboot) ([#172](https://github.com/Supermaxman/couchbox/issues/172)) ([874f4bc](https://github.com/Supermaxman/couchbox/commit/874f4bce3392b51501cefe32cf49085e8f9c2d9a))
+* **updates:** the updater runs hourly, so every night gets tries inside the install hours (a 6-hour timer drifted past 02:00-06:00 and skipped whole nights) ([#171](https://github.com/Supermaxman/couchbox/issues/171)) ([f23e906](https://github.com/Supermaxman/couchbox/commit/f23e9064996a1c00a2b5c81d199d9a50fb321e43))
+
 ## [0.31.0](https://github.com/Supermaxman/couchbox/compare/v0.30.3...v0.31.0) (2026-11-27)
 
 
