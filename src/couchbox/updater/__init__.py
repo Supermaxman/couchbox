@@ -356,6 +356,21 @@ def _apt_install(debs: list[Path]) -> None:
         raise UpdateError("Installing failed: " + (r.stderr.strip().splitlines() or ["apt-get error"])[-1])
 
 
+def restart_parts(parts: list[str]) -> None:
+    """Restart what the release names, so the TV runs its new code: `services` are the TV user's
+    couchbox-* units that are running, `session` is the TV interface (plasmashell)."""
+    from couchbox import home
+
+    tv = ["systemctl", "--user", "-M", "tv@"]
+    if "services" in parts:
+        sh([*tv, "daemon-reload"], check=False, timeout=60)
+        r = sh([*tv, "try-restart", "couchbox-*.service"], check=False, timeout=120)
+        if r.returncode != 0:
+            log.warning("restarting the TV's services: %s", (r.stderr or r.stdout).strip())
+    if "session" in parts:
+        home.restart_plasmashell()
+
+
 def health_check() -> list[str]:
     """Problems after an update (empty = healthy)."""
     r = sh(["/usr/bin/couchbox", "doctor", "--post-update", "--json"], check=False, timeout=240)
@@ -383,6 +398,7 @@ def install(m: dict[str, Any] | None = None, *, version: str | None = None, chec
     st.update(installing={"from": from_v, "to": m["version"], "t": time.time()})
     save_state(st)
     _apt_install(debs)
+    restart_parts(m.get("restart", ["services", "session"]))
     problems = health_check() if check_health else []
     st = load_state()
     st.pop("installing", None)
@@ -413,6 +429,7 @@ def rollback(reason: str = "requested", to: str | None = None) -> dict[str, Any]
     if not debs:
         raise UpdateError(f"Version {to} isn't kept on this box any more.")
     _apt_install(debs)
+    restart_parts(["services", "session"])
     before = paths.state() / "state/settings.before-update.json"
     if before.exists():
         shutil.copy2(before, paths.settings_file())

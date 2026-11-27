@@ -104,7 +104,7 @@ download (resumable, to /var/lib/couchbox/updates/X.Y.Z/) ─► verify signatur
 **Install:**
 1. Keep the current debs as the rollback set. Write `state/update.json` = `{from, to, started}`.
 2. `apt-get install --allow-downgrades ./couchbox_X.Y.Z_arm64.deb ./couchbox-media_…deb`. This pulls new Ubuntu dependencies; if that fails, nothing changes and the update fails without effect.
-3. Restart per `restart`. Reboot only if `reboot` is set **and** the TV is in standby (otherwise wait).
+3. Restart per `restart`: `services` restarts the TV user's running `couchbox-*` services (Spotify, AirPlay, casting…), `session` restarts the TV interface (plasmashell). Box services restart with the package. A rollback restarts both too. Reboot only if `reboot` is set **and** the TV is in standby (otherwise wait).
 
 **Health check** (`couchbox doctor --post-update`, at most 3 min):
 - Every enabled unit is active.

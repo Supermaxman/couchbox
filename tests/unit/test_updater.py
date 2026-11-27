@@ -198,7 +198,7 @@ def test_manual_mode_downloads_and_waits(releases, monkeypatch):
     assert (updater.updates_dir() / "0.2.0/couchbox_0.2.0_all.deb").exists()
 
 
-def test_automatic_installs_when_idle(releases, monkeypatch):
+def test_automatic_installs_when_idle(releases, monkeypatch, runner):
     releases("0.2.0")
     monkeypatch.setattr(updater, "idle_reason", lambda s, st: "")
     applied = []
@@ -208,6 +208,10 @@ def test_automatic_installs_when_idle(releases, monkeypatch):
     st = updater.run()
     assert applied == [["couchbox_0.2.0_all.deb"]]
     assert st["just_updated"]["version"] == "0.2.0" and st["history"][-1]["event"] == "installed"
+    # the TV's running services and its interface restart onto the new code
+    tv = ("systemctl", "--user", "-M", "tv@")
+    assert runner.ran(*tv, "try-restart", "couchbox-*.service")
+    assert runner.ran(*tv, "restart", "plasma-plasmashell.service")
 
 
 def test_automatic_waits_while_watching(releases, monkeypatch):
@@ -217,7 +221,7 @@ def test_automatic_waits_while_watching(releases, monkeypatch):
     assert updater.run()["waiting"] == "something is playing"
 
 
-def test_failed_health_check_rolls_back(releases, monkeypatch):
+def test_failed_health_check_rolls_back(releases, monkeypatch, runner):
     releases("0.1.0")
     releases("0.2.0")
     # the running version's debs are kept for rollback
@@ -229,6 +233,8 @@ def test_failed_health_check_rolls_back(releases, monkeypatch):
     with pytest.raises(updater.UpdateError, match="rolled back"):
         updater.run()
     assert applied == [["couchbox_0.2.0_all.deb"], ["couchbox_0.1.0_all.deb"]]
+    # restarted after the update and again after going back
+    assert len(runner.ran("systemctl", "--user", "-M", "tv@", "try-restart")) == 2
     st = updater.load_state()
     assert "0.2.0" in st["bad"] and st["history"][-1]["event"] == "rolled_back"
     # and it isn't offered again
