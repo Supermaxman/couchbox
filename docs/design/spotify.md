@@ -100,4 +100,7 @@ search results or catalogue data.
 
 Files (the TV user's, mode 0600): `~/.local/share/couchbox-spotify/{config.json (client ID),
 soloist.key, session.json (tokens), contexts.json (what played here), cache.json}` and
-`soloist/` (the player and its Connect session).
+`soloist/` (the player and its Connect session). Before each start `--connect` hands the key to
+the player on its stdin (`soloist setup-api-key`, Soloist 1.4.0+), which saves it in its data
+directory, and starts it without `--api-key`: a program's command line is in `ps` for anyone signed
+in to the box. A build too old for `setup-api-key` is replaced with the current one first.

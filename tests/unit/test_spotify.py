@@ -278,7 +278,23 @@ def test_api_key_is_private_and_checked(fake):
         soloist.set_api_key("no spaces allowed here")
     soloist.set_api_key("sk_abcDEF123456")
     assert soloist.api_key() == "sk_abcDEF123456" and stat.S_IMODE(os.stat(soloist.key_file()).st_mode) == 0o600
-    assert soloist.command("Living Room")[:5] == [str(soloist.binary()), "--device-name", "Living Room", "--api-key", "sk_abcDEF123456"]
+    assert soloist.command("Living Room")[:3] == [str(soloist.binary()), "--device-name", "Living Room"]
+
+
+def test_the_key_goes_to_the_player_on_stdin_never_its_command_line(fake):
+    """Anyone signed in to the box can read a program's command line (ps): the key is saved with
+    `soloist setup-api-key` from stdin, and the player then runs without --api-key."""
+    soloist.set_api_key("sk_abcDEF123456")
+    got = soloist.home() / "got"
+    soloist.binary().write_text(f'#!/bin/sh\necho "$@" > {got}.args\ncat > {got}\n')
+    soloist.binary().chmod(0o755)
+    assert soloist.store_key() == ""
+    assert got.read_text() == "sk_abcDEF123456\n"
+    assert (soloist.home() / "got.args").read_text().split() == ["setup-api-key", "--data-dir", str(soloist.state_dir())]
+    assert not any("sk_abcDEF123456" in a or a == "--api-key" for a in soloist.command("Living Room"))
+    # a build older than 1.4.0 doesn't know setup-api-key: say so, without the key
+    soloist.binary().write_text("#!/bin/sh\ncat >/dev/null\necho 'Error: unknown option setup-api-key' >&2\nexit 1\n")
+    assert soloist.store_key() == "Error: unknown option setup-api-key"
 
 
 class FakeWS:
