@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.3](https://github.com/Supermaxman/couchbox/compare/v0.30.2...v0.30.3) (2026-11-27)
+
+
+### Fixed
+
+* **memory:** "YouTube (old)" closes after an idle hour too: VacuumTube opened from its own tile was never seen, so it ran hidden for days ([#166](https://github.com/Supermaxman/couchbox/issues/166)) ([5751a5d](https://github.com/Supermaxman/couchbox/commit/5751a5d50b7356904fa3290ca286e00bd620797f))
+* **spotify:** the Soloist API key no longer shows in ps: it goes to the player on stdin (soloist setup-api-key), not its command line ([#165](https://github.com/Supermaxman/couchbox/issues/165)) ([6046755](https://github.com/Supermaxman/couchbox/commit/6046755108c86b09401b291b75123f201c1a06d0))
+
 ## [0.30.2](https://github.com/Supermaxman/couchbox/compare/v0.30.1...v0.30.2) (2026-11-20)
 
 
