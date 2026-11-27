@@ -585,6 +585,29 @@ def test_pick_plays_the_original_language_never_an_auto_dub():
     assert S.pick(dash)[1]["language"] == "en"
 
 
+def test_audio_tracks_and_picking_one():
+    # 8eLUOaH7f6A as yt-dlp gives it: DASH names in English, HLS ones in the language's own
+    def track(fid, lang, note, pref=-1, proto="https", **kw):
+        return fmt(fid, acodec="mp4a.40.2", proto=proto, language=lang, language_preference=pref, format_note=note, **kw)
+
+    formats = [fmt("299", "avc1.64002A", height=1080, fps=60, tbr=6000)]
+    for lang, name in (("ar", "Arabic"), ("ko", "Korean"), ("nl-NL", "Dutch (NL)")):
+        formats += [track("140", lang, f"{name}, medium", abr=129), track("234", lang, f"x{lang} - dubbed-auto", None, "m3u8_native")]
+    formats.append(track("140", "en-US", "English (US) original (default), medium", 10, abr=129))
+    assert S.audio_tracks(formats) == [
+        {"lang": "en-US", "name": "English (US) original", "original": True},
+        {"lang": "ar", "name": "Arabic", "original": False},
+        {"lang": "nl-NL", "name": "Dutch (NL)", "original": False},
+        {"lang": "ko", "name": "Korean", "original": False},
+    ]
+    assert S.playable({"formats": formats})["audio"] == "en-US"
+    out = S.playable({"formats": formats}, audio="ko")
+    assert out["audio"] == "ko" and out["url"].endswith("/140")
+    assert S.playable({"formats": formats}, audio="xx")["audio"] == "en-US"  # not offered: the video's own
+    # one language: nothing to choose
+    assert S.audio_tracks(FORMATS) == [] and S.playable({"formats": FORMATS})["audio"] == ""
+
+
 def test_playable_with_nothing_playable():
     with pytest.raises(S.Unavailable):
         S.playable({"formats": [fmt("sb0", proto="mhtml")]})

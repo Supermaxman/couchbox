@@ -236,10 +236,16 @@ def upscaled(f: dict[str, Any]) -> bool:
 
 
 def pick(
-    formats: list[dict[str, Any]], h264: bool = True, max_height: int = MAX_HEIGHT, now: float | None = None, superres: bool = True
+    formats: list[dict[str, Any]],
+    h264: bool = True,
+    max_height: int = MAX_HEIGHT,
+    now: float | None = None,
+    superres: bool = True,
+    audio: str = "",
 ) -> tuple[dict | None, dict | None]:
     """(video, audio) formats to play: the best video at max_height or less (H.264 only when
-    there is H.264 and h264 is on), and when it has no sound of its own, the best stereo AAC.
+    there is H.264 and h264 is on), and when it has no sound of its own, the best stereo AAC:
+    in the video's own language, or in `audio` (a language of audio_tracks()) when asked.
     Formats that play now come first (rather than wait out ads that aren't shown), then quality,
     then plain downloads (DASH, "https") before HLS: they start faster and seek better."""
     formats = [f for f in formats if f.get("url") and (f.get("protocol") or "https") in ("https", "http", "m3u8", "m3u8_native")]
@@ -262,6 +268,8 @@ def pick(
         return video, None
     same = [f for f in audios if _hls(f) == _hls(video)]
     audios = same or audios
+    if audio:
+        audios = [f for f in audios if f.get("language") == audio] or audios
 
     def akey(f):
         codec = f.get("acodec") or ""
@@ -286,6 +294,37 @@ def pick(
     return video, max(audios, key=akey)
 
 
+def _track_name(f: dict[str, Any]) -> str:
+    """A sound track's name from its format_note: yt-dlp's "English (US) original (default),
+    medium" or "Arabic, low" (DASH), "العربية - dubbed-auto" (HLS: the language's own name);
+    from_player's "English (US) original"."""
+    note = f.get("format_note") or ""
+    if " - " in note and _hls(f):
+        return note.split(" - ")[0]
+    note = re.sub(r",\s*(low|medium|high|ultralow)$", "", note, flags=re.I)
+    return note.replace(" (default)", "").strip()
+
+
+def audio_tracks(formats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A video's sound in each language, when it has more than one (YouTube's auto-dubs), as
+    YouTube's TV app lists them under Settings → Audio track: the original first, then the
+    dubs by name. [{lang, name, original}], [] for one language."""
+    tracks: dict[str, dict[str, Any]] = {}
+    for f in formats:
+        lang = f.get("language")
+        if not lang or (f.get("vcodec") or "none") != "none" or f.get("acodec") == "none" or not f.get("url"):
+            continue
+        name = _track_name(f)
+        original = (f.get("language_preference") or 0) >= 10 or "original" in (f.get("format_note") or "").lower()
+        t = tracks.setdefault(lang, {"lang": lang, "name": name, "original": original})
+        t["original"] = t["original"] or original
+        if name and not _hls(f):  # DASH names are in English (HLS's in the language's own)
+            t["name"] = name
+    if len(tracks) < 2:
+        return []
+    return sorted(tracks.values(), key=lambda t: (not t["original"], t["name"].lower()))
+
+
 def edl(*urls: str) -> str:
     """One mpv "file" from separate streams: edl://%len%url;!new_stream;%len%url."""
     parts = []
@@ -297,14 +336,14 @@ def edl(*urls: str) -> str:
 
 
 def playable(
-    info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, lead: float = 0.0
+    info: dict[str, Any], h264: bool = True, max_height: int = MAX_HEIGHT, superres: bool = True, lead: float = 0.0, audio: str = ""
 ) -> dict[str, Any]:
     """What MpvVideo plays for yt-dlp's information: {url, opts, live, width, height, ...}.
     lead: formats that open within this many seconds count as ready (the caller waits for them:
     "probe" is the address to try meanwhile)."""
     formats = info.get("formats") or []
     live = info.get("live_status") in ("is_live", "post_live") or bool(info.get("is_live"))
-    video, audio = pick(formats, h264, max_height, now=time.time() + lead, superres=superres)
+    video, audio = pick(formats, h264, max_height, now=time.time() + lead, superres=superres, audio=audio)
     if video is None:
         raise Unavailable("YouTube didn't offer a format this TV can play.")
     out = {
@@ -316,6 +355,7 @@ def playable(
         "fps": video.get("fps") or 0,
         "vcodec": (video.get("vcodec") or "").split(".")[0],
         "acodec": ((audio or video).get("acodec") or "").split(".")[0],
+        "audio": (audio or {}).get("language") or "",  # the sound's language (audio_tracks' lang)
         "opts": "",
     }
     if audio and live:
@@ -516,6 +556,7 @@ def resolve(
     info: dict[str, Any] | None = None,
     lead: float = 0.0,
     visitor: str = "",
+    audio: str = "",
 ) -> dict[str, Any]:
     """Everything the player needs for a video: the stream (playable()) and what yt-dlp knows
     about it (title, channel, chapters, length, portrait for Shorts). info: yt-dlp's, from
@@ -527,7 +568,7 @@ def resolve(
     if info is None:
         info = extract(video_id, phases, visitor)
     took = yttiming.ms(t)
-    out = playable(info, h264, max_height, superres, lead)
+    out = playable(info, h264, max_height, superres, lead, audio)
     out.update(
         {
             "id": info.get("id") or video_id,
@@ -546,6 +587,7 @@ def resolve(
             "storyboard": storyboard(info.get("formats") or []),
             "heights": [h for h in heights(info.get("formats") or [], h264) if h <= max(max_height, MAX_HEIGHT)],
             "maxHeight": max_height,
+            "audios": [] if out["live"] else audio_tracks(info.get("formats") or []),
             "took": round(time.monotonic() - t, 2),
         }
     )
@@ -690,7 +732,8 @@ def _deciphered(raw: list[dict[str, Any]], solve: Any) -> list[dict[str, Any]]:
                 "tbr": (f.get("bitrate") or 0) / 1000,
                 "abr": (f.get("averageBitrate") or f.get("bitrate") or 0) / 1000 if vcodec == "none" else None,
                 "audio_channels": f.get("audioChannels"),
-                "format_note": f.get("qualityLabel") or "",
+                "format_note": f.get("qualityLabel") or track.get("displayName") or "",
+                "language": (track.get("id") or "").split(".")[0] or None,
                 "language_preference": (10 if track.get("audioIsDefault") else -1) if track else None,
             }
         )

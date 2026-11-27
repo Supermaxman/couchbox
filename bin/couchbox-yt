@@ -221,12 +221,13 @@ class Backend(QObject):
             self.yt.cache.clear()  # (pages asked for before: not restricted)
         return self.shown_settings(out)
 
-    def stream_args(self, max_height=None):
+    def stream_args(self, max_height=None, audio=""):
         st = self.settings.get()
         cap = 2160 if st["unlock_resolution"] else ytstream.MAX_HEIGHT
         return {
             "h264": st["h264"],
             "max_height": int(max_height or cap),
+            "audio": audio or "",  # a language from Settings → Audio track (else the video's own)
             "superres": not st["remove_superres"],
             "visitor": self.yt.visitor,
         }  # the TV's visitor data: the quick way (no watch webpage)
@@ -529,10 +530,10 @@ class Backend(QObject):
                 pass
         return self.yt.watch(vid)
 
-    def stream(self, vid, max_height=None):
+    def stream(self, vid, max_height=None, audio=""):
         if self.demo:
-            return youtube.demo_stream(vid)
-        out = self._stream(vid, max_height)
+            return youtube.demo_stream(vid, audio)
+        out = self._stream(vid, max_height, audio)
         c = out.get("captions") or []  # (always: an owner's "no captions" is traceable)
         print(
             f"yt {vid}: captions: {len(c)} tracks (asr {sum(1 for x in c if x.get('auto') and not x.get('translated'))}, "
@@ -541,7 +542,7 @@ class Backend(QObject):
         )
         return out
 
-    def _stream(self, vid, max_height=None):
+    def _stream(self, vid, max_height=None, audio=""):
         import time
 
         key = self.signed_key(vid)
@@ -552,14 +553,16 @@ class Backend(QObject):
                 pr = None if kept else self.signed_player(vid)
                 player_ms = 0 if kept else yttiming.ms(t)
                 if kept or pr:
-                    out = self.worker.call("resolve", id=vid, key=key, **({"player": pr} if pr else {}), **self.stream_args(max_height))
+                    out = self.worker.call(
+                        "resolve", id=vid, key=key, **({"player": pr} if pr else {}), **self.stream_args(max_height, audio)
+                    )
                     self.kept[key] = time.time() + self.KEEP_SIGNED
                     yttiming.note("stream", id=vid, signed=True, player=player_ms, **(out.get("timing") or {}))
                     return out
             except Exception as err:  # noqa: BLE001 - a guest's way next
                 print(f"yt {vid}: signed in: {err}; a guest's way", flush=True)
                 self.kept.pop(key, None)
-        out = self.worker.call("resolve", id=vid, **self.stream_args(max_height))
+        out = self.worker.call("resolve", id=vid, **self.stream_args(max_height, audio))
         yttiming.note("stream", id=vid, **(out.get("timing") or {}))
         return out
 
@@ -659,7 +662,7 @@ class Backend(QObject):
             "suggest": lambda: {"q": a["q"], "items": y.suggest(a["q"])},
             "searches": lambda: {"items": y.searches()},
             "watch": lambda: self.watch(a["id"]),
-            "stream": lambda: self.stream(a["id"], a.get("max_height")),
+            "stream": lambda: self.stream(a["id"], a.get("max_height"), a.get("audio") or ""),
             "prefetch": lambda: self.prefetch(a["id"]),
             "captions": lambda: self.captions(a["url"]),
             "mark": lambda: (started(a.get("step", "")), self.warm_once() if a.get("step") == "home-shown" else None, {"ok": True})[2],
@@ -678,7 +681,9 @@ class Backend(QObject):
     @Slot(int, str, str)
     def call(self, rid, op, args):
         asked = yttiming.now()
-        if op == "stream" and '"max_height"' not in (args or ""):  # a video starting: until its first frame
+        if (
+            op == "stream" and '"max_height"' not in (args or "") and '"audio"' not in (args or "")
+        ):  # a video starting: until its first frame
             watch.play = {"id": json.loads(args or "{}").get("id", ""), "t0": watch.last_ok if asked - watch.last_ok < 2 else asked}
 
         replied = []  # (once: an early "no internet", or the answer)

@@ -65,6 +65,7 @@ FORMAT_KEYS = (
     "abr",
     "audio_channels",
     "format_note",
+    "language",
     "language_preference",
     "available_at",
     "protocol",
@@ -268,6 +269,7 @@ class Worker:
             superres=a.get("superres", True),
             info=info,
             lead=DASH_LEAD,
+            audio=a.get("audio") or "",
         )
         waited = 0
         if out.get("probe"):

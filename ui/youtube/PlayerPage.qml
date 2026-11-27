@@ -11,7 +11,8 @@
 //                 to the video; Up from the chapters: back to the video
 //   Back          from the related videos to the controls, then hide them, then leave the player
 // Description and comments open beside the video; the settings menu has quality, speed,
-// captions (CC turns captions on and off) and Autoplay next video (Settings' switch, flipped here). At the end, Up next (the queue first) after a countdown.
+// captions (CC turns captions on and off), Audio track (a video YouTube auto-dubs: the original
+// or a dub, as YouTube's TV app lists them) and Autoplay next video (Settings' switch, flipped here). At the end, Up next (the queue first) after a countdown.
 // Streams: ytstream.py (yt-dlp), H.264 up to 1080p60; at the end the next video plays.
 // Signed in: like and dislike, the channel's panel (Subscribe / Subscribed, Go to channel), the
 // bell's notification levels, Save (Watch later, playlists); it starts where YouTube says this
@@ -32,7 +33,7 @@ FocusScope {
                                           card: panel === "description" ? description.index : -1,
                                           subscribed: !!v.subscribed, startAt: Math.round(startAt), duration: Math.round(video.duration || 0),
                                           height: s ? Math.min(s.height || 0, s.width || s.height || 0) : 0, fps: s ? Math.round(s.fps || 0) : 0,
-                                          itags: s ? (s.itags || []).join("+") : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer,
+                                          itags: s ? (s.itags || []).join("+") : "", audio: s ? s.audio || "" : "", decoded: video.videoInfo(), message: message, signInOffer: signInOffer,
                                           panelItem: panel && panel !== "description" && panel !== "comments" ? ((optionsFor(panel)[sidePanel.index] || {}).label || "") : "",
                                           comments: panel === "comments" ? comments.focusDetail() : null, subText: video.subText ? video.subText() : ""}; }
     // the position, read four times a second as well as on mpv's notices: the clock and the bar
@@ -92,6 +93,7 @@ FocusScope {
     property int chapterPick: 0                // the chapter picked in the strip (Up from the bar)
     property real speed: 1
     property string captionsOn: ""             // the captions shown (their name), "" none
+    property string audioLang: ""              // Settings → Audio track: the language picked here, "" the video's own
     property bool ending: false                // the end screen is up
     readonly property real duration: video.duration || (s ? s.duration : 0) || 0
     // scrubbing (Left / Right with the controls hidden, or Up to the bar): only the bar, the
@@ -161,7 +163,7 @@ FocusScope {
         cpn = "";
         const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         for (let i = 0; i < 16; i++) cpn += abc[Math.floor(Math.random() * 64)];
-        mode = "controls"; button = 4; ending = false; captionsOn = ""; captionsOffHere = false; autoCaptionsDone = false;
+        mode = "controls"; button = 4; ending = false; captionsOn = ""; captionsOffHere = false; autoCaptionsDone = false; audioLang = "";
         // the next video (Up next's countdown, a card): the controls take the focus back from the
         // end screen, which hides (focus left on it went nowhere: the box check's steps 26-27)
         if (player.activeFocus && !ctl.activeFocus) ctl.forceActiveFocus();
@@ -376,9 +378,10 @@ FocusScope {
         if (p === "save")
             return saveOptions.map(o => ({label: o.title, icon: o.id === "WL" ? "history" : "list", checked: o.saved, id: o.id}));
         if (p === "settings")
-            return [{label: "Quality", value: qualityLabel, icon: "settings"}, {label: "Playback speed", value: speed === 1 ? "Normal" : speed + "×", icon: "speed"},
-                    {label: "Captions", value: captionsOn || "Off", icon: "cc"},
-                    {label: "Autoplay next video", value: Y.settings.autoplay !== false ? "On" : "Off", icon: "next"}];   // (Settings' own, the same setting)
+            return [{label: "Quality", value: qualityLabel, icon: "settings", key: "quality"}, {label: "Playback speed", value: speed === 1 ? "Normal" : speed + "×", icon: "speed", key: "speed"},
+                    {label: "Captions", value: captionsOn || "Off", icon: "cc", key: "captions"}]
+                .concat(audios.length > 1 ? [{label: "Audio track", value: audioLabel, icon: "audio-track", key: "audio"}] : [])
+                .concat([{label: "Autoplay next video", value: Y.settings.autoplay !== false ? "On" : "Off", icon: "next", key: "autoplay"}]);   // (Settings' own, the same setting)
         if (p === "quality")
             return [{label: "Auto", checked: !s || !s.maxHeight || s.maxHeight >= 1080, h: 1080}]
                 .concat(((s && s.heights) || []).map(h => ({label: h + "p", checked: s.maxHeight === h && h < 1080, h: h})));
@@ -386,12 +389,20 @@ FocusScope {
             return [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(x => ({label: x === 1 ? "Normal" : x + "×", checked: speed === x, x: x}));
         if (p === "captions")
             return [{label: "Off", checked: !captionsOn}].concat(((s && s.captions) || []).map(c => ({label: c.name, checked: captionsOn === c.name, c: c})));
+        if (p === "audio")   // the original, then the dubs under "Auto-dubbed", as YouTube's TV app has them
+            return audios.map((t, i) => ({label: t.name, checked: s.audio === t.lang, lang: t.lang,
+                                          section: !t.original && (i === 0 || audios[i - 1].original) ? "Auto-dubbed" : ""}));
         return [];
     }
+    readonly property var audios: (s && s.audios) || []
+    readonly property string audioLabel: (audios.find(t => t.lang === (s && s.audio)) || {}).name || ""
     readonly property string qualityLabel: s && s.height ? "Auto (" + Math.min(s.height, s.width || s.height) + "p" + (s.fps > 30 ? Math.round(s.fps) : "") + ")" : "Auto"
-    function setQuality(h) {
+    // another quality or sound: the stream again, from where it is (the other one kept)
+    function setQuality(h) { reload({max_height: h}); }
+    function setAudio(lang) { audioLang = lang; reload({max_height: (s && s.maxHeight) || 0}); }
+    function reload(args) {
         const id = videoId, at = video.position;
-        Y.call("stream", {id: id, max_height: h}, r => {
+        Y.call("stream", Object.assign({id: id}, args, audioLang ? {audio: audioLang} : {}), r => {
             if (!player || player.videoId !== id) return;   // (closed meanwhile, or another video)
             s = r;
             if (r.url.indexOf("demo://") === 0) video.load(r.url, at); else video.loadWith(r.url, at, r.opts || "");
@@ -452,8 +463,8 @@ FocusScope {
                 meta = Object.assign({}, meta, {video: Object.assign({}, v, {notify: o.level})});
             });
         } else if (panel === "settings") {
-            if (i === 3) Y.setting("autoplay", Y.settings.autoplay === false);   // flips in place; Up next and Settings follow
-            else panel = ["quality", "speed", "captions"][i];
+            if (o.key === "autoplay") Y.setting("autoplay", Y.settings.autoplay === false);   // flips in place; Up next and Settings follow
+            else panel = o.key;
         } else if (panel === "quality") {
             setQuality(o.h); panel = "";
         } else if (panel === "speed") {
@@ -461,6 +472,9 @@ FocusScope {
         } else if (panel === "captions") {
             captionsOffHere = !o.c;
             setCaptions(o.c || null); panel = "";
+        } else if (panel === "audio") {
+            if (!o.checked) setAudio(o.lang);
+            panel = "";
         } else if (panel === "save") {
             const add = !o.checked;
             Y.call("save", {id: videoId, playlist: o.id, add: add}, () => {
@@ -524,7 +538,7 @@ FocusScope {
         hide.restart();
     }
     function back() {
-        if (panel === "quality" || panel === "speed" || panel === "captions") { panel = "settings"; return; }
+        if (panel === "quality" || panel === "speed" || panel === "captions" || panel === "audio") { panel = "settings"; return; }
         if (panel) { panel = ""; return; }
         if (mode === "chapters") { mode = "bar"; hide.restart(); return; }
         if (scrub >= 0) { cancelScrub(); mode = "hidden"; return; }   // Back: the scrub undone, the video where it was
@@ -723,7 +737,7 @@ FocusScope {
         avatar: player.panel === "channel" ? player.v.avatar || "" : ""
         name: player.panel === "channel" ? player.v.channel || "" : ""
         line: player.panel === "channel" ? [player.v.handle || "", player.v.subscribers || ""].filter(x => !!x).join(" · ") : ""
-        title: ({notify: "Notifications", save: "Save video to…", settings: "Settings", quality: "Quality", speed: "Playback speed", captions: "Captions"})[player.panel] || ""
+        title: ({notify: "Notifications", save: "Save video to…", settings: "Settings", quality: "Quality", speed: "Playback speed", captions: "Captions", audio: "Audio track"})[player.panel] || ""
         subtitle: player.panel === "notify" ? "You'll get notified in the mobile app or on YouTube.com based on your account settings"
                 : player.panel === "quality" ? "Auto picks the best this TV plays smoothly, up to 1080p at 60 frames a second" : ""
         onPicked: i => player.panelPick(i)
