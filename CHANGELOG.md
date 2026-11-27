@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.0](https://github.com/Supermaxman/couchbox/compare/v0.30.3...v0.31.0) (2026-11-27)
+
+
+### New
+
+* **youtube:** Settings → Audio track for videos YouTube auto-dubs: the original or a dub, as YouTube's TV app lists them ([#169](https://github.com/Supermaxman/couchbox/issues/169)) ([abeb20b](https://github.com/Supermaxman/couchbox/commit/abeb20b86071e853c103fd8b5c5e274a772653a3))
+
+
+### Fixed
+
+* **youtube:** videos play in their own language, never an auto-dub ([#168](https://github.com/Supermaxman/couchbox/issues/168)) ([d51b88f](https://github.com/Supermaxman/couchbox/commit/d51b88fd5eff9882305155a32f620ecdc5a30e39))
+
 ## [0.30.3](https://github.com/Supermaxman/couchbox/compare/v0.30.2...v0.30.3) (2026-11-27)
 
 
