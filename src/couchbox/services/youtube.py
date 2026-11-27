@@ -2531,10 +2531,19 @@ class Demo(YouTube):
         self.recent = [q, *[s for s in self.recent if s != q]][:20]
 
 
-def demo_stream(video_id: str) -> dict[str, Any]:
+DEMO_AUDIOS = [
+    {"lang": "en-US", "name": "English (US) original", "original": True},
+    {"lang": "ar", "name": "Arabic", "original": False},
+    {"lang": "nl-NL", "name": "Dutch (NL)", "original": False},
+    {"lang": "iw", "name": "Hebrew", "original": False},
+    {"lang": "ko", "name": "Korean", "original": False},
+]
+
+
+def demo_stream(video_id: str, audio: str = "") -> dict[str, Any]:
     """The demo's "stream": nothing to play (the stand-in video), with chapters to draw. A "demobot..."
     video gets YouTube's bot check, as a guest's can; a "demowait..." one, a new box still getting
-    yt-dlp (screenshots)."""
+    yt-dlp (screenshots). ...3 has YouTube's auto-dubs (Settings → Audio track), as 8eLUOaH7f6A."""
     if video_id.startswith("demowait"):
         from couchbox.services import ytstream
 
@@ -2570,6 +2579,8 @@ def demo_stream(video_id: str) -> dict[str, Any]:
         ],
         "heights": [1080, 720, 480, 360, 240, 144],
         "maxHeight": 1080,
+        "audio": (audio or "en-US") if n == 3 else "",
+        "audios": DEMO_AUDIOS if n == 3 else [],
         "views": 0,
         "likes": 0,
         "timestamp": 0,

@@ -173,6 +173,9 @@ shot yt-library-history couchbox-yt --open library --keys ok
 shot yt-player-channel couchbox-yt --open video:demo0000006 --keys left,left,left,left,ok
 shot yt-player-notify couchbox-yt --open video:demo0000006 --keys left,left,ok
 shot yt-player-save couchbox-yt --open video:demo0000006 --keys right,right,right,right,right,right,ok
+# a video YouTube auto-dubs: Settings with its Audio track row, and the tracks (the original, then "Auto-dubbed")
+shot yt-player-settings-audio couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,down,down,down
+shot yt-player-audio couchbox-yt --open video:demo0000003 --keys right,right,right,right,right,right,right,right,right,ok,down,down,down,ok
 shot yt-guide-settings couchbox-yt --keys left,down,down,down,down,down,down,down,down,down,down,down
 # ... the player's M3 parts: Shorts (and its buttons), seeking with the chapters' pictures (and picking
 # one), the Description panel, comments, the settings menu (quality), captions on, the end screen with

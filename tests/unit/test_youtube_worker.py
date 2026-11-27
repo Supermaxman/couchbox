@@ -141,6 +141,17 @@ def test_our_own_player_answer_deciphered():
     # a live stream with only its adaptive formats: their segments through ytlive (on this box)
     live = ytstream.from_player(dict(pr, videoDetails={"isLive": True}), solve)
     assert live["is_live"] and all(f["url"].startswith("http://127.0.0.1:") for f in live["formats"])
+    # a video YouTube auto-dubs: each track's language and name (the TV client's, in English)
+    dub = {"audioIsDefault": False, "displayName": "Korean", "id": "ko.3"}
+    orig = {"audioIsDefault": True, "displayName": "English (US) original", "id": "en-US.4"}
+    raw = pr["streamingData"]["adaptiveFormats"]
+    dubbed = dict(pr, streamingData={"adaptiveFormats": [raw[0], dict(raw[1], audioTrack=dub), dict(raw[1], audioTrack=orig)]})
+    info = ytworker.slim(ytstream.from_player(dubbed, solve))
+    assert ytstream.audio_tracks(info["formats"]) == [
+        {"lang": "en-US", "name": "English (US) original", "original": True},
+        {"lang": "ko", "name": "Korean", "original": False},
+    ]
+    assert ytstream.playable(info)["audio"] == "en-US" and ytstream.playable(info, audio="ko")["audio"] == "ko"
     # one YouTube won't play: the usual way instead
     import pytest
 
