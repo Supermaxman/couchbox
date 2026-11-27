@@ -61,8 +61,11 @@ def test_a_paused_app_in_the_background_is_idle_and_a_playing_one_is_not(mem, mo
 def test_youtube_without_devtools_is_still_watched(mem, monkeypatch):
     """VacuumTube from its own Flatpak tile ("YouTube (old)") has no DevTools port: it was never
     listed, so never closed (10 days in the background on mtv, a third of a core)."""
-    scopes = {10: "app-flatpak-rocks.shy.VacuumTube-1.scope", 11: "app-flatpak-rocks.shy.VacuumTube-1.scope",
-              12: "app-flatpak-rocks.shy.VacuumTube-2.scope"}
+    scopes = {
+        10: "app-flatpak-rocks.shy.VacuumTube-1.scope",
+        11: "app-flatpak-rocks.shy.VacuumTube-1.scope",
+        12: "app-flatpak-rocks.shy.VacuumTube-2.scope",
+    }
     monkeypatch.setattr(mem, "probe", lambda: {})
     monkeypatch.setattr(mem, "unit_of", lambda pid: scopes.get(pid, ""))
     plist = [(9, 1, "bwrap", TV), (10, 9, "vacuumtube", TV), (11, 10, "vacuumtube", TV), (12, 9, "vacuumtube", TV)]
